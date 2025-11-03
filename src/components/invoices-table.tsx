@@ -1,0 +1,149 @@
+'use client';
+
+import Link from 'next/link';
+import { Department } from '@/lib/types';
+import { Button } from '@/components/ui/button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
+import { Eye, QrCode, TrendingUp } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
+
+interface InvoicesTableProps {
+    invoices: any[];
+    department: Department | null;
+    onGenerateQR?: (invoiceId: string) => void;
+    onRemit?: (invoiceId: string) => void;
+}
+
+export default function InvoicesTable({ invoices, department, onGenerateQR, onRemit }: InvoicesTableProps) {
+    const { toast } = useToast();
+
+    // Ensure invoices is always an array
+    const safeInvoices = Array.isArray(invoices) ? invoices : [];
+
+    return (
+        <div className="space-y-8">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Invoices</CardTitle>
+                    <CardDescription>A list of all generated invoices.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                <Table>
+                        <TableHeader>
+                        <TableRow>
+                            <TableHead>Invoice ID</TableHead>
+                            <TableHead>AWB</TableHead>
+                            <TableHead>Client</TableHead>
+                            <TableHead>Amount</TableHead>
+                            <TableHead>Service Code</TableHead>
+                            <TableHead>Weight (KG)</TableHead>
+                            <TableHead>Volume (CBM)</TableHead>
+                            <TableHead>Receiver</TableHead>
+                            <TableHead>Receiver Address</TableHead>
+                            <TableHead>Receiver Phone</TableHead>
+                            <TableHead>Issue Date</TableHead>
+                            <TableHead>Due Date</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Action</TableHead>
+                        </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                        {safeInvoices.map((invoice) => (
+                            <TableRow key={invoice._id}>
+                            <TableCell className="font-mono text-xs">{invoice.invoice_id || 'N/A'}</TableCell>
+                            <TableCell className="font-mono text-xs">{invoice.awb_number || 'N/A'}</TableCell>
+                            <TableCell>{invoice.client_id?.company_name || 'Unknown'}</TableCell>
+                            <TableCell>${invoice.total_amount ? parseFloat(invoice.total_amount.toString()).toLocaleString() : '0.00'}</TableCell>
+                            <TableCell className="font-mono text-xs">{invoice.service_code || 'N/A'}</TableCell>
+                            <TableCell>{invoice.weight_kg || 'N/A'}</TableCell>
+                            <TableCell>{invoice.volume_cbm || 'N/A'}</TableCell>
+                            <TableCell>{invoice.receiver_name || 'N/A'}</TableCell>
+                            <TableCell className="max-w-[200px] truncate" title={invoice.receiver_address}>{invoice.receiver_address || 'N/A'}</TableCell>
+                            <TableCell>{invoice.receiver_phone || 'N/A'}</TableCell>
+                            <TableCell>{invoice.issue_date ? new Date(invoice.issue_date).toLocaleDateString() : 'N/A'}</TableCell>
+                            <TableCell>{invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : 'N/A'}</TableCell>
+                            <TableCell>
+                                <Badge 
+                                    variant={
+                                        invoice.status === 'PAID' || invoice.status === 'REMITTED' 
+                                            ? 'default' 
+                                            : invoice.status === 'COLLECTED_BY_DRIVER' 
+                                                ? 'secondary' 
+                                                : 'secondary'
+                                    } 
+                                    className={
+                                        invoice.status === 'PAID' || invoice.status === 'REMITTED'
+                                            ? 'bg-green-500 text-white'
+                                            : invoice.status === 'COLLECTED_BY_DRIVER'
+                                                ? 'bg-blue-500 text-white'
+                                                : ''
+                                    }
+                                >
+                                    {invoice.status}
+                                </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                                <div className="flex gap-2 justify-end">
+                                    <Button asChild variant="outline" size="sm">
+                                        <Link href={`/dashboard/invoices/${invoice._id}`}>
+                                            <Eye className="mr-2 h-4 w-4" />
+                                            View
+                                        </Link>
+                                    </Button>
+                                    {onGenerateQR && invoice.status === 'UNPAID' && (
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm" 
+                                            onClick={() => onGenerateQR(invoice._id)}
+                                        >
+                                            <QrCode className="mr-2 h-4 w-4" />
+                                            Generate QR
+                                        </Button>
+                                    )}
+                                    {onRemit && invoice.status === 'COLLECTED_BY_DRIVER' && (
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm"
+                                            className="bg-green-600 text-white hover:bg-green-700"
+                                            onClick={() => onRemit(invoice._id)}
+                                        >
+                                            <TrendingUp className="mr-2 h-4 w-4" />
+                                            Remit
+                                        </Button>
+                                    )}
+                                    {onRemit && invoice.status === 'UNPAID' && (
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm"
+                                            className="bg-blue-600 text-white hover:bg-blue-700"
+                                            onClick={() => onRemit(invoice._id)}
+                                        >
+                                            <TrendingUp className="mr-2 h-4 w-4" />
+                                            Mark Collected
+                                        </Button>
+                                    )}
+                                </div>
+                            </TableCell>
+                            </TableRow>
+                        ))}
+                         {safeInvoices.length === 0 && (
+                            <TableRow>
+                                <TableCell colSpan={8} className="text-center">No invoices found.</TableCell>
+                            </TableRow>
+                        )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
+        </div>
+    );
+}
