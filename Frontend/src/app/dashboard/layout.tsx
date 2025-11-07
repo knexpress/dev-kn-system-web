@@ -37,13 +37,16 @@ export default function DashboardLayout({
 
   return (
     <NotificationProvider>
-      <SidebarProvider>
-        <Sidebar>
+      <SidebarProvider defaultOpen={true}>
+        <Sidebar collapsible="offcanvas">
           <AppSidebar />
         </Sidebar>
-        <SidebarInset className="flex flex-col">
+        <SidebarInset className="flex flex-col w-full min-w-0">
           <AppHeader />
-          <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+          <main 
+            className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 lg:p-8 w-full min-w-0 scrollbar-hide"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          >
               {children}
           </main>
         </SidebarInset>

@@ -13,17 +13,16 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, QrCode, TrendingUp } from 'lucide-react';
+import { Eye, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 
 interface InvoicesTableProps {
     invoices: any[];
     department: Department | null;
-    onGenerateQR?: (invoiceId: string) => void;
     onRemit?: (invoiceId: string) => void;
 }
 
-export default function InvoicesTable({ invoices, department, onGenerateQR, onRemit }: InvoicesTableProps) {
+export default function InvoicesTable({ invoices, department, onRemit }: InvoicesTableProps) {
     const { toast } = useToast();
 
     // Ensure invoices is always an array
@@ -37,7 +36,15 @@ export default function InvoicesTable({ invoices, department, onGenerateQR, onRe
                     <CardDescription>A list of all generated invoices.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                <Table>
+                    <div className="relative">
+                        {/* Table Container */}
+                        <div
+                            className="overflow-x-hidden overflow-y-auto scrollbar-thin"
+                            style={{
+                                maxHeight: 'calc(100vh - 400px)',
+                            }}
+                        >
+                        <Table style={{ minWidth: 'max-content', width: '100%' }}>
                         <TableHeader>
                         <TableRow>
                             <TableHead>Invoice ID</TableHead>
@@ -99,16 +106,6 @@ export default function InvoicesTable({ invoices, department, onGenerateQR, onRe
                                             View
                                         </Link>
                                     </Button>
-                                    {onGenerateQR && invoice.status === 'UNPAID' && (
-                                        <Button 
-                                            variant="outline" 
-                                            size="sm" 
-                                            onClick={() => onGenerateQR(invoice._id)}
-                                        >
-                                            <QrCode className="mr-2 h-4 w-4" />
-                                            Generate QR
-                                        </Button>
-                                    )}
                                     {onRemit && invoice.status === 'COLLECTED_BY_DRIVER' && (
                                         <Button 
                                             variant="outline" 
@@ -137,11 +134,15 @@ export default function InvoicesTable({ invoices, department, onGenerateQR, onRe
                         ))}
                          {safeInvoices.length === 0 && (
                             <TableRow>
-                                <TableCell colSpan={8} className="text-center">No invoices found.</TableCell>
+                                <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
+                                    No invoices found. Try adjusting your search or filters.
+                                </TableCell>
                             </TableRow>
                         )}
                         </TableBody>
-                    </Table>
+                        </Table>
+                        </div>
+                    </div>
                 </CardContent>
             </Card>
         </div>

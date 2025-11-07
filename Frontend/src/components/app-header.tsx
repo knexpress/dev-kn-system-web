@@ -14,8 +14,8 @@ export default function AppHeader() {
   const pageTitle = currentLink ? currentLink.label : 'Dashboard';
 
   return (
-    <header className="sticky top-0 z-10 flex h-14 items-center gap-4 border-b bg-background px-4 sm:static sm:h-auto sm:border-0 sm:bg-transparent sm:px-6">
-      <SidebarTrigger className="sm:hidden" />
+    <header className="sticky top-0 z-10 flex h-14 items-center gap-4 border-b bg-background px-4 sm:px-6">
+      <SidebarTrigger />
       <h1 className="text-xl font-semibold">{pageTitle}</h1>
       <div className="ml-auto flex items-center gap-2">
         <UserNav />

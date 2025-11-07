@@ -5,8 +5,20 @@ import CSVUpload from "@/components/csv-upload";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useNotifications } from '@/contexts/NotificationContext';
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useToast } from '@/hooks/use-toast';
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Search, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export default function InvoicesPage() {
     const { department } = useAuth();
@@ -16,6 +28,12 @@ export default function InvoicesPage() {
     const [refreshKey, setRefreshKey] = useState(0);
     const { toast } = useToast();
     const { userProfile } = useAuth();
+    
+    // Search and filter states
+    const [searchQuery, setSearchQuery] = useState('');
+    const [filterStatus, setFilterStatus] = useState('all');
+    const [filterDateFrom, setFilterDateFrom] = useState('');
+    const [filterDateTo, setFilterDateTo] = useState('');
 
     useEffect(() => {
         // Clear invoices notification count when page is visited
@@ -66,62 +84,72 @@ export default function InvoicesPage() {
         setRefreshKey(prev => prev + 1);
     };
 
-    const handleGenerateQR = async (invoiceId: string) => {
-        try {
-            const invoice = invoices.find(inv => inv._id === invoiceId);
-            if (!invoice) {
-                toast({
-                    variant: 'destructive',
-                    title: 'Error',
-                    description: 'Invoice not found'
-                });
-                return;
-            }
+    // Filter invoices based on search and filters
+    const filteredInvoices = useMemo(() => {
+        let filtered = [...invoices];
 
-            // Get or create client
-            let clientId = invoice.client_id?._id || invoice.client_id;
-            if (!clientId) {
-                toast({
-                    variant: 'destructive',
-                    title: 'Error',
-                    description: 'Client information missing. Please create a delivery assignment manually.'
-                });
-                return;
-            }
-
-            // Create delivery assignment with QR code
-            const assignmentData = {
-                request_id: invoice.request_id?._id || invoice.request_id,
-                invoice_id: invoiceId,
-                client_id: clientId,
-                amount: invoice.total_amount || invoice.amount,
-                delivery_type: 'COD',
-                delivery_address: 'Address to be confirmed',
-                delivery_instructions: 'Please contact customer for delivery details'
-            };
-
-            const result = await apiClient.createDeliveryAssignment(assignmentData);
-            
-            if (result.success) {
-                toast({
-                    title: 'Success',
-                    description: 'QR code generated successfully! Check Delivery Assignments.',
-                });
-            } else {
-                toast({
-                    variant: 'destructive',
-                    title: 'Error',
-                    description: result.error || 'Failed to generate QR code'
-                });
-            }
-        } catch (error) {
-            console.error('Error generating QR:', error);
-            toast({
-                variant: 'destructive',
-                title: 'Error',
-                description: 'Failed to generate QR code'
+        // Search filter
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase();
+            filtered = filtered.filter((invoice) => {
+                const invoiceId = (invoice.invoice_id || '').toLowerCase();
+                const awb = (invoice.awb_number || '').toLowerCase();
+                const clientName = (invoice.client_id?.company_name || '').toLowerCase();
+                const receiverName = (invoice.receiver_name || '').toLowerCase();
+                const receiverPhone = (invoice.receiver_phone || '').toLowerCase();
+                const receiverAddress = (invoice.receiver_address || '').toLowerCase();
+                const serviceCode = (invoice.service_code || '').toLowerCase();
+                
+                return (
+                    invoiceId.includes(query) ||
+                    awb.includes(query) ||
+                    clientName.includes(query) ||
+                    receiverName.includes(query) ||
+                    receiverPhone.includes(query) ||
+                    receiverAddress.includes(query) ||
+                    serviceCode.includes(query)
+                );
             });
         }
+
+        // Status filter
+        if (filterStatus !== 'all') {
+            filtered = filtered.filter((invoice) => {
+                return invoice.status === filterStatus;
+            });
+        }
+
+        // Date range filter
+        if (filterDateFrom) {
+            const fromDate = new Date(filterDateFrom);
+            fromDate.setHours(0, 0, 0, 0);
+            filtered = filtered.filter((invoice) => {
+                if (!invoice.issue_date) return false;
+                const issueDate = new Date(invoice.issue_date);
+                issueDate.setHours(0, 0, 0, 0);
+                return issueDate >= fromDate;
+            });
+        }
+
+        if (filterDateTo) {
+            const toDate = new Date(filterDateTo);
+            toDate.setHours(23, 59, 59, 999);
+            filtered = filtered.filter((invoice) => {
+                if (!invoice.issue_date) return false;
+                const issueDate = new Date(invoice.issue_date);
+                issueDate.setHours(0, 0, 0, 0);
+                return issueDate <= toDate;
+            });
+        }
+
+        return filtered;
+    }, [invoices, searchQuery, filterStatus, filterDateFrom, filterDateTo]);
+
+    const clearFilters = () => {
+        setSearchQuery('');
+        setFilterStatus('all');
+        setFilterDateFrom('');
+        setFilterDateTo('');
     };
 
     const handleRemitInvoice = async (invoiceId: string) => {
@@ -174,10 +202,91 @@ export default function InvoicesPage() {
     return (
         <div className="space-y-6">
             <CSVUpload onSuccess={handleCSVUploadSuccess} />
+            
+            {/* Search and Filter Bar */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Search & Filter Invoices</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {/* Search Input */}
+                        <div className="space-y-2">
+                            <Label htmlFor="search">Search</Label>
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                    id="search"
+                                    placeholder="Invoice ID, AWB, Client, Receiver..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="pl-9"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Status Filter */}
+                        <div className="space-y-2">
+                            <Label htmlFor="status">Status</Label>
+                            <Select value={filterStatus} onValueChange={setFilterStatus}>
+                                <SelectTrigger id="status">
+                                    <SelectValue placeholder="All Statuses" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Statuses</SelectItem>
+                                    <SelectItem value="UNPAID">Unpaid</SelectItem>
+                                    <SelectItem value="PAID">Paid</SelectItem>
+                                    <SelectItem value="COLLECTED_BY_DRIVER">Collected by Driver</SelectItem>
+                                    <SelectItem value="REMITTED">Remitted</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        {/* Date From */}
+                        <div className="space-y-2">
+                            <Label htmlFor="dateFrom">Date From</Label>
+                            <Input
+                                id="dateFrom"
+                                type="date"
+                                value={filterDateFrom}
+                                onChange={(e) => setFilterDateFrom(e.target.value)}
+                            />
+                        </div>
+
+                        {/* Date To */}
+                        <div className="space-y-2">
+                            <Label htmlFor="dateTo">Date To</Label>
+                            <Input
+                                id="dateTo"
+                                type="date"
+                                value={filterDateTo}
+                                onChange={(e) => setFilterDateTo(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Clear Filters Button */}
+                    {(searchQuery || filterStatus !== 'all' || filterDateFrom || filterDateTo) && (
+                        <div className="mt-4">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={clearFilters}
+                            >
+                                <X className="h-4 w-4 mr-2" />
+                                Clear Filters
+                            </Button>
+                            <span className="ml-4 text-sm text-muted-foreground">
+                                Showing {filteredInvoices.length} of {invoices.length} invoices
+                            </span>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
             <InvoicesTable 
-                invoices={invoices}
+                invoices={filteredInvoices}
                 department={department?.name as any}
-                onGenerateQR={handleGenerateQR}
                 onRemit={handleRemitInvoice}
             />
         </div>

@@ -63,3 +63,31 @@ Frontend/.next/
 Frontend/.env.local
 Frontend/.env.production.local
 
+# System files (Windows)
+.gradle/
+.android/
+.chocolatey/
+.cursor/
+.matplotlib/
+.skiko/
+AppData/
+Contacts/
+Desktop/
+Documents/
+Downloads/
+Favorites/
+Links/
+Music/
+OneDrive/
+Pictures/
+Saved Games/
+Searches/
+Videos/
+NTUSER.DAT*
+ntuser.dat*
+ntuser.ini
+*.regtrans-ms
+*.blf
+*.xml
+test_gpu.py
+

@@ -173,8 +173,8 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
               </p>
             </div>
             <div className="text-center">
-              <QRCode value={data.qrCode.url} size={96} className="mx-auto" />
-              <p className="text-xs text-gray-500 mt-1">Scan to Pay</p>
+              <QRCode value={data.qrCode.url} size={200} className="mx-auto" />
+              <p className="text-xs text-gray-500 mt-2">Scan to Pay</p>
             </div>
           </div>
         </div>

@@ -1,16 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import InvoiceTemplate from "@/components/invoice-template";
 import TaxInvoiceTemplate from "@/components/tax-invoice-template";
 import { apiClient } from "@/lib/api-client";
 import { notFound, useParams, useSearchParams } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft, FileText, Receipt } from 'lucide-react';
+import { Card } from "@/components/ui/card";
 
 export default function InvoicePage() {
     const params = useParams();
     const searchParams = useSearchParams();
+    const router = useRouter();
     const invoiceId = params?.invoiceId as string;
-    const type = searchParams?.get('type');
+    const typeParam = searchParams?.get('type');
+    const [invoiceType, setInvoiceType] = useState<'normal' | 'tax'>(typeParam === 'tax' ? 'tax' : 'normal');
     
     const [invoice, setInvoice] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -113,10 +119,49 @@ export default function InvoicePage() {
         } : undefined
     };
 
-    // Render appropriate template based on type
-    if (type === 'tax') {
-        return <TaxInvoiceTemplate data={invoiceData} />;
-    } else {
-        return <InvoiceTemplate data={invoiceData} />;
-    }
+    return (
+        <div className="space-y-4">
+            {/* Navigation Bar */}
+            <Card className="p-4">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <Button
+                            variant="outline"
+                            onClick={() => router.push('/dashboard/invoices')}
+                        >
+                            <ArrowLeft className="h-4 w-4 mr-2" />
+                            Back to Invoices
+                        </Button>
+                        <div className="h-6 w-px bg-border" />
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">Invoice View:</span>
+                            <Button
+                                variant={invoiceType === 'normal' ? 'default' : 'outline'}
+                                size="sm"
+                                onClick={() => setInvoiceType('normal')}
+                            >
+                                <FileText className="h-4 w-4 mr-2" />
+                                Normal Invoice
+                            </Button>
+                            <Button
+                                variant={invoiceType === 'tax' ? 'default' : 'outline'}
+                                size="sm"
+                                onClick={() => setInvoiceType('tax')}
+                            >
+                                <Receipt className="h-4 w-4 mr-2" />
+                                Tax Invoice
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            </Card>
+
+            {/* Invoice Template */}
+            {invoiceType === 'tax' ? (
+                <TaxInvoiceTemplate data={invoiceData} />
+            ) : (
+                <InvoiceTemplate data={invoiceData} />
+            )}
+        </div>
+    );
 }
