@@ -571,6 +571,13 @@ class ApiClient {
     });
   }
 
+  async updateDeliveryAssignmentByQR(qrCode: string, assignmentData: any) {
+    return this.request(`/delivery-assignments/qr/${qrCode}/status`, {
+      method: 'PUT',
+      body: JSON.stringify(assignmentData),
+    });
+  }
+
   async getDeliveryAssignmentByInvoice(invoiceId: string) {
     return this.request(`/delivery-assignments/by-invoice/${invoiceId}`);
   }
