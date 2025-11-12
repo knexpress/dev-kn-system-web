@@ -245,12 +245,12 @@ export default function DeliveryAssignmentsPage() {
     // Check if number is valid
     if (isNaN(numAmount) || !isFinite(numAmount)) {
       console.warn('Invalid amount for formatting:', amount);
-      return '$0.00';
+      return 'AED 0.00';
     }
     
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-AE', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'AED',
     }).format(numAmount);
   };
 

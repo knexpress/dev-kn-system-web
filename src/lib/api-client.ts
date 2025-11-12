@@ -627,6 +627,123 @@ class ApiClient {
     });
   }
 
+  // ========================================
+  // INTER-DEPARTMENT CHAT API
+  // ========================================
+
+  // Chat Rooms
+  async getChatRooms(userId?: string, departmentId?: string) {
+    let url = '/chat/rooms';
+    const params = new URLSearchParams();
+    if (userId) params.append('user_id', userId);
+    if (departmentId) params.append('department_id', departmentId);
+    if (params.toString()) url += `?${params.toString()}`;
+    return this.request(url);
+  }
+
+  async createDirectChatRoom(userId1: string, userId2: string) {
+    return this.request('/chat/rooms/direct', {
+      method: 'POST',
+      body: JSON.stringify({ user_id_1: userId1, user_id_2: userId2 }),
+    });
+  }
+
+  async getChatRoom(roomId: string) {
+    return this.request(`/chat/rooms/${roomId}`);
+  }
+
+  async createChatRoom(roomData: {
+    name: string;
+    description?: string;
+    department_ids: string[];
+    created_by?: string;
+  }) {
+    return this.request('/chat/rooms', {
+      method: 'POST',
+      body: JSON.stringify(roomData),
+    });
+  }
+
+  async updateChatRoom(roomId: string, roomData: {
+    name?: string;
+    description?: string;
+    department_ids?: string[];
+    is_active?: boolean;
+  }) {
+    return this.request(`/chat/rooms/${roomId}`, {
+      method: 'PUT',
+      body: JSON.stringify(roomData),
+    });
+  }
+
+  async deleteChatRoom(roomId: string) {
+    return this.request(`/chat/rooms/${roomId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Chat Messages
+  async getChatMessages(roomId: string, limit?: number, before?: string) {
+    let url = `/chat/rooms/${roomId}/messages`;
+    const params = new URLSearchParams();
+    if (limit) params.append('limit', limit.toString());
+    if (before) params.append('before', before);
+    if (params.toString()) url += `?${params.toString()}`;
+    return this.request(url);
+  }
+
+  async sendChatMessage(roomId: string, messageData: {
+    sender_id: string;
+    message: string;
+    message_type?: 'text' | 'file' | 'image' | 'system';
+    reply_to?: string;
+  }) {
+    return this.request(`/chat/rooms/${roomId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(messageData),
+    });
+  }
+
+  async markMessageAsRead(messageId: string, employeeId: string) {
+    return this.request(`/chat/messages/${messageId}/read`, {
+      method: 'PUT',
+      body: JSON.stringify({ employee_id: employeeId }),
+    });
+  }
+
+  async markRoomAsRead(roomId: string, employeeId: string) {
+    return this.request(`/chat/rooms/${roomId}/read`, {
+      method: 'PUT',
+      body: JSON.stringify({ employee_id: employeeId }),
+    });
+  }
+
+  async getUnreadCount(employeeId: string, roomId?: string) {
+    let url = `/chat/unread-count?employee_id=${employeeId}`;
+    if (roomId) url += `&room_id=${roomId}`;
+    return this.request(url);
+  }
+
+  async getChatHistory(roomId: string, page?: number, limit?: number) {
+    let url = `/chat/rooms/${roomId}/history`;
+    const params = new URLSearchParams();
+    if (page) params.append('page', page.toString());
+    if (limit) params.append('limit', limit.toString());
+    if (params.toString()) url += `?${params.toString()}`;
+    return this.request(url);
+  }
+
+  async deleteChatMessage(messageId: string) {
+    return this.request(`/chat/messages/${messageId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Available Users for Chat
+  async getAvailableUsers(currentUserId: string) {
+    return this.request(`/chat/users?current_user_id=${currentUserId}`);
+  }
+
   // CSV Upload
   async uploadCSV(file: File) {
     const formData = new FormData();

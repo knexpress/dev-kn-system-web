@@ -285,11 +285,11 @@ export default function QRPaymentPage() {
   const formatCurrency = (amount: string | number) => {
     const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
     if (isNaN(numAmount) || !isFinite(numAmount)) {
-      return '$0.00';
+      return 'AED 0.00';
     }
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-AE', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'AED',
     }).format(numAmount);
   };
 

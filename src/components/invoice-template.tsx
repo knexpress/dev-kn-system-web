@@ -134,7 +134,7 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
         </table>
       </div>
 
-      {/* Charges Summary */}
+      {/* Charges Summary - Normal Invoice shows total with tax, but no tax breakdown */}
       <div className="flex justify-end mb-8">
         <div className="w-80">
           <table className="w-full border-collapse border border-gray-300">
@@ -148,7 +148,7 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
                 <td className="border border-gray-300 px-4 py-2 text-right">{data.charges.deliveryCharge.toFixed(2)}</td>
               </tr>
               <tr className="bg-gray-100">
-                <td className="border border-gray-300 px-4 py-2 text-left font-bold">To Pay</td>
+                <td className="border border-gray-300 px-4 py-2 text-left font-bold">Total Amount</td>
                 <td className="border border-gray-300 px-4 py-2 text-right font-bold">{data.charges.total.toFixed(2)} AED</td>
               </tr>
             </tbody>

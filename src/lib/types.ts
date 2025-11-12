@@ -10,6 +10,7 @@ export interface UserProfile {
   role: 'SUPERADMIN' | 'ADMIN' | 'USER';
   isActive: boolean;
   lastLogin?: string;
+  employee_id?: string;
 }
 
 // New schema types

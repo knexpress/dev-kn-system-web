@@ -68,14 +68,62 @@ export default function InvoicePage() {
         return null;
     }
 
-    // Calculate charges from invoice data
-    const amount = typeof invoice.total_amount === 'number' ? invoice.total_amount : (typeof invoice.total_amount === 'string' ? parseFloat(invoice.total_amount) : 0);
-    const shippingCharge = amount * 0.8; // 80% shipping
-    const deliveryCharge = amount * 0.2; // 20% delivery
-    const subtotal = shippingCharge + deliveryCharge;
-    const taxRate = invoice.tax_rate || 5; // Default 5% VAT
-    const taxAmount = subtotal * (taxRate / 100);
-    const total = subtotal + taxAmount;
+    // Get invoice amounts (handle Decimal128 conversion)
+    const parseDecimal = (value: any): number => {
+        if (typeof value === 'number') return value;
+        if (typeof value === 'string') return parseFloat(value) || 0;
+        if (value && typeof value.toString === 'function') return parseFloat(value.toString()) || 0;
+        return 0;
+    };
+
+    // Base amount without tax
+    const baseAmount = parseDecimal(invoice.amount);
+    // Tax amount
+    const taxAmount = parseDecimal(invoice.tax_amount);
+    // Total amount (includes tax) = amount + tax_amount
+    const totalAmount = parseDecimal(invoice.total_amount);
+    
+    // Calculate shipping and delivery charges from base amount (without tax)
+    // If line_items exist, use them; otherwise split base amount
+    let shippingCharge = 0;
+    let deliveryCharge = 0;
+    
+    if (invoice.line_items && invoice.line_items.length > 0) {
+        // Calculate from line items
+        invoice.line_items.forEach((item: any) => {
+            const itemTotal = parseDecimal(item.total || item.unit_price);
+            // Assume shipping charge is the main charge, delivery is separate if exists
+            if (item.description?.toLowerCase().includes('shipping') || 
+                item.description?.toLowerCase().includes('freight')) {
+                shippingCharge += itemTotal;
+            } else if (item.description?.toLowerCase().includes('delivery')) {
+                deliveryCharge += itemTotal;
+            } else {
+                // Default to shipping charge
+                shippingCharge += itemTotal;
+            }
+        });
+    } else {
+        // Split base amount: 80% shipping, 20% delivery
+        shippingCharge = baseAmount * 0.8;
+        deliveryCharge = baseAmount * 0.2;
+    }
+    
+    // Ensure shipping + delivery = base amount
+    const calculatedBase = shippingCharge + deliveryCharge;
+    if (calculatedBase > 0 && Math.abs(calculatedBase - baseAmount) > 0.01) {
+        // Adjust to match base amount exactly
+        const ratio = baseAmount / calculatedBase;
+        shippingCharge = shippingCharge * ratio;
+        deliveryCharge = deliveryCharge * ratio;
+    }
+    
+    // Subtotal = base amount (shipping + delivery)
+    const subtotal = baseAmount;
+    // Tax rate
+    const taxRate = invoice.tax_rate || (taxAmount > 0 && baseAmount > 0 ? (taxAmount / baseAmount) * 100 : 0);
+    // Total = base amount + tax
+    const total = totalAmount; // Use invoice.total_amount directly
 
     // Convert invoice to template format
     const invoiceData = {

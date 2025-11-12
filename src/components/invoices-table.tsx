@@ -70,12 +70,12 @@ export default function InvoicesTable({ invoices, department, onRemit }: Invoice
                             <TableCell className="font-mono text-xs">{invoice.awb_number || 'N/A'}</TableCell>
                             <TableCell>{invoice.client_id?.company_name || 'Unknown'}</TableCell>
                             <TableCell>${invoice.total_amount ? parseFloat(invoice.total_amount.toString()).toLocaleString() : '0.00'}</TableCell>
-                            <TableCell className="font-mono text-xs">{invoice.service_code || 'N/A'}</TableCell>
-                            <TableCell>{invoice.weight_kg || 'N/A'}</TableCell>
-                            <TableCell>{invoice.volume_cbm || 'N/A'}</TableCell>
-                            <TableCell>{invoice.receiver_name || 'N/A'}</TableCell>
-                            <TableCell className="max-w-[200px] truncate" title={invoice.receiver_address}>{invoice.receiver_address || 'N/A'}</TableCell>
-                            <TableCell>{invoice.receiver_phone || 'N/A'}</TableCell>
+                            <TableCell className="font-mono text-xs">{invoice.service_code ?? 'N/A'}</TableCell>
+                            <TableCell>{invoice.weight_kg != null ? invoice.weight_kg : 'N/A'}</TableCell>
+                            <TableCell>{invoice.volume_cbm != null ? invoice.volume_cbm : 'N/A'}</TableCell>
+                            <TableCell>{invoice.receiver_name ?? 'N/A'}</TableCell>
+                            <TableCell className="max-w-[200px] truncate" title={invoice.receiver_address ?? ''}>{invoice.receiver_address ?? 'N/A'}</TableCell>
+                            <TableCell>{invoice.receiver_phone ?? 'N/A'}</TableCell>
                             <TableCell>{invoice.issue_date ? new Date(invoice.issue_date).toLocaleDateString() : 'N/A'}</TableCell>
                             <TableCell>{invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : 'N/A'}</TableCell>
                             <TableCell>

@@ -161,11 +161,11 @@ export default function CashFlowTracker({
 
   const formatCurrency = (amount: number) => {
     if (typeof amount !== 'number' || isNaN(amount)) {
-      return '$0.00';
+      return 'AED 0.00';
     }
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-AE', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'AED',
     }).format(amount);
   };
 

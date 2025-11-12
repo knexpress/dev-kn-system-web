@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -20,10 +20,10 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { PlusCircle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import LocationSelector from '@/components/location-selector';
 
 interface InvoiceRequestFormProps {
   onRequestCreated: () => void;
@@ -36,27 +36,109 @@ export default function InvoiceRequestForm({ onRequestCreated, currentUser }: In
   const { toast } = useToast();
 
   const [formData, setFormData] = useState({
-    invoice_number: '',
-    tracking_code: '',
-    service_code: '',
-    amount: '',
-    weight_kg: '',
-    volume_cbm: '',
     customer_name: '',
-    customer_company: '',
+    customer_phone: '',
     receiver_name: '',
-    receiver_address: '',
     receiver_phone: '',
-    origin_place: '',
-    destination_place: '',
+    sender_address: '',
+    receiver_address: '',
     shipment_type: '',
-    is_leviable: true,
+    service_code: '',
     notes: '',
   });
+
+  // Determine service code based on sender and receiver addresses
+  const serviceCodeOptions = useMemo(() => {
+    const senderCountry = formData.sender_address.includes('UAE') ? 'UAE' : 
+                          formData.sender_address.includes('Philippines') ? 'PH' : '';
+    const receiverCountry = formData.receiver_address.includes('UAE') ? 'UAE' : 
+                            formData.receiver_address.includes('Philippines') ? 'PH' : '';
+
+    if (senderCountry === 'PH' && receiverCountry === 'UAE') {
+      return [
+        { value: 'PH_TO_UAE', label: 'PH to UAE' },
+        { value: 'PH_TO_UAE_EXPRESS', label: 'PH to UAE Express' },
+        { value: 'PH_TO_UAE_STANDARD', label: 'PH to UAE Standard' },
+      ];
+    } else if (senderCountry === 'UAE' && receiverCountry === 'PH') {
+      return [
+        { value: 'UAE_TO_PH', label: 'UAE to PH' },
+        { value: 'UAE_TO_PH_EXPRESS', label: 'UAE to PH Express' },
+        { value: 'UAE_TO_PH_STANDARD', label: 'UAE to PH Standard' },
+      ];
+    }
+    return [];
+  }, [formData.sender_address, formData.receiver_address]);
+
+  // Handle location changes from LocationSelector
+  const handleSenderAddressChange = (value: string) => {
+    setFormData((prev) => {
+      // Check if current service_code is still valid for new route
+      const newSenderCountry = value.includes('UAE') ? 'UAE' : 
+                                value.includes('Philippines') ? 'PH' : '';
+      const receiverCountry = prev.receiver_address.includes('UAE') ? 'UAE' : 
+                               prev.receiver_address.includes('Philippines') ? 'PH' : '';
+      
+      // Determine valid service codes for new route
+      const validServiceCodes = 
+        (newSenderCountry === 'PH' && receiverCountry === 'UAE') 
+          ? ['PH_TO_UAE', 'PH_TO_UAE_EXPRESS', 'PH_TO_UAE_STANDARD']
+          : (newSenderCountry === 'UAE' && receiverCountry === 'PH')
+          ? ['UAE_TO_PH', 'UAE_TO_PH_EXPRESS', 'UAE_TO_PH_STANDARD']
+          : [];
+      
+      return {
+        ...prev,
+        sender_address: value,
+        // Reset service_code if it's no longer valid for the new route
+        service_code: prev.service_code && validServiceCodes.includes(prev.service_code) 
+          ? prev.service_code 
+          : ''
+      };
+    });
+  };
+
+  const handleReceiverAddressChange = (value: string) => {
+    setFormData((prev) => {
+      // Check if current service_code is still valid for new route
+      const senderCountry = prev.sender_address.includes('UAE') ? 'UAE' : 
+                             prev.sender_address.includes('Philippines') ? 'PH' : '';
+      const newReceiverCountry = value.includes('UAE') ? 'UAE' : 
+                                  value.includes('Philippines') ? 'PH' : '';
+      
+      // Determine valid service codes for new route
+      const validServiceCodes = 
+        (senderCountry === 'PH' && newReceiverCountry === 'UAE') 
+          ? ['PH_TO_UAE', 'PH_TO_UAE_EXPRESS', 'PH_TO_UAE_STANDARD']
+          : (senderCountry === 'UAE' && newReceiverCountry === 'PH')
+          ? ['UAE_TO_PH', 'UAE_TO_PH_EXPRESS', 'UAE_TO_PH_STANDARD']
+          : [];
+      
+      return {
+        ...prev,
+        receiver_address: value,
+        // Reset service_code if it's no longer valid for the new route
+        service_code: prev.service_code && validServiceCodes.includes(prev.service_code) 
+          ? prev.service_code 
+          : ''
+      };
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+
+    // Validate service code is selected when addresses are provided
+    if (formData.sender_address && formData.receiver_address && !formData.service_code) {
+      toast({
+        variant: 'destructive',
+        title: 'Validation Error',
+        description: 'Please select a service code based on the sender and receiver addresses',
+      });
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       const result = await apiClient.createInvoiceRequest({
@@ -72,21 +154,14 @@ export default function InvoiceRequestForm({ onRequestCreated, currentUser }: In
         });
         setIsDialogOpen(false);
         setFormData({
-          invoice_number: '',
-          tracking_code: '',
-          service_code: '',
-          amount: '',
-          weight_kg: '',
-          volume_cbm: '',
           customer_name: '',
-          customer_company: '',
+          customer_phone: '',
           receiver_name: '',
-          receiver_address: '',
           receiver_phone: '',
-          origin_place: '',
-          destination_place: '',
+          sender_address: '',
+          receiver_address: '',
           shipment_type: '',
-          is_leviable: true,
+          service_code: '',
           notes: '',
         });
         onRequestCreated();
@@ -120,90 +195,11 @@ export default function InvoiceRequestForm({ onRequestCreated, currentUser }: In
         <DialogHeader>
           <DialogTitle>Create New Invoice Request</DialogTitle>
           <DialogDescription>
-            Fill in the details for the invoice request. All fields marked with * are required.
+            Enter client details for the invoice request. All fields marked with * are required.
           </DialogDescription>
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Invoice & Tracking Information */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Invoice & Tracking Information</h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="invoice_number">Invoice Number *</Label>
-                <Input
-                  id="invoice_number"
-                  value={formData.invoice_number}
-                  onChange={(e) => setFormData({ ...formData, invoice_number: e.target.value })}
-                  required
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="tracking_code">Tracking Code *</Label>
-                <Input
-                  id="tracking_code"
-                  value={formData.tracking_code}
-                  onChange={(e) => setFormData({ ...formData, tracking_code: e.target.value })}
-                  required
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="service_code">Service Code *</Label>
-                <Input
-                  id="service_code"
-                  value={formData.service_code}
-                  onChange={(e) => setFormData({ ...formData, service_code: e.target.value })}
-                  required
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Shipment Details */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Shipment Details</h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="amount">Amount (AED) *</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  step="0.01"
-                  value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                  required
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="weight_kg">Weight (KG) *</Label>
-                <Input
-                  id="weight_kg"
-                  type="number"
-                  step="0.01"
-                  value={formData.weight_kg}
-                  onChange={(e) => setFormData({ ...formData, weight_kg: e.target.value })}
-                  required
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="volume_cbm">Volume (CBM)</Label>
-                <Input
-                  id="volume_cbm"
-                  type="number"
-                  step="0.01"
-                  value={formData.volume_cbm}
-                  onChange={(e) => setFormData({ ...formData, volume_cbm: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
-
           {/* Customer Information */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Customer Information</h3>
@@ -220,11 +216,13 @@ export default function InvoiceRequestForm({ onRequestCreated, currentUser }: In
               </div>
               
               <div>
-                <Label htmlFor="customer_company">Customer Company</Label>
+                <Label htmlFor="customer_phone">Customer Phone</Label>
                 <Input
-                  id="customer_company"
-                  value={formData.customer_company}
-                  onChange={(e) => setFormData({ ...formData, customer_company: e.target.value })}
+                  id="customer_phone"
+                  type="tel"
+                  placeholder="+971501234567"
+                  value={formData.customer_phone}
+                  onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
                 />
               </div>
             </div>
@@ -234,23 +232,13 @@ export default function InvoiceRequestForm({ onRequestCreated, currentUser }: In
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Receiver Information</h3>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="receiver_name">Receiver Name *</Label>
                 <Input
                   id="receiver_name"
                   value={formData.receiver_name}
                   onChange={(e) => setFormData({ ...formData, receiver_name: e.target.value })}
-                  required
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="receiver_address">Receiver Address *</Label>
-                <Input
-                  id="receiver_address"
-                  value={formData.receiver_address}
-                  onChange={(e) => setFormData({ ...formData, receiver_address: e.target.value })}
                   required
                 />
               </div>
@@ -271,25 +259,23 @@ export default function InvoiceRequestForm({ onRequestCreated, currentUser }: In
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Location Information</h3>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="origin_place">Origin Place *</Label>
-                <Input
-                  id="origin_place"
-                  placeholder="e.g., Dubai, UAE"
-                  value={formData.origin_place}
-                  onChange={(e) => setFormData({ ...formData, origin_place: e.target.value })}
+            <div className="space-y-4">
+              {/* Sender Address */}
+              <div className="space-y-2">
+                <LocationSelector
+                  label="Sender Address"
+                  value={formData.sender_address}
+                  onChange={handleSenderAddressChange}
                   required
                 />
               </div>
               
-              <div>
-                <Label htmlFor="destination_place">Destination Place *</Label>
-                <Input
-                  id="destination_place"
-                  placeholder="e.g., Manila, Philippines"
-                  value={formData.destination_place}
-                  onChange={(e) => setFormData({ ...formData, destination_place: e.target.value })}
+              {/* Receiver Address */}
+              <div className="space-y-2">
+                <LocationSelector
+                  label="Receiver Address"
+                  value={formData.receiver_address}
+                  onChange={handleReceiverAddressChange}
                   required
                 />
               </div>
@@ -300,29 +286,51 @@ export default function InvoiceRequestForm({ onRequestCreated, currentUser }: In
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Shipment Details</h3>
             
-            <div>
-              <Label htmlFor="shipment_type">Shipment Type *</Label>
-              <Select
-                value={formData.shipment_type}
-                onValueChange={(value) => setFormData({ ...formData, shipment_type: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select shipment type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="DOCUMENT">Document</SelectItem>
-                  <SelectItem value="NON_DOCUMENT">Non-Document</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="shipment_type">Shipment Type *</Label>
+                <Select
+                  value={formData.shipment_type}
+                  onValueChange={(value) => setFormData({ ...formData, shipment_type: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select shipment type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DOCUMENT">Document</SelectItem>
+                    <SelectItem value="NON_DOCUMENT">Non-Document</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="is_leviable"
-                checked={formData.is_leviable}
-                onCheckedChange={(checked) => setFormData({ ...formData, is_leviable: checked as boolean })}
-              />
-              <Label htmlFor="is_leviable">Leviable (Taxable)</Label>
+              <div>
+                <Label htmlFor="service_code">Service Code *</Label>
+                <Select
+                  value={formData.service_code}
+                  onValueChange={(value) => setFormData({ ...formData, service_code: value })}
+                  disabled={serviceCodeOptions.length === 0}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={
+                      serviceCodeOptions.length === 0 
+                        ? "Select sender and receiver addresses first" 
+                        : "Select service code"
+                    } />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {serviceCodeOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {serviceCodeOptions.length === 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Please select sender and receiver addresses to see available service codes
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 

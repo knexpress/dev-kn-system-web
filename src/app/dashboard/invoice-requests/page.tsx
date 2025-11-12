@@ -349,7 +349,7 @@ export default function InvoiceRequestsPage() {
       // For now, we'll create a client record from the customer information
       // In the future, you might want to add client_id to the InvoiceRequest schema
       const clientData = {
-        company_name: (selectedRequestForInvoice as any).customer_company || (selectedRequestForInvoice as any).customer_name,
+        company_name: (selectedRequestForInvoice as any).customer_name,
         contact_name: (selectedRequestForInvoice as any).customer_name,
         email: (selectedRequestForInvoice as any).customer_email || 'customer@example.com',
         phone: (selectedRequestForInvoice as any).customer_phone || '+971XXXXXXXXX',
@@ -393,7 +393,7 @@ export default function InvoiceRequestsPage() {
       const invoiceResult = await apiClient.createInvoiceUnified({
         request_id: (selectedRequestForInvoice as any)._id,
         client_id: clientId,
-        amount: invoiceData.totalAmount,
+        amount: invoiceData.baseAmount || invoiceData.charges.subtotal, // Use base amount WITHOUT tax
         line_items: invoiceData.lineItems.map(item => ({
           description: item.description,
           quantity: item.quantity,
@@ -464,7 +464,7 @@ export default function InvoiceRequestsPage() {
           amount: invoiceTotalAmount,
           delivery_type: 'COD',
           delivery_address: (selectedRequestForInvoice as any).receiver?.address || 'Address to be confirmed',
-          delivery_instructions: 'Scan QR code to make payment. Customer can collect from warehouse.'
+          delivery_instructions: 'Deliver to customer address. Driver will use QR code for payment verification.'
         };
 
         console.log('📤 Sending delivery assignment data:', JSON.stringify(deliveryAssignmentData, null, 2));
@@ -636,7 +636,8 @@ export default function InvoiceRequestsPage() {
         unitPrice: shippingCharge,
         total: shippingCharge
       }],
-      totalAmount: total,
+      baseAmount: subtotal, // Base amount without tax (for invoice.amount field)
+      totalAmount: total, // Total amount with tax (for display and total_amount field)
       notes: `Invoice for request ${request.request_id || request._id}`
     };
   };
@@ -751,9 +752,9 @@ export default function InvoiceRequestsPage() {
                   <TableCell>
                     <div>
                       <div className="font-medium">{request.customer_name}</div>
-                      {request.customer_company && (
+                      {request.customer_phone && (
                         <div className="text-sm text-muted-foreground">
-                          {request.customer_company}
+                          {request.customer_phone}
                         </div>
                       )}
                     </div>
