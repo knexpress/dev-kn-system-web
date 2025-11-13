@@ -7,7 +7,7 @@ import TaxInvoiceTemplate from "@/components/tax-invoice-template";
 import { apiClient } from "@/lib/api-client";
 import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, FileText, Receipt, AlertCircle } from 'lucide-react';
+import { ArrowLeft, FileText, Receipt, AlertCircle, Download, Printer } from 'lucide-react';
 import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
@@ -102,74 +102,100 @@ export default function InvoicePage() {
         );
     }
 
-    // Get invoice amounts (handle Decimal128 conversion)
-    const parseDecimal = (value: any): number => {
-        if (typeof value === 'number') return value;
-        if (typeof value === 'string') return parseFloat(value) || 0;
-        if (value && typeof value.toString === 'function') return parseFloat(value.toString()) || 0;
-        return 0;
+    // Helper function to parse and round decimals
+    const parseDecimal = (value: any, decimals: number = 2): number => {
+        let num = 0;
+        if (typeof value === 'number') {
+            num = value;
+        } else if (typeof value === 'string') {
+            num = parseFloat(value) || 0;
+        } else if (value && typeof value.toString === 'function') {
+            num = parseFloat(value.toString()) || 0;
+        }
+        // Round to specified decimal places
+        return Math.round(num * Math.pow(10, decimals)) / Math.pow(10, decimals);
     };
 
-    // Base amount without tax
-    const baseAmount = parseDecimal(invoice.amount);
-    // Tax amount
-    const taxAmount = parseDecimal(invoice.tax_amount);
-    // Total amount (includes tax) = amount + tax_amount
-    const totalAmount = parseDecimal(invoice.total_amount);
+    // Parse amounts from API (round to 2 decimals)
+    const baseAmount = parseDecimal(invoice.amount, 2);
+    const taxAmount = parseDecimal(invoice.tax_amount, 2);
+    const totalAmount = parseDecimal(invoice.total_amount, 2);
     
-    // Calculate shipping and delivery charges from base amount (without tax)
-    // If line_items exist, use them; otherwise split base amount
+    // Calculate shipping and delivery charges from line items or split base amount
     let shippingCharge = 0;
     let deliveryCharge = 0;
     
     if (invoice.line_items && invoice.line_items.length > 0) {
         // Calculate from line items
         invoice.line_items.forEach((item: any) => {
-            const itemTotal = parseDecimal(item.total || item.unit_price);
-            // Assume shipping charge is the main charge, delivery is separate if exists
+            const itemTotal = parseDecimal(item.total || item.unit_price, 2);
             if (item.description?.toLowerCase().includes('shipping') || 
                 item.description?.toLowerCase().includes('freight')) {
                 shippingCharge += itemTotal;
             } else if (item.description?.toLowerCase().includes('delivery')) {
                 deliveryCharge += itemTotal;
             } else {
-                // Default to shipping charge
                 shippingCharge += itemTotal;
             }
         });
+        // Round after calculation
+        shippingCharge = parseDecimal(shippingCharge, 2);
+        deliveryCharge = parseDecimal(deliveryCharge, 2);
     } else {
         // Split base amount: 80% shipping, 20% delivery
-        shippingCharge = baseAmount * 0.8;
-        deliveryCharge = baseAmount * 0.2;
+        shippingCharge = parseDecimal(baseAmount * 0.8, 2);
+        deliveryCharge = parseDecimal(baseAmount * 0.2, 2);
     }
     
-    // Ensure shipping + delivery = base amount
+    // Ensure shipping + delivery = base amount (adjust if needed)
     const calculatedBase = shippingCharge + deliveryCharge;
     if (calculatedBase > 0 && Math.abs(calculatedBase - baseAmount) > 0.01) {
-        // Adjust to match base amount exactly
         const ratio = baseAmount / calculatedBase;
-        shippingCharge = shippingCharge * ratio;
-        deliveryCharge = deliveryCharge * ratio;
+        shippingCharge = parseDecimal(shippingCharge * ratio, 2);
+        deliveryCharge = parseDecimal(deliveryCharge * ratio, 2);
     }
     
-    // Subtotal = base amount (shipping + delivery)
     const subtotal = baseAmount;
-    // Tax rate
-    const taxRate = invoice.tax_rate || (taxAmount > 0 && baseAmount > 0 ? (taxAmount / baseAmount) * 100 : 0);
-    // Total = base amount + tax
-    const total = totalAmount; // Use invoice.total_amount directly
+    const taxRate = invoice.tax_rate || (taxAmount > 0 && baseAmount > 0 ? parseDecimal((taxAmount / baseAmount) * 100, 2) : 0);
+    const total = totalAmount;
+
+    // Get AWB number - check direct field first, then request_id
+    const awbNumber = invoice.awb_number || invoice.request_id?.awb_number || invoice.request_id?.request_id || 'N/A';
+    
+    // Get receiver info - use direct fields first, then fallback to request_id
+    const receiverName = invoice.receiver_name || invoice.request_id?.receiver?.name || invoice.client_id?.contact_name || invoice.client_id?.company_name || 'N/A';
+    const receiverAddress = invoice.receiver_address || invoice.request_id?.receiver?.address || 'Address not provided';
+    const receiverPhone = invoice.receiver_phone || invoice.request_id?.receiver?.phone || '+971XXXXXXXXX';
+    
+    // Parse receiver address to extract city/emirate
+    const addressParts = receiverAddress.split(',').map((p: string) => p.trim());
+    const emirate = addressParts.length > 1 ? addressParts[addressParts.length - 2] : (invoice.request_id?.receiver?.city || 'Dubai');
+    
+    // Get shipment details - use direct fields first
+    const weight = parseDecimal(invoice.weight_kg || invoice.request_id?.shipment?.weight, 2);
+    const volume = parseDecimal(invoice.volume_cbm || invoice.request_id?.shipment?.volume, 2);
+    const numberOfBoxes = invoice.request_id?.shipment?.number_of_boxes || 1;
+    const weightType = invoice.request_id?.shipment?.weight_type || 'ACTUAL';
+    
+    // Calculate rate from amount and weight if not provided
+    let rate = 25.00;
+    if (invoice.base_rate) {
+        rate = parseDecimal(invoice.base_rate, 2);
+    } else if (weight > 0 && baseAmount > 0) {
+        rate = parseDecimal(baseAmount / weight, 2);
+    }
 
     // Convert invoice to template format
     const invoiceData = {
         invoiceNumber: invoice.invoice_id || invoice._id,
-        awbNumber: invoice.request_id?.awb_number || invoice.request_id?.request_id || 'N/A',
-        trackingNumber: invoice.request_id?.request_id ? `TRK${invoice.request_id.request_id.toUpperCase()}` : 'N/A',
-        date: invoice.issue_date || new Date().toISOString(),
+        awbNumber: awbNumber,
+        trackingNumber: awbNumber !== 'N/A' ? `TRK${awbNumber.toUpperCase()}` : 'N/A',
+        date: invoice.issue_date ? new Date(invoice.issue_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
         receiverInfo: {
-            name: (invoice.client_id?.company_name || 'Unknown').toUpperCase(),
-            address: invoice.request_id?.receiver?.address || 'Address not provided',
-            emirate: invoice.request_id?.receiver?.city || 'Dubai',
-            mobile: invoice.request_id?.receiver?.phone || '+971XXXXXXXXX'
+            name: receiverName.toUpperCase(),
+            address: receiverAddress,
+            emirate: emirate,
+            mobile: receiverPhone
         },
         senderInfo: {
             address: '11th Street Warehouse No. 19, Rocky Warehouses Al Qusais Industrial 1, Dubai - UAE',
@@ -177,10 +203,10 @@ export default function InvoicePage() {
             phone: '+971 56 864 3473'
         },
         shipmentDetails: {
-            numberOfBoxes: invoice.request_id?.shipment?.number_of_boxes || 1,
-            weight: invoice.request_id?.shipment?.weight ? parseFloat(invoice.request_id.shipment.weight.toString()) : 0,
-            weightType: invoice.request_id?.shipment?.weight_type || 'ACTUAL',
-            rate: invoice.base_rate ? parseFloat(invoice.base_rate.toString()) : 25.00
+            numberOfBoxes: numberOfBoxes,
+            weight: weight,
+            weightType: weightType,
+            rate: rate
         },
         charges: {
             shippingCharge: shippingCharge,
@@ -192,7 +218,7 @@ export default function InvoicePage() {
         },
         remarks: {
             boxNumbers: invoice.notes || 'No remarks',
-            agent: 'SYSTEM'
+            agent: invoice.created_by?.full_name || 'SYSTEM'
         },
         termsAndConditions: 'Cash Upon Receipt of Goods',
         qrCode: qrCodeData ? {
@@ -201,10 +227,44 @@ export default function InvoicePage() {
         } : undefined
     };
 
+    // Print/Download PDF function
+    const handlePrint = () => {
+        window.print();
+    };
+
+    // Download as PDF function
+    const handleDownloadPDF = async () => {
+        try {
+            const invoiceElement = document.getElementById('invoice-content');
+            if (!invoiceElement) {
+                handlePrint();
+                return;
+            }
+
+            // Dynamically import html2pdf.js
+            const html2pdfModule = await import('html2pdf.js');
+            const html2pdf = html2pdfModule.default || html2pdfModule;
+
+            const opt = {
+                margin: 0.5,
+                filename: `Invoice-${invoiceData.invoiceNumber}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true },
+                jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
+            };
+            
+            await html2pdf().set(opt).from(invoiceElement).save();
+        } catch (error) {
+            console.error('Error generating PDF:', error);
+            // Fallback to print dialog
+            handlePrint();
+        }
+    };
+
     return (
         <div className="space-y-4">
             {/* Navigation Bar */}
-            <Card className="p-4">
+            <Card className="p-4 no-print">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <Button
@@ -235,15 +295,32 @@ export default function InvoicePage() {
                             </Button>
                         </div>
                     </div>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            onClick={handlePrint}
+                        >
+                            <Printer className="h-4 w-4 mr-2" />
+                            Print
+                        </Button>
+                        <Button
+                            onClick={handleDownloadPDF}
+                        >
+                            <Download className="h-4 w-4 mr-2" />
+                            Download PDF
+                        </Button>
+                    </div>
                 </div>
             </Card>
 
             {/* Invoice Template */}
-            {invoiceType === 'tax' ? (
-                <TaxInvoiceTemplate data={invoiceData} />
-            ) : (
-                <InvoiceTemplate data={invoiceData} />
-            )}
+            <div id="invoice-content">
+                {invoiceType === 'tax' ? (
+                    <TaxInvoiceTemplate data={invoiceData} />
+                ) : (
+                    <InvoiceTemplate data={invoiceData} />
+                )}
+            </div>
         </div>
     );
 }

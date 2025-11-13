@@ -196,3 +196,29 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Print styles for invoices */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  
+  #invoice-content,
+  #invoice-content * {
+    visibility: visible;
+  }
+  
+  #invoice-content {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  
+  /* Hide navigation and buttons when printing */
+  .no-print,
+  button,
+  .print\\:hidden {
+    display: none !important;
+  }
+}

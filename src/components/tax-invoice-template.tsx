@@ -124,7 +124,7 @@ export default function TaxInvoiceTemplate({ data }: TaxInvoiceTemplateProps) {
               <td className="border border-gray-300 px-4 py-2">{data.shipmentDetails.numberOfBoxes}</td>
               <td className="border border-gray-300 px-4 py-2">
                 <div>
-                  <span className="font-semibold">{data.shipmentDetails.weight} kg</span>
+                  <span className="font-semibold">{data.shipmentDetails.weight.toFixed(2)} kg</span>
                   <div className="text-xs text-gray-600">
                     Weight Base: {data.shipmentDetails.weightType === 'ACTUAL' ? 'Actual Weight' : 'Volumetric Weight'}
                   </div>
