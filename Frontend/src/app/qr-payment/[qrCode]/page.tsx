@@ -66,7 +66,7 @@ export default function QRPaymentPage() {
   const params = useParams();
   const router = useRouter();
   const { toast } = useToast();
-  const qrCode = params.qrCode as string;
+  const qrCode = params?.qrCode as string;
 
   const [assignment, setAssignment] = useState<DeliveryAssignment | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,17 +84,30 @@ export default function QRPaymentPage() {
   const [savingDriverInfo, setSavingDriverInfo] = useState(false);
 
   useEffect(() => {
-    if (qrCode) {
-      fetchAssignment();
+    if (!qrCode) {
+      setError('QR code is required');
+      setLoading(false);
+      return;
     }
+    
+    console.log('🔍 Fetching assignment for QR code:', qrCode);
+    fetchAssignment();
   }, [qrCode]);
 
   const fetchAssignment = async () => {
+    if (!qrCode) {
+      setError('QR code is required');
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError('');
       
+      console.log('📡 Calling API with QR code:', qrCode);
       const result = await apiClient.getDeliveryAssignmentByQR(qrCode);
+      console.log('📦 API result:', result);
       
       if (result.success && result.data) {
         setAssignment(result.data);
@@ -111,11 +124,12 @@ export default function QRPaymentPage() {
           }
         }
       } else {
-        setError(result.error || 'Assignment not found');
+        console.error('❌ Assignment not found:', result.error);
+        setError(result.error || 'Assignment not found. Please check the QR code.');
       }
-    } catch (error) {
-      console.error('Error fetching assignment:', error);
-      setError('Failed to load assignment details');
+    } catch (error: any) {
+      console.error('❌ Error fetching assignment:', error);
+      setError(error.message || 'Failed to load assignment details. Please try again.');
     } finally {
       setLoading(false);
     }
