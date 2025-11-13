@@ -131,7 +131,7 @@ export default function TaxInvoiceTemplate({ data }: TaxInvoiceTemplateProps) {
                 </div>
               </td>
               <td className="border border-gray-300 px-4 py-2">{data.shipmentDetails.rate.toFixed(2)}</td>
-              <td className="border border-gray-300 px-4 py-2">{data.charges.subtotal.toFixed(2)}</td>
+              <td className="border border-gray-300 px-4 py-2">{(data.shipmentDetails.weight * data.shipmentDetails.rate).toFixed(2)}</td>
             </tr>
           </tbody>
         </table>

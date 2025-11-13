@@ -112,24 +112,46 @@ export default function InvoicePage() {
         return null;
     }
 
-    // Helper function to parse and round decimals
+    // Helper function to parse and round decimals (handles Decimal128, numbers, strings)
     const parseDecimal = (value: any, decimals: number = 2): number => {
         let num = 0;
+        if (value === null || value === undefined || value === '') {
+            return 0;
+        }
         if (typeof value === 'number') {
             num = value;
         } else if (typeof value === 'string') {
             num = parseFloat(value) || 0;
-        } else if (value && typeof value.toString === 'function') {
-            num = parseFloat(value.toString()) || 0;
+        } else if (value && typeof value === 'object') {
+            // Handle Decimal128 objects or objects with toString method
+            if (value.toString && typeof value.toString === 'function') {
+                num = parseFloat(value.toString()) || 0;
+            } else if (value.$numberDecimal) {
+                // MongoDB Decimal128 format
+                num = parseFloat(value.$numberDecimal) || 0;
+            } else {
+                num = 0;
+            }
         }
         // Round to specified decimal places
         return Math.round(num * Math.pow(10, decimals)) / Math.pow(10, decimals);
     };
 
     // Parse amounts from API (round to 2 decimals)
+    console.log('💰 Raw invoice amount:', invoice.amount, typeof invoice.amount);
+    console.log('💰 Raw invoice delivery_charge:', invoice.delivery_charge, typeof invoice.delivery_charge);
+    console.log('💰 Raw invoice base_amount:', invoice.base_amount, typeof invoice.base_amount);
+    console.log('💰 Raw invoice total_amount:', invoice.total_amount, typeof invoice.total_amount);
+    
     const baseAmount = parseDecimal(invoice.amount, 2); // Shipping amount only
     const deliveryChargeFromInvoice = parseDecimal(invoice.delivery_charge || 0, 2); // Delivery charge from invoice
     const baseAmountWithDelivery = parseDecimal(invoice.base_amount || (baseAmount + deliveryChargeFromInvoice), 2); // Shipping + Delivery
+    
+    console.log('💰 Parsed amounts:', {
+        baseAmount,
+        deliveryChargeFromInvoice,
+        baseAmountWithDelivery
+    });
     
     // Get shipping and delivery charges
     let shippingCharge = baseAmount; // Base amount is shipping only
