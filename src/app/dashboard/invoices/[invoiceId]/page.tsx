@@ -5,10 +5,11 @@ import { useRouter } from 'next/navigation';
 import InvoiceTemplate from "@/components/invoice-template";
 import TaxInvoiceTemplate from "@/components/tax-invoice-template";
 import { apiClient } from "@/lib/api-client";
-import { notFound, useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, FileText, Receipt } from 'lucide-react';
+import { ArrowLeft, FileText, Receipt, AlertCircle } from 'lucide-react';
 import { Card } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function InvoicePage() {
     const params = useParams();
@@ -20,13 +21,22 @@ export default function InvoicePage() {
     
     const [invoice, setInvoice] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const [qrCodeData, setQrCodeData] = useState<any>(null);
 
     useEffect(() => {
         const fetchInvoice = async () => {
+            if (!invoiceId) {
+                setError('Invoice ID is required');
+                setLoading(false);
+                return;
+            }
+
+            console.log('🔍 Fetching invoice with ID:', invoiceId);
+            
             try {
                 const result = await apiClient.getInvoiceUnified(invoiceId);
+                console.log('📄 Invoice API result:', result);
                 if (result.success && result.data) {
                     setInvoice(result.data);
 
@@ -44,28 +54,52 @@ export default function InvoicePage() {
                         // Not a critical error - invoice might not have a delivery assignment yet
                     }
                 } else {
-                    setError(true);
+                    setError(result.error || 'Invoice not found');
                 }
-            } catch (err) {
+            } catch (err: any) {
                 console.error('Error fetching invoice:', err);
-                setError(true);
+                setError(err.message || 'Failed to load invoice');
             } finally {
                 setLoading(false);
             }
         };
 
-        if (invoiceId) {
-            fetchInvoice();
-        }
+        fetchInvoice();
     }, [invoiceId]);
 
     if (loading) {
-        return <div className="p-8">Loading invoice...</div>;
+        return (
+            <div className="flex items-center justify-center p-8">
+                <div className="text-center">
+                    <p className="text-lg">Loading invoice...</p>
+                </div>
+            </div>
+        );
     }
 
     if (error || !invoice) {
-        notFound();
-        return null;
+        return (
+            <div className="p-8 space-y-4">
+                <Card className="p-6">
+                    <Alert variant="destructive">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>Invoice Not Found</AlertTitle>
+                        <AlertDescription>
+                            {error || 'The invoice you are looking for does not exist or could not be loaded.'}
+                        </AlertDescription>
+                    </Alert>
+                    <div className="mt-4">
+                        <Button
+                            variant="outline"
+                            onClick={() => router.push('/dashboard/invoices')}
+                        >
+                            <ArrowLeft className="h-4 w-4 mr-2" />
+                            Back to Invoices
+                        </Button>
+                    </div>
+                </Card>
+            </div>
+        );
     }
 
     // Get invoice amounts (handle Decimal128 conversion)
