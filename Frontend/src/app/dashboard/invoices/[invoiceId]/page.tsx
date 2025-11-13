@@ -37,7 +37,10 @@ export default function InvoicePage() {
             try {
                 const result = await apiClient.getInvoiceUnified(invoiceId);
                 console.log('📄 Invoice API result:', result);
+                console.log('📄 Invoice API result.data:', result.data);
+                console.log('📄 Invoice API result.success:', result.success);
                 if (result.success && result.data) {
+                    console.log('✅ Setting invoice data:', result.data);
                     setInvoice(result.data);
 
                     // Fetch delivery assignment with QR code
@@ -102,6 +105,13 @@ export default function InvoicePage() {
         );
     }
 
+    // Debug: Log invoice data
+    console.log('🔍 Invoice data for mapping:', invoice);
+    if (!invoice) {
+        console.error('❌ Invoice is null or undefined');
+        return null;
+    }
+
     // Helper function to parse and round decimals
     const parseDecimal = (value: any, decimals: number = 2): number => {
         let num = 0;
@@ -117,47 +127,51 @@ export default function InvoicePage() {
     };
 
     // Parse amounts from API (round to 2 decimals)
-    const baseAmount = parseDecimal(invoice.amount, 2);
-    const taxAmount = parseDecimal(invoice.tax_amount, 2);
-    const totalAmount = parseDecimal(invoice.total_amount, 2);
+    const baseAmount = parseDecimal(invoice.amount, 2); // Shipping amount only
+    const deliveryChargeFromInvoice = parseDecimal(invoice.delivery_charge || 0, 2); // Delivery charge from invoice
+    const baseAmountWithDelivery = parseDecimal(invoice.base_amount || (baseAmount + deliveryChargeFromInvoice), 2); // Shipping + Delivery
     
-    // Calculate shipping and delivery charges from line items or split base amount
-    let shippingCharge = 0;
-    let deliveryCharge = 0;
+    // Get shipping and delivery charges
+    let shippingCharge = baseAmount; // Base amount is shipping only
+    let deliveryCharge = deliveryChargeFromInvoice; // Use delivery_charge from invoice
     
-    if (invoice.line_items && invoice.line_items.length > 0) {
-        // Calculate from line items
+    // If delivery_charge is not in invoice, try to calculate from line items
+    if (deliveryCharge === 0 && invoice.line_items && invoice.line_items.length > 0) {
         invoice.line_items.forEach((item: any) => {
             const itemTotal = parseDecimal(item.total || item.unit_price, 2);
-            if (item.description?.toLowerCase().includes('shipping') || 
-                item.description?.toLowerCase().includes('freight')) {
-                shippingCharge += itemTotal;
-            } else if (item.description?.toLowerCase().includes('delivery')) {
+            if (item.description?.toLowerCase().includes('delivery')) {
                 deliveryCharge += itemTotal;
-            } else {
-                shippingCharge += itemTotal;
             }
         });
-        // Round after calculation
-        shippingCharge = parseDecimal(shippingCharge, 2);
         deliveryCharge = parseDecimal(deliveryCharge, 2);
+    }
+    
+    // Get service code to determine tax rules
+    const serviceCode = invoice.service_code || '';
+    
+    // Calculate tax based on service code (tax ONLY on delivery charges)
+    let taxRate = 0;
+    let taxAmount = 0;
+    
+    if (serviceCode === 'PH_TO_UAE') {
+        // PH to UAE: 5% tax on delivery fees only, 0% on shipping
+        taxRate = 5;
+        taxAmount = parseDecimal((deliveryCharge * 5) / 100, 2); // 5% on delivery only
+    } else if (serviceCode === 'UAE_TO_PH') {
+        // UAE to PH: 0% tax on everything
+        taxRate = 0;
+        taxAmount = 0;
     } else {
-        // Split base amount: 80% shipping, 20% delivery
-        shippingCharge = parseDecimal(baseAmount * 0.8, 2);
-        deliveryCharge = parseDecimal(baseAmount * 0.2, 2);
+        // Default: use invoice tax_rate if available, but recalculate tax only on delivery
+        taxRate = parseDecimal(invoice.tax_rate || 0, 2);
+        if (taxRate > 0) {
+            // Only apply tax to delivery charges
+            taxAmount = parseDecimal((deliveryCharge * taxRate) / 100, 2);
+        }
     }
     
-    // Ensure shipping + delivery = base amount (adjust if needed)
-    const calculatedBase = shippingCharge + deliveryCharge;
-    if (calculatedBase > 0 && Math.abs(calculatedBase - baseAmount) > 0.01) {
-        const ratio = baseAmount / calculatedBase;
-        shippingCharge = parseDecimal(shippingCharge * ratio, 2);
-        deliveryCharge = parseDecimal(deliveryCharge * ratio, 2);
-    }
-    
-    const subtotal = baseAmount;
-    const taxRate = invoice.tax_rate || (taxAmount > 0 && baseAmount > 0 ? parseDecimal((taxAmount / baseAmount) * 100, 2) : 0);
-    const total = totalAmount;
+    const subtotal = baseAmountWithDelivery; // Shipping + Delivery
+    const total = parseDecimal(subtotal + taxAmount, 2); // Subtotal + Tax
 
     // Get AWB number - check direct field first, then request_id
     const awbNumber = invoice.awb_number || invoice.request_id?.awb_number || invoice.request_id?.request_id || 'N/A';
@@ -226,6 +240,9 @@ export default function InvoicePage() {
             code: qrCodeData.qr_code || ''
         } : undefined
     };
+
+    // Debug: Log mapped invoice data
+    console.log('📊 Mapped invoiceData:', invoiceData);
 
     // Print/Download PDF function
     const handlePrint = () => {
@@ -315,10 +332,32 @@ export default function InvoicePage() {
 
             {/* Invoice Template */}
             <div id="invoice-content">
-                {invoiceType === 'tax' ? (
-                    <TaxInvoiceTemplate data={invoiceData} />
+                {invoiceData && invoiceData.invoiceNumber ? (
+                    invoiceType === 'tax' ? (
+                        <TaxInvoiceTemplate data={invoiceData} />
+                    ) : (
+                        <InvoiceTemplate data={invoiceData} />
+                    )
                 ) : (
-                    <InvoiceTemplate data={invoiceData} />
+                    <Card className="p-6">
+                        <Alert variant="destructive">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertTitle>Invoice Data Error</AlertTitle>
+                            <AlertDescription>
+                                Invoice data is missing or invalid. Please check the console for details.
+                            </AlertDescription>
+                        </Alert>
+                        <div className="mt-4">
+                            <p className="text-sm text-gray-600">Invoice Object:</p>
+                            <pre className="mt-2 p-2 bg-gray-100 rounded text-xs overflow-auto">
+                                {JSON.stringify(invoice, null, 2)}
+                            </pre>
+                            <p className="text-sm text-gray-600 mt-4">Mapped Invoice Data:</p>
+                            <pre className="mt-2 p-2 bg-gray-100 rounded text-xs overflow-auto">
+                                {JSON.stringify(invoiceData, null, 2)}
+                            </pre>
+                        </div>
+                    </Card>
                 )}
             </div>
         </div>
