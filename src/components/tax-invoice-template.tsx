@@ -56,16 +56,15 @@ export default function TaxInvoiceTemplate({ data }: TaxInvoiceTemplateProps) {
         {/* Left Side - Logo and Company Info */}
         <div className="flex items-start space-x-4">
           {/* Logo */}
-          <div className="bg-green-600 text-white p-4 rounded-lg">
-            <div className="text-3xl font-bold">KN</div>
-            <div className="text-sm italic -mt-1">EXPRESS</div>
+          <div className="bg-green-600 text-white px-5 py-4 rounded-lg">
+            <div className="text-3xl font-bold tracking-wide">KNEX</div>
           </div>
           
           {/* Company Details */}
           <div>
-            <h1 className="text-2xl font-bold text-green-600 mb-1">KN EXPRESS UAE</h1>
+            <h1 className="text-2xl font-bold text-green-600 mb-1">Knex Delivery Services L.L.C.</h1>
             <p className="text-sm text-green-600 mb-2">www.knexpress.ae</p>
-            <p className="text-sm text-gray-700">Knex Delivery Services L.L.C.</p>
+            <p className="text-sm text-gray-700">Dubai, United Arab Emirates</p>
             <p className="text-xs text-gray-600 mt-1">TRN: 100123456789012</p>
           </div>
         </div>
@@ -115,8 +114,7 @@ export default function TaxInvoiceTemplate({ data }: TaxInvoiceTemplateProps) {
             <tr className="bg-gray-50">
               <th className="border border-gray-300 px-4 py-2 text-left font-semibold">No of Boxes</th>
               <th className="border border-gray-300 px-4 py-2 text-left font-semibold">Weight</th>
-              <th className="border border-gray-300 px-4 py-2 text-left font-semibold">Rate</th>
-              <th className="border border-gray-300 px-4 py-2 text-left font-semibold">Amount</th>
+              <th className="border border-gray-300 px-4 py-2 text-left font-semibold">Delivery Charge</th>
             </tr>
           </thead>
           <tbody>
@@ -130,8 +128,7 @@ export default function TaxInvoiceTemplate({ data }: TaxInvoiceTemplateProps) {
                   </div>
                 </div>
               </td>
-              <td className="border border-gray-300 px-4 py-2">{data.shipmentDetails.rate.toFixed(2)}</td>
-              <td className="border border-gray-300 px-4 py-2">{(data.shipmentDetails.weight * data.shipmentDetails.rate).toFixed(2)}</td>
+              <td className="border border-gray-300 px-4 py-2">{data.charges.deliveryCharge.toFixed(2)}</td>
             </tr>
           </tbody>
         </table>
@@ -142,10 +139,12 @@ export default function TaxInvoiceTemplate({ data }: TaxInvoiceTemplateProps) {
         <div className="w-80">
           <table className="w-full border-collapse border border-gray-300">
             <tbody>
-              <tr>
-                <td className="border border-gray-300 px-4 py-2 text-left">Shipping Charge</td>
-                <td className="border border-gray-300 px-4 py-2 text-right">{data.charges.shippingCharge.toFixed(2)}</td>
-              </tr>
+              {data.charges.shippingCharge > 0 && (
+                <tr>
+                  <td className="border border-gray-300 px-4 py-2 text-left">Shipping Charge</td>
+                  <td className="border border-gray-300 px-4 py-2 text-right">{data.charges.shippingCharge.toFixed(2)}</td>
+                </tr>
+              )}
               <tr>
                 <td className="border border-gray-300 px-4 py-2 text-left">Delivery Charge</td>
                 <td className="border border-gray-300 px-4 py-2 text-right">{data.charges.deliveryCharge.toFixed(2)}</td>

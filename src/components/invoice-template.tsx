@@ -56,16 +56,15 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
         {/* Left Side - Logo and Company Info */}
         <div className="flex items-start space-x-4">
           {/* Logo */}
-          <div className="bg-green-600 text-white p-4 rounded-lg">
-            <div className="text-3xl font-bold">KN</div>
-            <div className="text-sm italic -mt-1">EXPRESS</div>
+          <div className="bg-green-600 text-white px-5 py-4 rounded-lg">
+            <div className="text-3xl font-bold tracking-wide">KNEX</div>
           </div>
           
           {/* Company Details */}
           <div>
-            <h1 className="text-2xl font-bold text-green-600 mb-1">KN EXPRESS UAE</h1>
+            <h1 className="text-2xl font-bold text-green-600 mb-1">Knex Delivery Services L.L.C.</h1>
             <p className="text-sm text-green-600 mb-2">www.knexpress.ae</p>
-            <p className="text-sm text-gray-700">Knex Delivery Services L.L.C.</p>
+            <p className="text-sm text-gray-700">Dubai, United Arab Emirates</p>
           </div>
         </div>
 

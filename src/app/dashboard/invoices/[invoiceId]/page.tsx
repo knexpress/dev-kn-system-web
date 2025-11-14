@@ -11,6 +11,17 @@ import { ArrowLeft, FileText, Receipt, AlertCircle, Download, Printer } from 'lu
 import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
+const normalizeServiceCode = (code?: string | null) =>
+  (code || '')
+    .toString()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+
+const isPhToUaeService = (code?: string | null) => {
+  const normalized = normalizeServiceCode(code);
+  return normalized === 'PH_TO_UAE' || normalized.startsWith('PH_TO_UAE_');
+};
+
 export default function InvoicePage() {
     const params = useParams();
     const searchParams = useSearchParams();
@@ -168,29 +179,16 @@ export default function InvoicePage() {
         deliveryCharge = parseDecimal(deliveryCharge, 2);
     }
     
-    // Get service code to determine tax rules
-    const serviceCode = invoice.service_code || '';
-    
-    // Calculate tax based on service code (tax ONLY on delivery charges)
-    let taxRate = 0;
-    let taxAmount = 0;
-    
-    if (serviceCode === 'PH_TO_UAE') {
-        // PH to UAE: 5% tax on delivery fees only, 0% on shipping
-        taxRate = 5;
-        taxAmount = parseDecimal((deliveryCharge * 5) / 100, 2); // 5% on delivery only
-    } else if (serviceCode === 'UAE_TO_PH') {
-        // UAE to PH: 0% tax on everything
-        taxRate = 0;
-        taxAmount = 0;
-    } else {
-        // Default: use invoice tax_rate if available, but recalculate tax only on delivery
-        taxRate = parseDecimal(invoice.tax_rate || 0, 2);
-        if (taxRate > 0) {
-            // Only apply tax to delivery charges
-            taxAmount = parseDecimal((deliveryCharge * taxRate) / 100, 2);
-        }
-    }
+    const serviceCodeRaw =
+        invoice.service_code ||
+        invoice.request_id?.service_code ||
+        invoice.request_id?.verification?.service_code ||
+        '';
+    const isPhToUae = isPhToUaeService(serviceCodeRaw);
+
+    // Calculate tax based on delivery charge only
+    const taxRate = deliveryCharge > 0 && isPhToUae ? 5 : 0;
+    const taxAmount = deliveryCharge > 0 && taxRate > 0 ? parseDecimal((deliveryCharge * taxRate) / 100, 2) : 0;
     
     const subtotal = baseAmountWithDelivery; // Shipping + Delivery
     const total = parseDecimal(subtotal + taxAmount, 2); // Subtotal + Tax
@@ -210,7 +208,12 @@ export default function InvoicePage() {
     // Get shipment details - use direct fields first
     const weight = parseDecimal(invoice.weight_kg || invoice.request_id?.shipment?.weight, 2);
     const volume = parseDecimal(invoice.volume_cbm || invoice.request_id?.shipment?.volume, 2);
-    const numberOfBoxes = invoice.request_id?.shipment?.number_of_boxes || 1;
+    const numberOfBoxes =
+        invoice.request_id?.shipment?.number_of_boxes ||
+        invoice.request_id?.verification?.number_of_boxes ||
+        invoice.request_id?.number_of_boxes ||
+        invoice.number_of_boxes ||
+        1;
     const weightType = invoice.request_id?.shipment?.weight_type || 'ACTUAL';
     
     // Calculate rate from amount and weight if not provided
@@ -225,7 +228,7 @@ export default function InvoicePage() {
     const invoiceData = {
         invoiceNumber: invoice.invoice_id || invoice._id,
         awbNumber: awbNumber,
-        trackingNumber: awbNumber !== 'N/A' ? `TRK${awbNumber.toUpperCase()}` : 'N/A',
+        trackingNumber: awbNumber,
         date: invoice.issue_date ? new Date(invoice.issue_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
         receiverInfo: {
             name: receiverName.toUpperCase(),
@@ -262,6 +265,22 @@ export default function InvoicePage() {
             code: qrCodeData.qr_code || ''
         } : undefined
     };
+
+    const shouldShowDeliveryOnlyInTaxInvoice = isPhToUae;
+    const deliveryOnlyTaxAmount = parseDecimal((deliveryCharge * taxRate) / 100, 2);
+    const deliveryOnlyTotal = parseDecimal(deliveryCharge + deliveryOnlyTaxAmount, 2);
+    const taxInvoiceData = shouldShowDeliveryOnlyInTaxInvoice
+        ? {
+            ...invoiceData,
+            charges: {
+                ...invoiceData.charges,
+                shippingCharge: 0,
+                subtotal: deliveryCharge,
+                taxAmount: deliveryOnlyTaxAmount,
+                total: deliveryOnlyTotal
+            }
+        }
+        : invoiceData;
 
     // Debug: Log mapped invoice data
     console.log('📊 Mapped invoiceData:', invoiceData);
@@ -356,7 +375,7 @@ export default function InvoicePage() {
             <div id="invoice-content">
                 {invoiceData && invoiceData.invoiceNumber ? (
                     invoiceType === 'tax' ? (
-                        <TaxInvoiceTemplate data={invoiceData} />
+                        <TaxInvoiceTemplate data={taxInvoiceData} />
                     ) : (
                         <InvoiceTemplate data={invoiceData} />
                     )

@@ -19,7 +19,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
@@ -31,6 +30,17 @@ import InvoiceTemplate from '@/components/invoice-template';
 import TaxInvoiceTemplate from '@/components/tax-invoice-template';
 import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText } from 'lucide-react';
 
+const normalizeServiceCode = (code?: string | null) =>
+  (code || '')
+    .toString()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+
+const isPhToUaeService = (code?: string | null) => {
+  const normalized = normalizeServiceCode(code);
+  return normalized === 'PH_TO_UAE' || normalized.startsWith('PH_TO_UAE_');
+};
+
 export default function InvoiceRequestsPage() {
   const [invoiceRequests, setInvoiceRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,12 +49,21 @@ export default function InvoiceRequestsPage() {
   const [showInvoicePreview, setShowInvoicePreview] = useState(false);
   const [selectedRequestForInvoice, setSelectedRequestForInvoice] = useState(null);
   const [showTaxInputDialog, setShowTaxInputDialog] = useState(false);
-  const [taxRate, setTaxRate] = useState(5); // Default 5% VAT
+  const [hasDelivery, setHasDelivery] = useState(false); // Delivery required flag
   const [showTaxInvoice, setShowTaxInvoice] = useState(false);
   const [qrCodeData, setQrCodeData] = useState<any>(null);
   const { toast } = useToast();
   const { userProfile } = useAuth();
   const { clearCount } = useNotifications();
+  const getAutoTaxRate = (request?: any) => {
+    if (!request || !hasDelivery) return 0;
+    const serviceCode =
+      request.service_code ||
+      request.verification?.service_code ||
+      request.shipment?.service_code;
+    return isPhToUaeService(serviceCode) ? 5 : 0;
+  };
+  const selectedRequestTaxRate = getAutoTaxRate(selectedRequestForInvoice || undefined);
 
   // Determine which requests to show based on department
   const getVisibleRequests = () => {
@@ -330,8 +349,9 @@ export default function InvoiceRequestsPage() {
     if (!selectedRequestForInvoice) return;
 
     try {
+      const taxRateForRequest = getAutoTaxRate(selectedRequestForInvoice);
       // Convert request to invoice data
-      const invoiceData = convertRequestToInvoiceData(selectedRequestForInvoice, taxRate);
+      const invoiceData = convertRequestToInvoiceData(selectedRequestForInvoice, taxRateForRequest);
       
       // Validate invoice data
       if (!invoiceData) {
@@ -400,7 +420,8 @@ export default function InvoiceRequestsPage() {
           unit_price: item.unitPrice,
           total: item.total
         })),
-        tax_rate: taxRate,
+        tax_rate: taxRateForRequest,
+        has_delivery: hasDelivery, // Pass delivery flag
         notes: invoiceData.notes,
         created_by: userProfile?.employee_id || userProfile?.uid,
         due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
@@ -560,15 +581,21 @@ export default function InvoiceRequestsPage() {
     }
   };
 
-  const convertRequestToInvoiceData = (request: any, taxRate: number = 0, qrCodeData?: any) => {
+  const convertRequestToInvoiceData = (
+    request: any,
+    taxRateOverride?: number,
+    qrCodeData?: any,
+    options: { mode?: 'normal' | 'tax' } = {}
+  ) => {
     console.log('🔄 Converting request to invoice data...');
     console.log('📋 Request data:', request);
-    console.log('💰 Tax rate:', taxRate);
+    console.log('💰 Tax rate override:', taxRateOverride);
     console.log('🔗 QR Code data:', qrCodeData);
+    console.log('🧾 Options:', options);
     // Generate invoice number (you might want to implement proper invoice numbering)
     const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
     const awbNumber = `AWB-${request._id.slice(-6)}`;
-    const trackingNumber = `TRK${request._id.slice(-8).toUpperCase()}`;
+    const trackingNumber = awbNumber;
     
     // Calculate charges based on weight and rate
     // Convert Decimal128 to number if needed
@@ -576,12 +603,36 @@ export default function InvoiceRequestsPage() {
       (typeof request.weight === 'object' && request.weight.$numberDecimal ? 
         parseFloat(request.weight.$numberDecimal) : 
         parseFloat(request.weight.toString())) : 0;
+    const serviceCode =
+      request.service_code ||
+      request.verification?.service_code ||
+      request.shipment?.service_code ||
+      '';
+    const isPhToUae = isPhToUaeService(serviceCode);
+    const mode = options.mode || 'normal';
+    const isTaxMode = mode === 'tax';
     const rate = 31.00; // Default rate, you might want to make this configurable
     const shippingCharge = weight * rate;
-    const deliveryCharge = 0; // Default delivery charge
+    let numberOfBoxes = request.verification?.number_of_boxes || request.shipment?.number_of_boxes || request.number_of_boxes || 1;
+    numberOfBoxes = parseInt(numberOfBoxes, 10);
+    if (!Number.isFinite(numberOfBoxes) || numberOfBoxes < 1) numberOfBoxes = 1;
+    const deliveryCharge = hasDelivery
+      ? (weight > 30
+          ? 0
+          : (numberOfBoxes <= 1 ? 20 : 20 + ((numberOfBoxes - 1) * 5)))
+      : 0;
     const subtotal = shippingCharge + deliveryCharge;
-    const taxAmount = subtotal * (taxRate / 100);
+    const fallbackTaxRate = isPhToUae ? 5 : 0;
+    const effectiveTaxRate = typeof taxRateOverride === 'number' ? taxRateOverride : fallbackTaxRate;
+    const taxRateForDelivery = deliveryCharge > 0 ? effectiveTaxRate : 0;
+    const taxAmount = deliveryCharge > 0 && taxRateForDelivery > 0 ? (deliveryCharge * taxRateForDelivery) / 100 : 0;
     const total = subtotal + taxAmount;
+
+    const shouldShowDeliveryOnly = isTaxMode && isPhToUae;
+    const displayShippingCharge = shouldShowDeliveryOnly ? 0 : shippingCharge;
+    const displaySubtotal = shouldShowDeliveryOnly ? deliveryCharge : subtotal;
+    const displayTaxAmount = shouldShowDeliveryOnly ? (deliveryCharge > 0 ? (deliveryCharge * taxRateForDelivery) / 100 : 0) : taxAmount;
+    const displayTotal = shouldShowDeliveryOnly ? deliveryCharge + displayTaxAmount : total;
     
     return {
       invoiceNumber,
@@ -594,9 +645,17 @@ export default function InvoiceRequestsPage() {
       }),
       receiverInfo: {
         name: request.receiver_name?.toUpperCase() || 'N/A',
-        address: `${request.destination_place || 'N/A'}`,
-        emirate: request.destination_place || 'N/A',
-        mobile: '+971XXXXXXXXX' // You might want to store this in the request
+        address: `${request.destination_place || request.verification?.receiver_address || 'N/A'}`,
+        emirate: (() => {
+          const destination = request.destination_place || request.verification?.receiver_address || '';
+          const parts = destination.split(',').map((p: string) => p.trim()).filter(Boolean);
+          if (parts.length >= 2) {
+            return parts[parts.length - 2];
+          }
+          if (parts.length === 1) return parts[0];
+          return 'N/A';
+        })(),
+        mobile: request.receiver_phone || request.verification?.receiver_phone || request.customer_phone || '+971XXXXXXXXX'
       },
       senderInfo: {
         address: '11th Street Warehouse No. 19, Rocky Warehouses Al Qusais Industrial 1, Dubai - UAE',
@@ -604,18 +663,18 @@ export default function InvoiceRequestsPage() {
         phone: '+971 56 864 3473'
       },
       shipmentDetails: {
-        numberOfBoxes: request.verification?.number_of_boxes || 1,
+        numberOfBoxes: numberOfBoxes,
         weight: weight,
         weightType: request.verification?.weight_type || 'ACTUAL',
         rate: rate
       },
       charges: {
-        shippingCharge: shippingCharge,
+        shippingCharge: displayShippingCharge,
         deliveryCharge: deliveryCharge,
-        subtotal: subtotal,
-        taxRate: taxRate,
-        taxAmount: taxAmount,
-        total: total
+        subtotal: displaySubtotal,
+        taxRate: taxRateForDelivery,
+        taxAmount: displayTaxAmount,
+        total: displayTotal
       },
       remarks: {
         boxNumbers: request.verification?.listed_commodities || 'N/A',
@@ -630,14 +689,22 @@ export default function InvoiceRequestsPage() {
       // Debug log
       _debugQR: qrCodeData ? 'QR data available' : 'QR data missing',
       // Additional properties for invoice creation
-      lineItems: [{
-        description: `Shipping - ${request.verification?.weight_type || 'ACTUAL'} weight`,
-        quantity: 1,
-        unitPrice: shippingCharge,
-        total: shippingCharge
-      }],
-      baseAmount: subtotal, // Base amount without tax (for invoice.amount field)
-      totalAmount: total, // Total amount with tax (for display and total_amount field)
+      lineItems: [
+        {
+          description: `Shipping - ${request.verification?.weight_type || 'ACTUAL'} weight`,
+          quantity: 1,
+          unitPrice: shippingCharge,
+          total: shippingCharge
+        },
+        ...(deliveryCharge > 0 ? [{
+          description: 'Delivery Charge',
+          quantity: numberOfBoxes,
+          unitPrice: parseFloat((deliveryCharge / numberOfBoxes).toFixed(2)),
+          total: deliveryCharge
+        }] : [])
+      ],
+      baseAmount: shippingCharge, // Base shipping amount (for invoice.amount field)
+      totalAmount: shouldShowDeliveryOnly ? displayTotal : total, // Total amount with tax (for display)
       notes: `Invoice for request ${request.request_id || request._id}`
     };
   };
@@ -951,23 +1018,26 @@ export default function InvoiceRequestsPage() {
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <h2 className="text-xl font-bold mb-4">Invoice Generation</h2>
             <p className="text-gray-600 mb-4">
-              Enter the tax rate for invoice generation. Both normal and tax invoices will be created.
+              Confirm whether delivery is required. VAT will be calculated automatically based on the service route.
             </p>
-            
+
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Tax Rate (%)
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={hasDelivery}
+                  onChange={(e) => setHasDelivery(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  Delivery Required
+                </span>
               </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                value={taxRate}
-                onChange={(e) => setTaxRate(parseFloat(e.target.value) || 0)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter tax rate (e.g., 5 for 5%)"
-              />
+              <p className="text-xs text-gray-500 mt-1 ml-6">
+                {hasDelivery 
+                  ? "Delivery charge will be calculated based on weight and number of boxes (FREE if weight > 30kg, otherwise 20 AED + 5 AED per additional box)"
+                  : "No delivery charge will be applied"}
+              </p>
             </div>
 
             <div className="flex justify-end space-x-2">
@@ -976,6 +1046,7 @@ export default function InvoiceRequestsPage() {
                 onClick={() => {
                   setShowTaxInputDialog(false);
                   setSelectedRequestForInvoice(null);
+                  setHasDelivery(false); // Reset delivery flag
                 }}
               >
                 Cancel
@@ -1029,14 +1100,14 @@ export default function InvoiceRequestsPage() {
                   }`}
                   onClick={() => setShowTaxInvoice(true)}
                 >
-                  Tax Invoice ({taxRate}% VAT)
+                  Tax Invoice ({selectedRequestTaxRate}% VAT)
                 </button>
               </div>
               
               {!showTaxInvoice ? (
                 <InvoiceTemplate data={convertRequestToInvoiceData(selectedRequestForInvoice, 0, qrCodeData)} />
               ) : (
-                <TaxInvoiceTemplate data={convertRequestToInvoiceData(selectedRequestForInvoice, taxRate, qrCodeData)} />
+                <TaxInvoiceTemplate data={convertRequestToInvoiceData(selectedRequestForInvoice, selectedRequestTaxRate, qrCodeData, { mode: 'tax' })} />
               )}
             </div>
           </div>

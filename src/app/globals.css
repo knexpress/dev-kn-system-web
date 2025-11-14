@@ -217,8 +217,7 @@ body {
   
   /* Hide navigation and buttons when printing */
   .no-print,
-  button,
-  .print\\:hidden {
+  button {
     display: none !important;
   }
 }
