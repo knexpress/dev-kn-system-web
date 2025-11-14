@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
@@ -28,7 +29,7 @@ import InvoiceRequestForm from '@/components/invoice-request-form';
 import VerificationForm from '@/components/verification-form';
 import InvoiceTemplate from '@/components/invoice-template';
 import TaxInvoiceTemplate from '@/components/tax-invoice-template';
-import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText } from 'lucide-react';
+import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText, ArrowRight, Phone, MapPin, AlertTriangle } from 'lucide-react';
 
 const normalizeServiceCode = (code?: string | null) =>
   (code || '')
@@ -41,6 +42,11 @@ const isPhToUaeService = (code?: string | null) => {
   return normalized === 'PH_TO_UAE' || normalized.startsWith('PH_TO_UAE_');
 };
 
+const isUaeToPhService = (code?: string | null) => {
+  const normalized = normalizeServiceCode(code);
+  return normalized === 'UAE_TO_PH' || normalized.startsWith('UAE_TO_PH_');
+};
+
 export default function InvoiceRequestsPage() {
   const [invoiceRequests, setInvoiceRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,20 +56,36 @@ export default function InvoiceRequestsPage() {
   const [selectedRequestForInvoice, setSelectedRequestForInvoice] = useState(null);
   const [showTaxInputDialog, setShowTaxInputDialog] = useState(false);
   const [hasDelivery, setHasDelivery] = useState(false); // Delivery required flag
+  const [customerTRN, setCustomerTRN] = useState(''); // Optional customer TRN
+  const [batchNumber, setBatchNumber] = useState(''); // Optional batch number
+  const [customDeliveryCharge, setCustomDeliveryCharge] = useState(''); // Manual delivery charge for UAE->PH
   const [showTaxInvoice, setShowTaxInvoice] = useState(false);
   const [qrCodeData, setQrCodeData] = useState<any>(null);
+  const getRequestServiceCode = (request?: any) =>
+    request?.service_code ||
+    request?.verification?.service_code ||
+    request?.shipment?.service_code ||
+    '';
+
   const { toast } = useToast();
   const { userProfile } = useAuth();
   const { clearCount } = useNotifications();
   const getAutoTaxRate = (request?: any) => {
     if (!request || !hasDelivery) return 0;
-    const serviceCode =
-      request.service_code ||
-      request.verification?.service_code ||
-      request.shipment?.service_code;
+    const serviceCode = getRequestServiceCode(request);
     return isPhToUaeService(serviceCode) ? 5 : 0;
   };
   const selectedRequestTaxRate = getAutoTaxRate(selectedRequestForInvoice || undefined);
+  const selectedServiceCode = getRequestServiceCode(selectedRequestForInvoice || undefined);
+  const isUaeToPhSelected = isUaeToPhService(selectedServiceCode);
+  const generateDisabled =
+    !batchNumber.trim() ||
+    (isUaeToPhSelected && hasDelivery && !customDeliveryCharge.trim());
+  const manualChargeForPreview = (() => {
+    if (!isUaeToPhSelected || !customDeliveryCharge.trim()) return undefined;
+    const parsed = parseFloat(customDeliveryCharge);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  })();
 
   // Determine which requests to show based on department
   const getVisibleRequests = () => {
@@ -333,8 +355,17 @@ export default function InvoiceRequestsPage() {
       // Find the request first
       const request = invoiceRequests.find((req: any) => req._id === id);
       if (request) {
+        const existingBatch =
+          request.batch_number ||
+          request.invoice_number ||
+          request.request_id?.batch_number ||
+          '';
         setSelectedRequestForInvoice(request);
         setShowTaxInputDialog(true);
+        setCustomerTRN('');
+        setBatchNumber(existingBatch);
+        setHasDelivery(false);
+        setCustomDeliveryCharge('');
       }
     } catch (error) {
       toast({
@@ -345,13 +376,167 @@ export default function InvoiceRequestsPage() {
     }
   };
 
+  const handleDeliveryToggle = (checked: boolean) => {
+    setHasDelivery(checked);
+    if (!checked) {
+      setCustomDeliveryCharge('');
+    }
+  };
+
+  const formatWeightValue = (weight: any) => {
+    if (weight === null || weight === undefined) return null;
+    try {
+      let parsed;
+      if (typeof weight === 'object') {
+        if ('$numberDecimal' in weight) {
+          parsed = parseFloat(weight.$numberDecimal);
+        } else if (typeof weight.toString === 'function') {
+          parsed = parseFloat(weight.toString());
+        } else {
+          parsed = parseFloat(String(weight));
+        }
+      } else {
+        parsed = parseFloat(String(weight));
+      }
+      if (!isFinite(parsed) || isNaN(parsed)) {
+        return null;
+      }
+      return parsed.toFixed(2);
+    } catch (error) {
+      console.error('Error parsing weight:', error);
+      return null;
+    }
+  };
+
+  const formatDateLabel = (value?: string) => {
+    if (!value) return '—';
+    try {
+      return new Date(value).toLocaleDateString(undefined, {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+    } catch {
+      return value;
+    }
+  };
+
+  const formatServiceCode = (code?: string | null) => {
+    if (!code) return 'N/A';
+    return code
+      .toString()
+      .trim()
+      .replace(/_/g, ' → ')
+      .replace(/\s+/g, ' ');
+  };
+
+  const renderActionControls = (request: any) => {
+    const departmentName = userProfile.department.name;
+
+    if (departmentName === 'Sales') {
+      return (
+        <>
+          {request.status === 'DRAFT' && (
+            <Button
+              size="sm"
+              onClick={() => handleStatusUpdate(request._id, 'SUBMITTED')}
+            >
+              Submit
+            </Button>
+          )}
+          {request.status !== 'COMPLETED' && request.status !== 'CANCELLED' && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => handleDelete(request._id)}
+            >
+              Cancel & Delete
+            </Button>
+          )}
+        </>
+      );
+    }
+
+    if (departmentName === 'Operations') {
+      return (
+        <>
+          {request.status === 'SUBMITTED' && (
+            <Button
+              size="sm"
+              onClick={() => handleOperationsAction(request._id, 'start')}
+            >
+              Start Processing
+            </Button>
+          )}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Delivery</span>
+            <Select
+              value={request.delivery_status}
+              onValueChange={(value) => handleDeliveryStatusUpdate(request._id, value)}
+            >
+              <SelectTrigger className="h-9 w-32 text-xs">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="PENDING">Pending</SelectItem>
+                <SelectItem value="PICKED_UP">Picked Up</SelectItem>
+                <SelectItem value="IN_TRANSIT">In Transit</SelectItem>
+                <SelectItem value="DELIVERED">Delivered</SelectItem>
+                <SelectItem value="FAILED">Failed</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </>
+      );
+    }
+
+    if (departmentName === 'Finance' && request.status === 'VERIFIED') {
+      return (
+        <Button size="sm" onClick={() => handleFinanceAction(request._id)}>
+          Generate Invoice
+        </Button>
+      );
+    }
+
+    return null;
+  };
+
   const handleGenerateInvoices = async () => {
     if (!selectedRequestForInvoice) return;
+    if (!batchNumber.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Batch Number Required',
+        description: 'Please enter a batch number before generating the invoice.',
+      });
+      return;
+    }
 
     try {
+      const serviceCode = getRequestServiceCode(selectedRequestForInvoice);
+      const isUaeToPh = isUaeToPhService(serviceCode);
       const taxRateForRequest = getAutoTaxRate(selectedRequestForInvoice);
+
+      let manualDeliveryChargeValue: number | undefined;
+      if (isUaeToPh && hasDelivery) {
+        const parsed = parseFloat(customDeliveryCharge);
+        if (!customDeliveryCharge.trim() || isNaN(parsed) || parsed <= 0) {
+          toast({
+            variant: 'destructive',
+            title: 'Delivery Charge Required',
+            description: 'Enter a positive delivery charge amount for UAE → PH shipments or disable delivery.',
+          });
+          return;
+        }
+        manualDeliveryChargeValue = parsed;
+      }
       // Convert request to invoice data
-      const invoiceData = convertRequestToInvoiceData(selectedRequestForInvoice, taxRateForRequest);
+      const invoiceData = convertRequestToInvoiceData(
+        selectedRequestForInvoice,
+        taxRateForRequest,
+        undefined,
+        { batchNumber, manualDeliveryCharge: manualDeliveryChargeValue }
+      );
       
       // Validate invoice data
       if (!invoiceData) {
@@ -422,6 +607,8 @@ export default function InvoiceRequestsPage() {
         })),
         tax_rate: taxRateForRequest,
         has_delivery: hasDelivery, // Pass delivery flag
+        customer_trn: customerTRN || undefined,
+        batch_number: batchNumber || undefined,
         notes: invoiceData.notes,
         created_by: userProfile?.employee_id || userProfile?.uid,
         due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
@@ -552,6 +739,10 @@ export default function InvoiceRequestsPage() {
           
           setShowTaxInputDialog(false);
           setShowInvoicePreview(true);
+          setCustomerTRN('');
+          setBatchNumber('');
+        setCustomDeliveryCharge('');
+        setHasDelivery(false);
           fetchInvoiceRequests();
         }
       } else {
@@ -585,17 +776,47 @@ export default function InvoiceRequestsPage() {
     request: any,
     taxRateOverride?: number,
     qrCodeData?: any,
-    options: { mode?: 'normal' | 'tax' } = {}
+    options: { mode?: 'normal' | 'tax'; batchNumber?: string; manualDeliveryCharge?: number } = {}
   ) => {
     console.log('🔄 Converting request to invoice data...');
     console.log('📋 Request data:', request);
     console.log('💰 Tax rate override:', taxRateOverride);
     console.log('🔗 QR Code data:', qrCodeData);
     console.log('🧾 Options:', options);
-    // Generate invoice number (you might want to implement proper invoice numbering)
-    const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
-    const awbNumber = `AWB-${request._id.slice(-6)}`;
+    const fallbackId = (request._id || Date.now().toString()).toString();
+    const invoiceNumber =
+      request.invoice_number ||
+      request.invoice_id ||
+      request.request_id ||
+      `INV-${fallbackId.slice(-6).padStart(6, '0')}`;
+    const awbNumber =
+      request.tracking_code ||
+      request.awb_number ||
+      request.request_id?.tracking_code ||
+      `AWB-${fallbackId.slice(-6)}`;
     const trackingNumber = awbNumber;
+    const senderName =
+      request.customer_name ||
+      request.sender_name ||
+      request.client_id?.company_name ||
+      'N/A';
+    const senderAddress =
+      request.origin_place ||
+      request.sender_address ||
+      request.verification?.sender_address ||
+      'N/A';
+    const senderPhone =
+      request.customer_phone ||
+      request.sender_phone ||
+      request.client_id?.contact_phone ||
+      request.client_id?.phone ||
+      '+971XXXXXXXXX';
+    const senderEmail =
+      request.customer_email ||
+      request.sender_email ||
+      request.client_id?.contact_email ||
+      request.client_id?.email ||
+      '';
     
     // Calculate charges based on weight and rate
     // Convert Decimal128 to number if needed
@@ -603,24 +824,25 @@ export default function InvoiceRequestsPage() {
       (typeof request.weight === 'object' && request.weight.$numberDecimal ? 
         parseFloat(request.weight.$numberDecimal) : 
         parseFloat(request.weight.toString())) : 0;
-    const serviceCode =
-      request.service_code ||
-      request.verification?.service_code ||
-      request.shipment?.service_code ||
-      '';
+    const serviceCode = getRequestServiceCode(request);
     const isPhToUae = isPhToUaeService(serviceCode);
+    const isUaeToPh = isUaeToPhService(serviceCode);
     const mode = options.mode || 'normal';
+    const providedBatchNumber = options.batchNumber;
     const isTaxMode = mode === 'tax';
     const rate = 31.00; // Default rate, you might want to make this configurable
     const shippingCharge = weight * rate;
     let numberOfBoxes = request.verification?.number_of_boxes || request.shipment?.number_of_boxes || request.number_of_boxes || 1;
     numberOfBoxes = parseInt(numberOfBoxes, 10);
     if (!Number.isFinite(numberOfBoxes) || numberOfBoxes < 1) numberOfBoxes = 1;
-    const deliveryCharge = hasDelivery
-      ? (weight > 30
-          ? 0
-          : (numberOfBoxes <= 1 ? 20 : 20 + ((numberOfBoxes - 1) * 5)))
-      : 0;
+    let deliveryCharge = 0;
+    if (hasDelivery) {
+      if (isUaeToPh && typeof options.manualDeliveryCharge === 'number' && options.manualDeliveryCharge > 0) {
+        deliveryCharge = parseFloat(options.manualDeliveryCharge.toFixed(2));
+      } else if (!isUaeToPh) {
+        deliveryCharge = weight > 30 ? 0 : (numberOfBoxes <= 1 ? 20 : 20 + ((numberOfBoxes - 1) * 5));
+      }
+    }
     const subtotal = shippingCharge + deliveryCharge;
     const fallbackTaxRate = isPhToUae ? 5 : 0;
     const effectiveTaxRate = typeof taxRateOverride === 'number' ? taxRateOverride : fallbackTaxRate;
@@ -637,6 +859,7 @@ export default function InvoiceRequestsPage() {
     return {
       invoiceNumber,
       awbNumber,
+      batchNumber: providedBatchNumber || request.batch_number || request.request_id?.batch_number || '',
       trackingNumber,
       date: new Date().toLocaleDateString('en-GB', {
         day: '2-digit',
@@ -658,9 +881,10 @@ export default function InvoiceRequestsPage() {
         mobile: request.receiver_phone || request.verification?.receiver_phone || request.customer_phone || '+971XXXXXXXXX'
       },
       senderInfo: {
-        address: '11th Street Warehouse No. 19, Rocky Warehouses Al Qusais Industrial 1, Dubai - UAE',
-        email: 'customercare@knexpress.ae',
-        phone: '+971 56 864 3473'
+        name: senderName,
+        address: senderAddress,
+        email: senderEmail || undefined,
+        phone: senderPhone
       },
       shipmentDetails: {
         numberOfBoxes: numberOfBoxes,
@@ -698,8 +922,8 @@ export default function InvoiceRequestsPage() {
         },
         ...(deliveryCharge > 0 ? [{
           description: 'Delivery Charge',
-          quantity: numberOfBoxes,
-          unitPrice: parseFloat((deliveryCharge / numberOfBoxes).toFixed(2)),
+          quantity: isUaeToPh ? 1 : numberOfBoxes,
+          unitPrice: isUaeToPh ? deliveryCharge : parseFloat((deliveryCharge / numberOfBoxes).toFixed(2)),
           total: deliveryCharge
         }] : [])
       ],
@@ -794,220 +1018,168 @@ export default function InvoiceRequestsPage() {
             <div className="flex items-center justify-center h-32">
               <div className="text-lg">Loading invoice requests...</div>
             </div>
-          ) : (
-            <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Receiver</TableHead>
-                <TableHead>Route</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Weight</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Delivery</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(Array.isArray(filteredRequests) ? filteredRequests : []).map((request) => (
-                <TableRow key={request._id}>
-                  <TableCell className="font-mono text-xs">
-                    {request._id.slice(-8)}
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{request.customer_name}</div>
-                      {request.customer_phone && (
-                        <div className="text-sm text-muted-foreground">
-                          {request.customer_phone}
-                        </div>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{request.receiver_name}</div>
-                      {request.receiver_company && (
-                        <div className="text-sm text-muted-foreground">
-                          {request.receiver_company}
-                        </div>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">
-                      <div>{request.origin_place}</div>
-                      <div className="text-muted-foreground">→</div>
-                      <div>{request.destination_place}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">
-                      {request.shipment_type === 'DOCUMENT' ? 'Document' : 'Non-Document'}
-                    </Badge>
-                    {request.is_leviable && (
-                      <Badge variant="secondary" className="ml-1">Taxable</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {request.weight ? (
-                      <span>
-                        {(() => {
-                          try {
-                            let weightValue;
-                            
-                            // Handle Decimal128 from MongoDB
-                            if (typeof request.weight === 'object' && request.weight !== null) {
-                              // Try to get the value from Decimal128 object
-                              if ('$numberDecimal' in request.weight) {
-                                weightValue = parseFloat(request.weight.$numberDecimal);
-                              } else if (request.weight.toString) {
-                                weightValue = parseFloat(request.weight.toString());
-                              } else {
-                                // Try to access common Decimal128 fields
-                                weightValue = parseFloat(String(request.weight));
-                              }
-                            } else {
-                              weightValue = parseFloat(String(request.weight));
-                            }
-                            
-                            // Check if parsing resulted in a valid number
-                            if (!isNaN(weightValue) && isFinite(weightValue)) {
-                              return weightValue.toFixed(2);
-                            } else {
-                              return '0.00';
-                            }
-                          } catch (error) {
-                            console.error('Error parsing weight:', error);
-                            return 'N/A';
-                          }
-                        })()} kg
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">Not set</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={getStatusBadgeColor(request.status)}>
-                      {request.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={getDeliveryStatusBadgeColor(request.delivery_status)}>
-                      {request.delivery_status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {new Date(request.createdAt).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      {/* Department-specific actions */}
-                      {userProfile.department.name === 'Sales' && (
-                        <>
-                          {/* Sales can only view and cancel their requests */}
-                          {request.status === 'DRAFT' && (
-                            <Button
-                              size="sm"
-                              onClick={() => handleStatusUpdate(request._id, 'SUBMITTED')}
-                            >
-                              Submit
-                            </Button>
-                          )}
-                          {request.status !== 'COMPLETED' && request.status !== 'CANCELLED' && (
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => handleDelete(request._id)}
-                            >
-                              Cancel & Delete
-                            </Button>
-                          )}
-                        </>
-                      )}
-
-                      {userProfile.department.name === 'Operations' && (
-                        <>
-                          {/* Operations can start processing submitted requests */}
-                          {request.status === 'SUBMITTED' && (
-                            <Button
-                              size="sm"
-                              onClick={() => handleOperationsAction(request._id, 'start')}
-                            >
-                              Start Processing
-                            </Button>
-                          )}
-                          
-                          {/* Delivery Status Update */}
-                          <Select
-                            value={request.delivery_status}
-                            onValueChange={(value) => handleDeliveryStatusUpdate(request._id, value)}
-                          >
-                            <SelectTrigger className="w-32">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="PENDING">Pending</SelectItem>
-                              <SelectItem value="PICKED_UP">Picked Up</SelectItem>
-                              <SelectItem value="IN_TRANSIT">In Transit</SelectItem>
-                              <SelectItem value="DELIVERED">Delivered</SelectItem>
-                              <SelectItem value="FAILED">Failed</SelectItem>
-                            </SelectContent>
-                          </Select>
-
-
-                          {/* Verification Form - Required before sending to Finance */}
-                          {request.status === 'IN_PROGRESS' && (
-                            <div className="flex flex-col gap-2">
-                              <div className="text-xs text-orange-600 font-semibold">
-                                ⚠️ Complete 6-point verification required
-                              </div>
-                              <VerificationForm
-                                request={request}
-                                onVerificationComplete={fetchInvoiceRequests}
-                                currentUser={userProfile}
-                              />
-                            </div>
-                          )}
-                        </>
-                      )}
-
-                      {userProfile.department.name === 'Finance' && (
-                        <>
-                          {/* Finance can generate invoices */}
-                          {request.status === 'VERIFIED' && (
-                            <Button
-                              size="sm"
-                              onClick={() => handleFinanceAction(request._id)}
-                            >
-                              Generate Invoice
-                            </Button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {(!Array.isArray(filteredRequests) || filteredRequests.length === 0) && !loading && (
-                <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8">
-                    <div className="flex flex-col items-center space-y-2">
-                      <Package className="h-8 w-8 text-muted-foreground" />
-                      <p className="text-muted-foreground">No invoice requests right now</p>
-                      {userProfile.department.name === 'Sales' && (
-                        <p className="text-sm text-muted-foreground">
-                          Create your first invoice request using the button above
-                        </p>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
+          ) : filteredRequests.length === 0 ? (
+            <div className="flex flex-col items-center space-y-2 py-12 text-center">
+              <Package className="h-10 w-10 text-muted-foreground" />
+              <p className="text-muted-foreground">No invoice requests right now</p>
+              {userProfile.department.name === 'Sales' && (
+                <p className="text-sm text-muted-foreground">
+                  Create your first invoice request using the button above
+                </p>
               )}
-            </TableBody>
-          </Table>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredRequests.map((request) => {
+                const shortId =
+                  request.invoice_number ||
+                  request.tracking_code ||
+                  (request._id ? request._id.slice(-8) : 'REQUEST');
+                const weightDisplay =
+                  formatWeightValue(request.weight) ||
+                  formatWeightValue(request.weight_kg) ||
+                  formatWeightValue(request.verification?.actual_weight);
+                const routeFrom = request.origin_place || 'Not set';
+                const routeTo = request.destination_place || 'Not set';
+                const createdLabel = formatDateLabel(request.createdAt);
+                const totalBoxes =
+                  request.verification?.number_of_boxes ||
+                  request.number_of_boxes ||
+                  request.verification?.boxes?.length;
+                const actions = renderActionControls(request);
+
+                return (
+                  <div
+                    key={request._id}
+                    className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm transition hover:border-primary/40"
+                  >
+                    <div className="flex flex-col gap-3 border-b border-dashed pb-4 md:flex-row md:items-center md:justify-between">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Badge variant="outline" className="font-mono text-xs uppercase">
+                          {shortId}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          Created {createdLabel}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge className={getStatusBadgeColor(request.status)}>
+                          {request.status}
+                        </Badge>
+                        <Badge className={getDeliveryStatusBadgeColor(request.delivery_status)}>
+                          {request.delivery_status}
+                        </Badge>
+                        {request.has_delivery && (
+                          <Badge variant="secondary">Delivery</Badge>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 pt-4 md:grid-cols-2 lg:grid-cols-4">
+                      <div className="space-y-1">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Customer</p>
+                        <p className="font-semibold text-foreground">{request.customer_name}</p>
+                        {request.customer_phone && (
+                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                            <Phone className="h-3.5 w-3.5" />
+                            <span>{request.customer_phone}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-1">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Receiver</p>
+                        <p className="font-semibold text-foreground">{request.receiver_name}</p>
+                        {request.receiver_company && (
+                          <p className="text-sm text-muted-foreground">{request.receiver_company}</p>
+                        )}
+                        {request.receiver_phone && (
+                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                            <Phone className="h-3.5 w-3.5" />
+                            <span>{request.receiver_phone}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Route</p>
+                        <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-start gap-1 font-medium text-foreground">
+                              <MapPin className="mt-0.5 h-3.5 w-3.5 text-primary" />
+                              <span className="break-words">{routeFrom}</span>
+                            </div>
+                            <p className="text-xs uppercase tracking-wide opacity-80">Origin</p>
+                          </div>
+                          <ArrowRight className="mt-1 h-4 w-4 text-primary" />
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-start gap-1 font-medium text-foreground">
+                              <MapPin className="mt-0.5 h-3.5 w-3.5 text-orange-500" />
+                              <span className="break-words">{routeTo}</span>
+                            </div>
+                            <p className="text-xs uppercase tracking-wide opacity-80">Destination</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Shipment</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">
+                            {request.shipment_type === 'DOCUMENT' ? 'Document' : 'Non-Document'}
+                          </Badge>
+                          {request.is_leviable && <Badge variant="secondary">Taxable</Badge>}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Weight:{' '}
+                          {weightDisplay ? (
+                            <span className="font-semibold text-foreground">{weightDisplay} kg</span>
+                          ) : (
+                            'Not set'
+                          )}
+                        </p>
+                        {totalBoxes && (
+                          <p className="text-sm text-muted-foreground">
+                            Boxes:{' '}
+                            <span className="font-semibold text-foreground">{totalBoxes}</span>
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {userProfile.department.name === 'Operations' && request.status === 'IN_PROGRESS' && (
+                      <div className="mt-4 rounded-lg border border-dashed border-orange-200 bg-orange-50 p-4">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-orange-700">
+                          <AlertTriangle className="h-4 w-4" />
+                          <span>Complete the 6-point verification before sending to Finance</span>
+                        </div>
+                        <div className="mt-3">
+                          <VerificationForm
+                            request={request}
+                            onVerificationComplete={fetchInvoiceRequests}
+                            currentUser={userProfile}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-4 flex flex-col gap-3 border-t pt-4 md:flex-row md:items-center md:justify-between">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span>Service:</span>
+                        <Badge variant="outline">{formatServiceCode(request.service_code)}</Badge>
+                        {request.has_delivery && <Badge variant="secondary">Delivery Required</Badge>}
+                        {request.is_leviable && <Badge variant="outline">VAT applicable</Badge>}
+                      </div>
+                      {actions ? (
+                        <div className="flex flex-wrap gap-2">{actions}</div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground">No actions available</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -1026,7 +1198,7 @@ export default function InvoiceRequestsPage() {
                 <input
                   type="checkbox"
                   checked={hasDelivery}
-                  onChange={(e) => setHasDelivery(e.target.checked)}
+                  onChange={(e) => handleDeliveryToggle(e.target.checked)}
                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                 />
                 <span className="text-sm font-medium text-gray-700">
@@ -1040,6 +1212,63 @@ export default function InvoiceRequestsPage() {
               </p>
             </div>
 
+            <div className="mb-4">
+              <Label className="block text-sm font-medium text-gray-700 mb-2">
+                Customer TRN (optional)
+              </Label>
+              <Input
+                value={customerTRN}
+                onChange={(e) => setCustomerTRN(e.target.value.trim())}
+                placeholder="Enter customer's TRN"
+                className="w-full"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                If provided, this TRN will be stored on the generated invoice.
+              </p>
+            </div>
+
+            <div className="mb-4">
+              <Label className="block text-sm font-medium text-gray-700 mb-2">
+                Batch Number (required)
+              </Label>
+              <Input
+                value={batchNumber}
+                onChange={(e) => setBatchNumber(e.target.value.trim())}
+                placeholder="Enter batch number"
+                required
+                className="w-full"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                This value is mandatory and appears beneath the invoice number on previews/PDFs.
+              </p>
+            </div>
+
+            {isUaeToPhSelected && (
+              <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                UAE → PH shipments always use 0% VAT. Delivery charges must be entered manually when required.
+              </div>
+            )}
+
+            {isUaeToPhSelected && hasDelivery && (
+              <div className="mb-4">
+                <Label className="block text-sm font-medium text-gray-700 mb-2">
+                  Delivery Charge (AED) *
+                </Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={customDeliveryCharge}
+                  onChange={(e) => setCustomDeliveryCharge(e.target.value)}
+                  placeholder="Enter delivery charge amount"
+                  className="w-full"
+                />
+                <p className="text-xs text-amber-600 mt-1">
+                  Required when delivery is enabled for UAE → PH. Leave blank to exclude the charge.
+                </p>
+              </div>
+            )}
+
             <div className="flex justify-end space-x-2">
               <Button
                 variant="outline"
@@ -1047,6 +1276,9 @@ export default function InvoiceRequestsPage() {
                   setShowTaxInputDialog(false);
                   setSelectedRequestForInvoice(null);
                   setHasDelivery(false); // Reset delivery flag
+                  setCustomerTRN('');
+                  setBatchNumber('');
+                  setCustomDeliveryCharge('');
                 }}
               >
                 Cancel
@@ -1054,6 +1286,7 @@ export default function InvoiceRequestsPage() {
               <Button
                 onClick={handleGenerateInvoices}
                 className="bg-green-600 hover:bg-green-700"
+                disabled={generateDisabled}
               >
                 Generate Both Invoices
               </Button>
@@ -1105,9 +1338,22 @@ export default function InvoiceRequestsPage() {
               </div>
               
               {!showTaxInvoice ? (
-                <InvoiceTemplate data={convertRequestToInvoiceData(selectedRequestForInvoice, 0, qrCodeData)} />
+                <InvoiceTemplate
+                  data={convertRequestToInvoiceData(selectedRequestForInvoice, 0, qrCodeData, {
+                    batchNumber,
+                    manualDeliveryCharge:
+                      manualChargeForPreview && manualChargeForPreview > 0 ? manualChargeForPreview : undefined,
+                  })}
+                />
               ) : (
-                <TaxInvoiceTemplate data={convertRequestToInvoiceData(selectedRequestForInvoice, selectedRequestTaxRate, qrCodeData, { mode: 'tax' })} />
+                <TaxInvoiceTemplate
+                  data={convertRequestToInvoiceData(selectedRequestForInvoice, selectedRequestTaxRate, qrCodeData, {
+                    mode: 'tax',
+                    batchNumber,
+                    manualDeliveryCharge:
+                      manualChargeForPreview && manualChargeForPreview > 0 ? manualChargeForPreview : undefined,
+                  })}
+                />
               )}
             </div>
           </div>

@@ -10,6 +10,18 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, FileText, Receipt, AlertCircle, Download, Printer } from 'lucide-react';
 import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
 
 const normalizeServiceCode = (code?: string | null) =>
   (code || '')
@@ -34,6 +46,19 @@ export default function InvoicePage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [qrCodeData, setQrCodeData] = useState<any>(null);
+    const [showEditDialog, setShowEditDialog] = useState(false);
+    const [savingEdit, setSavingEdit] = useState(false);
+    const [editForm, setEditForm] = useState({
+        receiver_name: '',
+        receiver_address: '',
+        receiver_phone: '',
+        amount: '',
+        delivery_charge: '',
+        tax_rate: '',
+        due_date: '',
+        notes: ''
+    });
+    const { toast } = useToast();
 
     useEffect(() => {
         const fetchInvoice = async () => {
@@ -53,6 +78,16 @@ export default function InvoicePage() {
                 if (result.success && result.data) {
                     console.log('✅ Setting invoice data:', result.data);
                     setInvoice(result.data);
+                    setEditForm({
+                        receiver_name: result.data.receiver_name || '',
+                        receiver_address: result.data.receiver_address || '',
+                        receiver_phone: result.data.receiver_phone || '',
+                        amount: result.data.amount ? parseFloat(result.data.amount).toString() : '',
+                        delivery_charge: result.data.delivery_charge ? parseFloat(result.data.delivery_charge).toString() : '',
+                        tax_rate: result.data.tax_rate != null ? result.data.tax_rate.toString() : '',
+                        due_date: result.data.due_date ? new Date(result.data.due_date).toISOString().split('T')[0] : '',
+                        notes: result.data.notes || ''
+                    });
 
                     // Fetch delivery assignment with QR code
                     try {
@@ -224,9 +259,35 @@ export default function InvoicePage() {
         rate = parseDecimal(baseAmount / weight, 2);
     }
 
+    const senderName =
+        invoice.customer_name ||
+        invoice.request_id?.customer_name ||
+        invoice.request_id?.sender?.name ||
+        invoice.client_id?.company_name ||
+        invoice.client_id?.contact_name ||
+        'N/A';
+    const senderAddress =
+        invoice.origin_place ||
+        invoice.request_id?.origin_place ||
+        invoice.request_id?.sender?.address ||
+        'Address not provided';
+    const senderPhone =
+        invoice.customer_phone ||
+        invoice.request_id?.customer_phone ||
+        invoice.request_id?.sender?.phone ||
+        invoice.client_id?.contact_phone ||
+        '+971XXXXXXXXX';
+    const senderEmail =
+        invoice.customer_email ||
+        invoice.request_id?.customer_email ||
+        invoice.request_id?.sender?.email ||
+        invoice.client_id?.contact_email ||
+        '';
+
     // Convert invoice to template format
     const invoiceData = {
         invoiceNumber: invoice.invoice_id || invoice._id,
+        batchNumber: invoice.batch_number || invoice.request_id?.batch_number || '',
         awbNumber: awbNumber,
         trackingNumber: awbNumber,
         date: invoice.issue_date ? new Date(invoice.issue_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
@@ -237,9 +298,10 @@ export default function InvoicePage() {
             mobile: receiverPhone
         },
         senderInfo: {
-            address: '11th Street Warehouse No. 19, Rocky Warehouses Al Qusais Industrial 1, Dubai - UAE',
-            email: 'customercare@knexpress.ae',
-            phone: '+971 56 864 3473'
+            name: senderName,
+            address: senderAddress,
+            email: senderEmail || undefined,
+            phone: senderPhone
         },
         shipmentDetails: {
             numberOfBoxes: numberOfBoxes,
@@ -319,6 +381,53 @@ export default function InvoicePage() {
         }
     };
 
+    const handleEditChange = (field: string, value: string) => {
+        setEditForm((prev) => ({ ...prev, [field]: value }));
+    };
+
+    const handleSaveEdit = async () => {
+        const invoiceIdentifier = invoice?._id || invoiceId;
+        if (!invoiceIdentifier) return;
+        setSavingEdit(true);
+        try {
+            const payload: any = {
+                receiver_name: editForm.receiver_name.trim(),
+                receiver_address: editForm.receiver_address.trim(),
+                receiver_phone: editForm.receiver_phone.trim(),
+                notes: editForm.notes?.trim() || ''
+            };
+
+            if (editForm.amount) payload.amount = parseFloat(editForm.amount);
+            if (editForm.delivery_charge) payload.delivery_charge = parseFloat(editForm.delivery_charge);
+            if (editForm.tax_rate) payload.tax_rate = parseFloat(editForm.tax_rate);
+            if (editForm.due_date) payload.due_date = new Date(editForm.due_date).toISOString();
+
+            const result = await apiClient.updateInvoiceUnified(invoiceIdentifier, payload);
+            if (result.success && result.data) {
+                setInvoice(result.data);
+                toast({
+                    title: 'Invoice updated',
+                    description: 'Changes have been saved successfully.',
+                });
+                setShowEditDialog(false);
+            } else {
+                toast({
+                    variant: 'destructive',
+                    title: 'Update failed',
+                    description: result.error || 'Unable to update invoice.',
+                });
+            }
+        } catch (err: any) {
+            toast({
+                variant: 'destructive',
+                title: 'Update failed',
+                description: err.message || 'Unable to update invoice.',
+            });
+        } finally {
+            setSavingEdit(false);
+        }
+    };
+
     return (
         <div className="space-y-4">
             {/* Navigation Bar */}
@@ -362,6 +471,12 @@ export default function InvoicePage() {
                             Print
                         </Button>
                         <Button
+                            variant="outline"
+                            onClick={() => setShowEditDialog(true)}
+                        >
+                            Edit Invoice
+                        </Button>
+                        <Button
                             onClick={handleDownloadPDF}
                         >
                             <Download className="h-4 w-4 mr-2" />
@@ -401,6 +516,102 @@ export default function InvoicePage() {
                     </Card>
                 )}
             </div>
+
+            <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Edit Invoice</DialogTitle>
+                        <DialogDescription>Adjust receiver and charge details. All changes are tracked.</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <Label>Receiver Name</Label>
+                                <Input
+                                    value={editForm.receiver_name}
+                                    onChange={(e) => handleEditChange('receiver_name', e.target.value)}
+                                />
+                            </div>
+                            <div>
+                                <Label>Receiver Phone</Label>
+                                <Input
+                                    value={editForm.receiver_phone}
+                                    onChange={(e) => handleEditChange('receiver_phone', e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <Label>Receiver Address</Label>
+                            <Textarea
+                                value={editForm.receiver_address}
+                                onChange={(e) => handleEditChange('receiver_address', e.target.value)}
+                                rows={3}
+                            />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <Label>Shipping Charge (AED)</Label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={editForm.amount}
+                                    onChange={(e) => handleEditChange('amount', e.target.value)}
+                                />
+                            </div>
+                            <div>
+                                <Label>Delivery Charge (AED)</Label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={editForm.delivery_charge}
+                                    onChange={(e) => handleEditChange('delivery_charge', e.target.value)}
+                                />
+                            </div>
+                            <div>
+                                <Label>Tax Rate (%)</Label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={editForm.tax_rate}
+                                    onChange={(e) => handleEditChange('tax_rate', e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <Label>Due Date</Label>
+                                <Input
+                                    type="date"
+                                    value={editForm.due_date}
+                                    onChange={(e) => handleEditChange('due_date', e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <Label>Notes</Label>
+                            <Textarea
+                                value={editForm.notes}
+                                rows={3}
+                                onChange={(e) => handleEditChange('notes', e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setShowEditDialog(false)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleSaveEdit}
+                            disabled={savingEdit}
+                        >
+                            {savingEdit ? 'Saving...' : 'Save Changes'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

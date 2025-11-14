@@ -572,9 +572,11 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                 <Input
                   id="invoice_number"
                   value={verificationData.invoice_number}
-                  onChange={(e) => setVerificationData({ ...verificationData, invoice_number: e.target.value })}
+                  readOnly
+                  className="bg-muted cursor-not-allowed text-muted-foreground"
                   required
                 />
+                <p className="text-xs text-muted-foreground mt-1">Auto-generated and locked for operations</p>
               </div>
               
               <div>
@@ -582,9 +584,11 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                 <Input
                   id="tracking_code"
                   value={verificationData.tracking_code}
-                  onChange={(e) => setVerificationData({ ...verificationData, tracking_code: e.target.value })}
+                  readOnly
+                  className="bg-muted cursor-not-allowed text-muted-foreground"
                   required
                 />
+                <p className="text-xs text-muted-foreground mt-1">Matches AWB and cannot be edited here</p>
               </div>
               
               <div>
@@ -593,8 +597,9 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                   value={verificationData.service_code}
                   onValueChange={(value) => setVerificationData({ ...verificationData, service_code: value })}
                   required
+                  disabled
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="bg-muted cursor-not-allowed text-muted-foreground">
                     <SelectValue placeholder="Select service code" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[400px]">

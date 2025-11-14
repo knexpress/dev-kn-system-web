@@ -254,16 +254,10 @@ export default function DeliveryAssignmentsPage() {
     }).format(numAmount);
   };
 
+  const normalizeStatus = (status?: string) => status === 'DELIVERED' ? 'DELIVERED' : 'NOT_DELIVERED';
+
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'DELIVERED': return 'bg-green-500';
-      case 'IN_TRANSIT': return 'bg-blue-500';
-      case 'PICKED_UP': return 'bg-yellow-500';
-      case 'ASSIGNED': return 'bg-gray-500';
-      case 'FAILED': return 'bg-red-500';
-      case 'RETURNED': return 'bg-orange-500';
-      default: return 'bg-gray-500';
-    }
+    return status === 'DELIVERED' ? 'bg-green-500' : 'bg-red-500';
   };
 
   const getDeliveryTypeColor = (type: string) => {
@@ -477,11 +471,16 @@ export default function DeliveryAssignmentsPage() {
                       {assignment.delivery_type}
                     </Badge>
                   </TableCell>
-                  <TableCell>
-                    <Badge className={`${getStatusColor(assignment.status)} text-white`}>
-                      {assignment.status}
-                    </Badge>
-                  </TableCell>
+                  {(() => {
+                    const normalizedStatus = normalizeStatus(assignment.status);
+                    return (
+                      <TableCell>
+                        <Badge className={`${getStatusColor(normalizedStatus)} text-white`}>
+                          {normalizedStatus === 'DELIVERED' ? 'Delivered' : 'Not Delivered'}
+                        </Badge>
+                      </TableCell>
+                    );
+                  })()}
                   <TableCell>
                     <div className="flex items-center gap-2">
                       {assignment.payment_collected ? (
@@ -520,22 +519,23 @@ export default function DeliveryAssignmentsPage() {
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
-                      <Select
-                        value={assignment.status}
-                        onValueChange={(value) => handleStatusUpdate(assignment._id, value)}
-                      >
-                        <SelectTrigger className="w-32">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ASSIGNED">Assigned</SelectItem>
-                          <SelectItem value="PICKED_UP">Picked Up</SelectItem>
-                          <SelectItem value="IN_TRANSIT">In Transit</SelectItem>
-                          <SelectItem value="DELIVERED">Delivered</SelectItem>
-                          <SelectItem value="FAILED">Failed</SelectItem>
-                          <SelectItem value="RETURNED">Returned</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      {(() => {
+                        const normalizedStatus = normalizeStatus(assignment.status);
+                        return (
+                          <Select
+                            value={normalizedStatus}
+                            onValueChange={(value) => handleStatusUpdate(assignment._id, value)}
+                          >
+                            <SelectTrigger className="w-36">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="NOT_DELIVERED">Not Delivered</SelectItem>
+                              <SelectItem value="DELIVERED">Delivered</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        );
+                      })()}
                     </div>
                   </TableCell>
                 </TableRow>

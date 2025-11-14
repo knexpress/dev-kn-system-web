@@ -49,16 +49,17 @@ export default function InvoicesTable({ invoices, department, onRemit }: Invoice
                         <TableRow>
                             <TableHead>Invoice ID</TableHead>
                             <TableHead>AWB</TableHead>
+                            <TableHead>Batch No</TableHead>
                             <TableHead>Client</TableHead>
                             <TableHead>Amount</TableHead>
                             <TableHead>Service Code</TableHead>
                             <TableHead>Weight (KG)</TableHead>
+                            <TableHead>No. of Boxes</TableHead>
                             <TableHead>Volume (CBM)</TableHead>
                             <TableHead>Receiver</TableHead>
                             <TableHead>Receiver Address</TableHead>
                             <TableHead>Receiver Phone</TableHead>
                             <TableHead>Issue Date</TableHead>
-                            <TableHead>Due Date</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead className="text-right">Action</TableHead>
                         </TableRow>
@@ -68,16 +69,24 @@ export default function InvoicesTable({ invoices, department, onRemit }: Invoice
                             <TableRow key={invoice._id}>
                             <TableCell className="font-mono text-xs">{invoice.invoice_id || 'N/A'}</TableCell>
                             <TableCell className="font-mono text-xs">{invoice.awb_number || 'N/A'}</TableCell>
+                            <TableCell className="font-mono text-xs">{invoice.batch_number || 'N/A'}</TableCell>
                             <TableCell>{invoice.client_id?.company_name || 'Unknown'}</TableCell>
-                            <TableCell>${invoice.total_amount ? parseFloat(invoice.total_amount.toString()).toLocaleString() : '0.00'}</TableCell>
+                            <TableCell>
+                                AED {invoice.total_amount ? parseFloat(invoice.total_amount.toString()).toLocaleString() : '0.00'}
+                            </TableCell>
                             <TableCell className="font-mono text-xs">{invoice.service_code ?? 'N/A'}</TableCell>
                             <TableCell>{invoice.weight_kg != null ? invoice.weight_kg : 'N/A'}</TableCell>
+                            <TableCell>
+                                {invoice.number_of_boxes ??
+                                  invoice.request_id?.shipment?.number_of_boxes ??
+                                  invoice.request_id?.verification?.number_of_boxes ??
+                                  'N/A'}
+                            </TableCell>
                             <TableCell>{invoice.volume_cbm != null ? invoice.volume_cbm : 'N/A'}</TableCell>
                             <TableCell>{invoice.receiver_name ?? 'N/A'}</TableCell>
                             <TableCell className="max-w-[200px] truncate" title={invoice.receiver_address ?? ''}>{invoice.receiver_address ?? 'N/A'}</TableCell>
                             <TableCell>{invoice.receiver_phone ?? 'N/A'}</TableCell>
                             <TableCell>{invoice.issue_date ? new Date(invoice.issue_date).toLocaleDateString() : 'N/A'}</TableCell>
-                            <TableCell>{invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : 'N/A'}</TableCell>
                             <TableCell>
                                 <Badge 
                                     variant={

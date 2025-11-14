@@ -5,6 +5,7 @@ import QRCode from './qr-code';
 
 interface InvoiceData {
   invoiceNumber: string;
+  batchNumber?: string;
   awbNumber: string;
   trackingNumber: string;
   date: string;
@@ -15,9 +16,11 @@ interface InvoiceData {
     mobile: string;
   };
   senderInfo: {
+    name?: string;
     address: string;
-    email: string;
-    phone: string;
+    email?: string;
+    phone?: string;
+    mobile?: string;
   };
   shipmentDetails: {
     numberOfBoxes: number;
@@ -65,43 +68,47 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
             <h1 className="text-2xl font-bold text-green-600 mb-1">Knex Delivery Services L.L.C.</h1>
             <p className="text-sm text-green-600 mb-2">www.knexpress.ae</p>
             <p className="text-sm text-gray-700">Dubai, United Arab Emirates</p>
+            <p className="text-xs text-gray-600 mt-1">TRN: 104131637100003</p>
           </div>
         </div>
 
         {/* Right Side - Invoice Details */}
         <div className="text-right">
-          <h2 className="text-3xl font-bold text-black mb-4">INVOICE</h2>
+          <h2 className="text-3xl font-bold text-black mb-4">CASH ON DELIVERY (COD)</h2>
           <div className="space-y-1 text-sm">
             <p><span className="font-semibold">INVOICE #</span> {data.invoiceNumber}</p>
             <p><span className="font-semibold">AWB #</span> {data.awbNumber}</p>
-            <p><span className="font-semibold">Tracking</span></p>
-            <p className="font-mono">#{data.trackingNumber}</p>
+            {data.batchNumber ? (
+              <p><span className="font-semibold">Batch #</span> {data.batchNumber}</p>
+            ) : null}
           </div>
         </div>
       </div>
 
       {/* Main Content */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        {/* Sender Information */}
+        <div>
+          <h3 className="text-lg font-bold text-black mb-4 uppercase">SENDER INFORMATION</h3>
+          <div className="space-y-1 text-sm">
+            {data.senderInfo.name && (
+              <p className="font-semibold text-base text-gray-900">{data.senderInfo.name}</p>
+            )}
+            <p className="text-xs uppercase tracking-wide text-gray-500">{data.date}</p>
+            <p className="leading-relaxed">{data.senderInfo.address}</p>
+            {data.senderInfo.phone && <p>{data.senderInfo.phone}</p>}
+            {data.senderInfo.email && <p>{data.senderInfo.email}</p>}
+          </div>
+        </div>
+
         {/* Receiver Information */}
         <div>
-          <h3 className="text-lg font-bold text-black mb-4 uppercase">RECEIVER INFORMATION</h3>
-          <div className="space-y-2">
+          <h3 className="text-lg font-bold text-black mb-4 uppercase text-right lg:text-left">RECEIVER INFORMATION</h3>
+          <div className="space-y-2 text-right lg:text-left">
             <p className="font-semibold text-lg">{data.receiverInfo.name}</p>
             <p className="text-sm leading-relaxed">{data.receiverInfo.address}</p>
             <p className="text-sm">{data.receiverInfo.emirate}</p>
             <p className="text-sm">{data.receiverInfo.mobile}</p>
-          </div>
-        </div>
-
-        {/* Sender/Company Contact */}
-        <div className="text-right">
-          <div className="space-y-2 mb-4">
-            <p className="text-sm font-semibold">{data.date}</p>
-          </div>
-          <div className="space-y-2 text-sm">
-            <p className="leading-relaxed">{data.senderInfo.address}</p>
-            <p>{data.senderInfo.email}</p>
-            <p>{data.senderInfo.phone}</p>
           </div>
         </div>
       </div>
@@ -228,6 +235,7 @@ export const sampleInvoiceData: InvoiceData = {
     mobile: '+971502781566'
   },
   senderInfo: {
+    name: 'CRISTINA BATAC',
     address: '11th Street Warehouse No. 19, Rocky Warehouses Al Qusais Industrial 1, Dubai - UAE',
     email: 'customercare@knexpress.ae',
     phone: '+971 56 864 3473'

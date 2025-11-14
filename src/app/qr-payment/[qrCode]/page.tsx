@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, CheckCircle, XCircle, Clock, MapPin, Package, User, CreditCard, Banknote, Smartphone, Truck, ArrowLeft } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, Clock, MapPin, User, CreditCard, Banknote, Smartphone, ArrowLeft } from 'lucide-react';
 
 interface DeliveryAssignment {
   _id: string;
@@ -207,7 +207,7 @@ export default function QRPaymentPage() {
           const result = await apiClient.updateDeliveryAssignmentByQR(qrCode, { 
             driver_name: driverName,
             driver_phone: driverPhone,
-            status: assignment.status // Keep current status
+            status: normalizeAssignmentStatus(assignment.status)
           });
           
           if (result.success) {
@@ -234,7 +234,7 @@ export default function QRPaymentPage() {
     }
   }, [driverName, driverPhone, isDriverMode, assignment, qrCode]);
 
-  const handleDriverStatusUpdate = async (newStatus: string) => {
+  const handleDriverStatusUpdate = async (newStatus: 'DELIVERED' | 'NOT_DELIVERED') => {
     if (!assignment) return;
 
     // Validate driver information is required
@@ -255,7 +255,6 @@ export default function QRPaymentPage() {
         status: newStatus,
         driver_name: driverName,
         driver_phone: driverPhone,
-        ...(newStatus === 'PICKED_UP' && { pickup_date: new Date() }),
         ...(newStatus === 'DELIVERED' && { delivery_date: new Date() })
       });
       
@@ -274,8 +273,8 @@ export default function QRPaymentPage() {
             name: driverName,
             phone: driverPhone
           },
-          ...(newStatus === 'PICKED_UP' && { pickup_date: new Date().toISOString() }),
-          ...(newStatus === 'DELIVERED' && { delivery_date: new Date().toISOString() })
+          ...(newStatus === 'DELIVERED' && { delivery_date: new Date().toISOString() }),
+          ...(newStatus !== 'DELIVERED' && { delivery_date: undefined })
         } : null);
       } else {
         toast({
@@ -307,14 +306,10 @@ export default function QRPaymentPage() {
     }).format(numAmount);
   };
 
+  const normalizeAssignmentStatus = (status?: string) => status === 'DELIVERED' ? 'DELIVERED' : 'NOT_DELIVERED';
+
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'DELIVERED': return 'bg-green-500';
-      case 'IN_TRANSIT': return 'bg-blue-500';
-      case 'PICKED_UP': return 'bg-yellow-500';
-      case 'ASSIGNED': return 'bg-gray-500';
-      default: return 'bg-gray-500';
-    }
+    return status === 'DELIVERED' ? 'bg-green-500' : 'bg-red-500';
   };
 
   if (loading) {
@@ -604,34 +599,21 @@ export default function QRPaymentPage() {
                       )}
                       <div className="grid grid-cols-1 gap-2">
                         <Button
-                          onClick={() => handleDriverStatusUpdate('PICKED_UP')}
-                          disabled={updatingStatus || (!driverName || !driverPhone) || assignment?.status === 'PICKED_UP' || assignment?.status === 'IN_TRANSIT' || assignment?.status === 'DELIVERED'}
+                          onClick={() => handleDriverStatusUpdate('NOT_DELIVERED')}
+                          disabled={updatingStatus || (!driverName || !driverPhone) || normalizeAssignmentStatus(assignment.status) === 'NOT_DELIVERED'}
                           variant="outline"
                           size="sm"
-                          className="h-auto py-3 w-full"
+                          className="h-auto py-3 w-full border-red-200 text-red-600 hover:bg-red-50"
                         >
-                          <Package className="mr-2 h-4 w-4" />
+                          <XCircle className="mr-2 h-4 w-4" />
                           <div className="text-left">
-                            <div className="font-medium">Picked Up</div>
-                            <div className="text-xs text-gray-500">Package collected</div>
-                          </div>
-                        </Button>
-                        <Button
-                          onClick={() => handleDriverStatusUpdate('IN_TRANSIT')}
-                          disabled={updatingStatus || (!driverName || !driverPhone) || assignment?.status === 'IN_TRANSIT' || assignment?.status === 'DELIVERED'}
-                          variant="outline"
-                          size="sm"
-                          className="h-auto py-3 w-full"
-                        >
-                          <Truck className="mr-2 h-4 w-4" />
-                          <div className="text-left">
-                            <div className="font-medium">In Transit</div>
-                            <div className="text-xs text-gray-500">On the way</div>
+                            <div className="font-medium">Not Delivered</div>
+                            <div className="text-xs text-gray-500">Marked as failed / pending</div>
                           </div>
                         </Button>
                         <Button
                           onClick={() => handleDriverStatusUpdate('DELIVERED')}
-                          disabled={updatingStatus || (!driverName || !driverPhone) || assignment?.status === 'DELIVERED'}
+                          disabled={updatingStatus || (!driverName || !driverPhone) || normalizeAssignmentStatus(assignment.status) === 'DELIVERED'}
                           variant="outline"
                           size="sm"
                           className="h-auto py-3 w-full border-green-300 text-green-700 hover:bg-green-50"
@@ -676,8 +658,8 @@ export default function QRPaymentPage() {
                     <CreditCard className="h-6 w-6" />
                     Collect Payment
                   </CardTitle>
-                  <Badge className={`${getStatusColor(assignment.status)} text-white text-sm px-3 py-1`}>
-                    {assignment.status}
+                  <Badge className={`${getStatusColor(normalizeAssignmentStatus(assignment.status))} text-white text-sm px-3 py-1`}>
+                    {normalizeAssignmentStatus(assignment.status) === 'DELIVERED' ? 'Delivered' : 'Not Delivered'}
                   </Badge>
                 </div>
               </CardHeader>

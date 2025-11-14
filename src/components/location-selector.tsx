@@ -20,6 +20,7 @@ interface LocationSelectorProps {
   value: string;
   onChange: (value: string) => void;
   required?: boolean;
+  presetCountry?: 'UAE' | 'Philippines';
 }
 
 interface Region {
@@ -76,10 +77,10 @@ const UAE_EMIRATES = [
   'Fujairah'
 ];
 
-export default function LocationSelector({ label, value, onChange, required }: LocationSelectorProps) {
+export default function LocationSelector({ label, value, onChange, required, presetCountry }: LocationSelectorProps) {
   const [inputMode, setInputMode] = useState<'dropdown' | 'manual'>('dropdown');
   const [manualAddress, setManualAddress] = useState('');
-  const [country, setCountry] = useState<'UAE' | 'Philippines' | ''>('');
+  const [country, setCountry] = useState<'UAE' | 'Philippines' | ''>(presetCountry || '');
   const [uaeEmirate, setUaeEmirate] = useState('');
   const [uaeCity, setUaeCity] = useState('');
   const [uaeDistrict, setUaeDistrict] = useState('');
@@ -89,6 +90,7 @@ export default function LocationSelector({ label, value, onChange, required }: L
   const [phProvince, setPhProvince] = useState('');
   const [phCity, setPhCity] = useState('');
   const [phBarangay, setPhBarangay] = useState('');
+  const [phLandmark, setPhLandmark] = useState('');
 
   // Data states
   const [uaeCities, setUaeCities] = useState<UAECity[]>([]);
@@ -248,6 +250,9 @@ export default function LocationSelector({ label, value, onChange, required }: L
         const barangay = barangays.find((b) => b.brgy_code === phBarangay);
         if (barangay) locationParts.push(barangay.brgy_name);
       }
+      if (phLandmark) {
+        locationParts.unshift(phLandmark);
+      }
       
       // Add city if selected and available
       if (phCity) {
@@ -289,6 +294,7 @@ export default function LocationSelector({ label, value, onChange, required }: L
     phProvince: '',
     phCity: '',
     phBarangay: '',
+    phLandmark: '',
   });
 
   // Use ref for onChange to prevent infinite loops
@@ -330,7 +336,8 @@ export default function LocationSelector({ label, value, onChange, required }: L
       prevValuesRef.current.phRegion !== currentValues.phRegion ||
       prevValuesRef.current.phProvince !== currentValues.phProvince ||
       prevValuesRef.current.phCity !== currentValues.phCity ||
-      prevValuesRef.current.phBarangay !== currentValues.phBarangay;
+      prevValuesRef.current.phBarangay !== currentValues.phBarangay ||
+      prevValuesRef.current.phLandmark !== currentValues.phLandmark;
 
     if (hasChanged) {
       prevValuesRef.current = currentValues;
@@ -357,6 +364,12 @@ export default function LocationSelector({ label, value, onChange, required }: L
     setPhCity('');
     setPhBarangay('');
   };
+
+  useEffect(() => {
+    if (presetCountry && presetCountry !== country) {
+      handleCountryChange(presetCountry);
+    }
+  }, [presetCountry]);
 
   const handleUaeEmirateChange = (emirate: string) => {
     setUaeEmirate(emirate);
@@ -398,6 +411,7 @@ export default function LocationSelector({ label, value, onChange, required }: L
       setPhProvince('');
       setPhCity('');
       setPhBarangay('');
+      setPhLandmark('');
     } else {
       // Clear manual address when switching to dropdown
       setManualAddress('');
@@ -412,29 +426,37 @@ export default function LocationSelector({ label, value, onChange, required }: L
         </Label>
       )}
       
-      {/* Mode Selection Tabs */}
-      <Card className="border-2 shadow-md bg-gradient-to-br from-background via-muted/30 to-background hover:shadow-lg transition-shadow duration-300">
-        <CardContent className="p-4">
-          <Tabs value={inputMode} onValueChange={(value) => handleModeChange(value as 'dropdown' | 'manual')} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 h-16 bg-muted/60 p-1.5 rounded-lg">
-              <TabsTrigger 
-                value="dropdown" 
-                className="flex items-center justify-center gap-3 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg data-[state=inactive]:hover:bg-muted transition-all duration-300 rounded-md font-semibold text-sm group"
-              >
-                <Navigation className="h-4 w-4 transition-transform duration-300 group-data-[state=active]:scale-110" />
-                <span>Select from Dropdown</span>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="manual" 
-                className="flex items-center justify-center gap-3 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg data-[state=inactive]:hover:bg-muted transition-all duration-300 rounded-md font-semibold text-sm group"
-              >
-                <Edit3 className="h-4 w-4 transition-transform duration-300 group-data-[state=active]:scale-110" />
-                <span>Enter Manually</span>
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </CardContent>
-      </Card>
+      {!presetCountry && (
+        <Card className="border-2 shadow-md bg-gradient-to-br from-background via-muted/30 to-background hover:shadow-lg transition-shadow duration-300">
+          <CardContent className="p-4">
+            <Tabs value={inputMode} onValueChange={(value) => handleModeChange(value as 'dropdown' | 'manual')} className="w-full">
+              <TabsList className="grid w-full grid-cols-2 h-16 bg-muted/60 p-1.5 rounded-lg">
+                <TabsTrigger 
+                  value="dropdown" 
+                  className="flex items-center justify-center gap-3 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg data-[state=inactive]:hover:bg-muted transition-all duration-300 rounded-md font-semibold text-sm group"
+                >
+                  <Navigation className="h-4 w-4 transition-transform duration-300 group-data-[state=active]:scale-110" />
+                  <span>Select from Dropdown</span>
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="manual" 
+                  className="flex items-center justify-center gap-3 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg data-[state=inactive]:hover:bg-muted transition-all duration-300 rounded-md font-semibold text-sm group"
+                >
+                  <Edit3 className="h-4 w-4 transition-transform duration-300 group-data-[state=active]:scale-110" />
+                  <span>Enter Manually</span>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </CardContent>
+        </Card>
+      )}
+
+      {presetCountry && (
+        <div className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">
+          <Globe className="h-3.5 w-3.5" />
+          Using {presetCountry}
+        </div>
+      )}
 
       {/* Manual Input Mode */}
       {inputMode === 'manual' && (
@@ -471,6 +493,7 @@ export default function LocationSelector({ label, value, onChange, required }: L
           <Card className="border shadow-sm hover:shadow-lg transition-all duration-200 bg-gradient-to-br from-background via-background to-muted/10">
             <CardContent className="p-5 space-y-5">
               {/* Country Selection */}
+              {!presetCountry && (
               <div className="space-y-2.5">
                 <Label htmlFor={`country-${label || 'location'}`} className="flex items-center gap-2 text-sm font-semibold">
                   <div className="rounded-md bg-primary/10 p-1.5">
@@ -502,6 +525,7 @@ export default function LocationSelector({ label, value, onChange, required }: L
                   </SelectContent>
                 </Select>
               </div>
+              )}
 
               {/* UAE Location Hierarchy */}
               {country === 'UAE' && (
@@ -757,6 +781,28 @@ export default function LocationSelector({ label, value, onChange, required }: L
                       </Select>
                     </div>
                   )}
+                </div>
+              )}
+              {country === 'Philippines' && phProvince && phCity && (
+                <div className="space-y-2.5 pt-3 border-t-2 border-dashed transition-all duration-300">
+                  <Label htmlFor={`ph-landmark-${label}`} className="flex items-center gap-2 text-sm font-semibold">
+                    <div className="rounded-md bg-orange-100 dark:bg-orange-900/30 p-1.5">
+                      <MapPin className="h-3.5 w-3.5 text-orange-600 dark:text-orange-400" />
+                    </div>
+                    <span>Nearest Landmark <span className="text-muted-foreground font-normal">(Optional)</span></span>
+                  </Label>
+                  <Input
+                    id={`ph-landmark-${label}`}
+                    type="text"
+                    placeholder="e.g., Near SM Mall, Beside City Hall"
+                    value={phLandmark}
+                    onChange={(e) => setPhLandmark(e.target.value)}
+                    className="h-12 text-base border-2 hover:border-primary/50 focus:border-primary transition-colors"
+                  />
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5 pl-1">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
+                    <span>Add a landmark to help the courier find the location faster</span>
+                  </p>
                 </div>
               )}
             </CardContent>

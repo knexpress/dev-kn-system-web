@@ -1,15 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -31,7 +23,7 @@ interface InvoiceRequestFormProps {
 }
 
 export default function InvoiceRequestForm({ onRequestCreated, currentUser }: InvoiceRequestFormProps) {
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
 
@@ -42,99 +34,56 @@ export default function InvoiceRequestForm({ onRequestCreated, currentUser }: In
     receiver_phone: '',
     sender_address: '',
     receiver_address: '',
+    sender_country: '',
+    receiver_country: '',
     shipment_type: '',
     service_code: '',
     notes: '',
   });
-
-  // Determine service code based on sender and receiver addresses
-  const serviceCodeOptions = useMemo(() => {
-    const senderCountry = formData.sender_address.includes('UAE') ? 'UAE' : 
-                          formData.sender_address.includes('Philippines') ? 'PH' : '';
-    const receiverCountry = formData.receiver_address.includes('UAE') ? 'UAE' : 
-                            formData.receiver_address.includes('Philippines') ? 'PH' : '';
-
-    if (senderCountry === 'PH' && receiverCountry === 'UAE') {
-      return [
-        { value: 'PH_TO_UAE', label: 'PH to UAE' },
-        { value: 'PH_TO_UAE_EXPRESS', label: 'PH to UAE Express' },
-        { value: 'PH_TO_UAE_STANDARD', label: 'PH to UAE Standard' },
-      ];
-    } else if (senderCountry === 'UAE' && receiverCountry === 'PH') {
-      return [
-        { value: 'UAE_TO_PH', label: 'UAE to PH' },
-        { value: 'UAE_TO_PH_EXPRESS', label: 'UAE to PH Express' },
-        { value: 'UAE_TO_PH_STANDARD', label: 'UAE to PH Standard' },
-      ];
-    }
-    return [];
-  }, [formData.sender_address, formData.receiver_address]);
-
-  // Handle location changes from LocationSelector
   const handleSenderAddressChange = (value: string) => {
-    setFormData((prev) => {
-      // Check if current service_code is still valid for new route
-      const newSenderCountry = value.includes('UAE') ? 'UAE' : 
-                                value.includes('Philippines') ? 'PH' : '';
-      const receiverCountry = prev.receiver_address.includes('UAE') ? 'UAE' : 
-                               prev.receiver_address.includes('Philippines') ? 'PH' : '';
-      
-      // Determine valid service codes for new route
-      const validServiceCodes = 
-        (newSenderCountry === 'PH' && receiverCountry === 'UAE') 
-          ? ['PH_TO_UAE', 'PH_TO_UAE_EXPRESS', 'PH_TO_UAE_STANDARD']
-          : (newSenderCountry === 'UAE' && receiverCountry === 'PH')
-          ? ['UAE_TO_PH', 'UAE_TO_PH_EXPRESS', 'UAE_TO_PH_STANDARD']
-          : [];
-      
-      return {
-        ...prev,
-        sender_address: value,
-        // Reset service_code if it's no longer valid for the new route
-        service_code: prev.service_code && validServiceCodes.includes(prev.service_code) 
-          ? prev.service_code 
-          : ''
-      };
-    });
+    setFormData((prev) => ({
+      ...prev,
+      sender_address: value,
+    }));
   };
 
   const handleReceiverAddressChange = (value: string) => {
-    setFormData((prev) => {
-      // Check if current service_code is still valid for new route
-      const senderCountry = prev.sender_address.includes('UAE') ? 'UAE' : 
-                             prev.sender_address.includes('Philippines') ? 'PH' : '';
-      const newReceiverCountry = value.includes('UAE') ? 'UAE' : 
-                                  value.includes('Philippines') ? 'PH' : '';
-      
-      // Determine valid service codes for new route
-      const validServiceCodes = 
-        (senderCountry === 'PH' && newReceiverCountry === 'UAE') 
-          ? ['PH_TO_UAE', 'PH_TO_UAE_EXPRESS', 'PH_TO_UAE_STANDARD']
-          : (senderCountry === 'UAE' && newReceiverCountry === 'PH')
-          ? ['UAE_TO_PH', 'UAE_TO_PH_EXPRESS', 'UAE_TO_PH_STANDARD']
-          : [];
-      
-      return {
-        ...prev,
-        receiver_address: value,
-        // Reset service_code if it's no longer valid for the new route
-        service_code: prev.service_code && validServiceCodes.includes(prev.service_code) 
-          ? prev.service_code 
-          : ''
-      };
-    });
+    setFormData((prev) => ({
+      ...prev,
+      receiver_address: value,
+    }));
   };
+
+  useEffect(() => {
+    setFormData((prev) => {
+      const { sender_country, receiver_country, service_code } = prev;
+      let autoCode = '';
+      if (sender_country === 'PH' && receiver_country === 'UAE') autoCode = 'PH_TO_UAE';
+      else if (sender_country === 'UAE' && receiver_country === 'PH') autoCode = 'UAE_TO_PH';
+      if (autoCode === service_code) return prev;
+      return { ...prev, service_code: autoCode };
+    });
+  }, [formData.sender_country, formData.receiver_country]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
 
-    // Validate service code is selected when addresses are provided
-    if (formData.sender_address && formData.receiver_address && !formData.service_code) {
+    if (!formData.sender_country || !formData.receiver_country) {
       toast({
         variant: 'destructive',
         title: 'Validation Error',
-        description: 'Please select a service code based on the sender and receiver addresses',
+        description: 'Please select both sender and receiver countries',
+      });
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (!formData.service_code) {
+      toast({
+        variant: 'destructive',
+        title: 'Validation Error',
+        description: 'Service code will be auto-selected after choosing valid countries',
       });
       setIsSubmitting(false);
       return;
@@ -152,17 +101,19 @@ export default function InvoiceRequestForm({ onRequestCreated, currentUser }: In
           title: 'Success',
           description: 'Invoice request created successfully',
         });
-        setIsDialogOpen(false);
+        setIsFormOpen(false);
         setFormData({
           customer_name: '',
           customer_phone: '',
-          receiver_name: '',
-          receiver_phone: '',
-          sender_address: '',
-          receiver_address: '',
-          shipment_type: '',
-          service_code: '',
-          notes: '',
+        receiver_name: '',
+        receiver_phone: '',
+        sender_address: '',
+        receiver_address: '',
+        sender_country: '',
+        receiver_country: '',
+        shipment_type: '',
+        service_code: '',
+        notes: '',
         });
         onRequestCreated();
       } else {
@@ -184,22 +135,28 @@ export default function InvoiceRequestForm({ onRequestCreated, currentUser }: In
   };
 
   return (
-    <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-      <DialogTrigger asChild>
-        <Button>
-          <PlusCircle className="mr-2 h-4 w-4" />
-          New Invoice Request
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Create New Invoice Request</DialogTitle>
-          <DialogDescription>
-            Enter client details for the invoice request. All fields marked with * are required.
-          </DialogDescription>
-        </DialogHeader>
-        
-        <form onSubmit={handleSubmit} className="space-y-6">
+    <>
+      <Button onClick={() => setIsFormOpen(true)}>
+        <PlusCircle className="mr-2 h-4 w-4" />
+        New Invoice Request
+      </Button>
+
+      {isFormOpen && (
+        <div className="fixed inset-0 z-50 bg-white dark:bg-slate-950 overflow-y-auto">
+          <div className="mx-auto max-w-5xl px-6 py-10 space-y-8">
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="text-2xl font-semibold">Create New Invoice Request</h2>
+                <p className="text-sm text-muted-foreground">
+                  Enter client details for the invoice request. All fields marked with * are required.
+                </p>
+              </div>
+              <Button variant="ghost" onClick={() => setIsFormOpen(false)}>
+                Close
+              </Button>
+            </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6 bg-card rounded-xl border p-6 shadow-sm">
           {/* Customer Information */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Customer Information</h3>
@@ -259,25 +216,95 @@ export default function InvoiceRequestForm({ onRequestCreated, currentUser }: In
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Location Information</h3>
             
-            <div className="space-y-4">
-              {/* Sender Address */}
-              <div className="space-y-2">
-                <LocationSelector
-                  label="Sender Address"
-                  value={formData.sender_address}
-                  onChange={handleSenderAddressChange}
-                  required
-                />
+            <div className="grid gap-6 md:grid-cols-2">
+              {/* Sender Column */}
+              <div className="space-y-4 rounded-lg border p-4">
+                <h4 className="text-sm font-semibold text-muted-foreground">Sender</h4>
+                <div className="space-y-2">
+                  <Label>Country *</Label>
+                  <Select
+                    value={formData.sender_country}
+                    onValueChange={(value) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        sender_country: value,
+                        sender_address: '',
+                        receiver_country: value === 'PH' ? 'UAE' : value === 'UAE' ? 'PH' : '',
+                        receiver_address: '',
+                      }))
+                    }
+                    required
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select country" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PH">Philippines</SelectItem>
+                      <SelectItem value="UAE">United Arab Emirates</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Address *</Label>
+                  {formData.sender_country ? (
+                    <LocationSelector
+                      label=""
+                      value={formData.sender_address}
+                      onChange={handleSenderAddressChange}
+                      required
+                      presetCountry={formData.sender_country === 'PH' ? 'Philippines' : formData.sender_country === 'UAE' ? 'UAE' : undefined}
+                    />
+                  ) : (
+                    <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                      Select a country to enable manual entry
+                    </div>
+                  )}
+                </div>
               </div>
-              
-              {/* Receiver Address */}
-              <div className="space-y-2">
-                <LocationSelector
-                  label="Receiver Address"
-                  value={formData.receiver_address}
-                  onChange={handleReceiverAddressChange}
-                  required
-                />
+
+              {/* Receiver Column */}
+              <div className="space-y-4 rounded-lg border p-4">
+                <h4 className="text-sm font-semibold text-muted-foreground">Receiver</h4>
+                <div className="space-y-2">
+                  <Label>Country *</Label>
+                  <Select
+                    value={formData.receiver_country}
+                    onValueChange={(value) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        receiver_country: value,
+                        receiver_address: '',
+                        sender_country: value === 'PH' ? 'UAE' : value === 'UAE' ? 'PH' : prev.sender_country,
+                        sender_address: '',
+                      }))
+                    }
+                    required
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select country" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PH">Philippines</SelectItem>
+                      <SelectItem value="UAE">United Arab Emirates</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Address *</Label>
+                  {formData.receiver_country ? (
+                    <LocationSelector
+                      label=""
+                      value={formData.receiver_address}
+                      onChange={handleReceiverAddressChange}
+                      required
+                      presetCountry={formData.receiver_country === 'PH' ? 'Philippines' : formData.receiver_country === 'UAE' ? 'UAE' : undefined}
+                    />
+                  ) : (
+                    <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                      Select a country to enable manual entry
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -305,31 +332,13 @@ export default function InvoiceRequestForm({ onRequestCreated, currentUser }: In
 
               <div>
                 <Label htmlFor="service_code">Service Code *</Label>
-                <Select
-                  value={formData.service_code}
-                  onValueChange={(value) => setFormData({ ...formData, service_code: value })}
-                  disabled={serviceCodeOptions.length === 0}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={
-                      serviceCodeOptions.length === 0 
-                        ? "Select sender and receiver addresses first" 
-                        : "Select service code"
-                    } />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {serviceCodeOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {serviceCodeOptions.length === 0 && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Please select sender and receiver addresses to see available service codes
-                  </p>
-                )}
+                <Input
+                  id="service_code"
+                  value={formData.service_code || ''}
+                  placeholder="Auto-set based on selected countries"
+                  readOnly
+                  required
+                />
               </div>
             </div>
           </div>
@@ -355,7 +364,7 @@ export default function InvoiceRequestForm({ onRequestCreated, currentUser }: In
             <Button
               type="button"
               variant="outline"
-              onClick={() => setIsDialogOpen(false)}
+              onClick={() => setIsFormOpen(false)}
             >
               Cancel
             </Button>
@@ -364,7 +373,9 @@ export default function InvoiceRequestForm({ onRequestCreated, currentUser }: In
             </Button>
           </div>
         </form>
-      </DialogContent>
-    </Dialog>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
