@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { User, Employee } = require('../models');
+const { User, Employee, Department } = require('../models');
 
 const router = express.Router();
 
@@ -100,7 +100,9 @@ router.put('/:id', [
   body('email').optional().isEmail().normalizeEmail(),
   body('role').optional().isIn(['SUPERADMIN', 'ADMIN', 'USER']),
   body('isActive').optional().isBoolean(),
-  body('password').optional().isLength({ min: 4 })
+  body('password').optional().isLength({ min: 4 }),
+  body('full_name').optional().isString().trim().notEmpty(),
+  body('department_id').optional().isMongoId()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -111,7 +113,7 @@ router.put('/:id', [
       });
     }
 
-    const { email, role, isActive, password } = req.body;
+    const { email, role, isActive, password, full_name, department_id } = req.body;
     const userId = req.params.id;
 
     const user = await User.findById(userId);
@@ -119,13 +121,28 @@ router.put('/:id', [
       return res.status(404).json({ error: 'User not found' });
     }
 
+    // Validate department_id if provided
+    if (department_id) {
+      const department = await Department.findById(department_id);
+      if (!department) {
+        return res.status(400).json({ 
+          error: 'Department not found' 
+        });
+      }
+    }
+
     // Update fields
     if (email) user.email = email;
     if (role) user.role = role;
     if (typeof isActive === 'boolean') user.isActive = isActive;
     if (password) user.password = password; // Will be hashed by pre-save hook
+    if (full_name) user.full_name = full_name;
+    if (department_id) user.department_id = department_id;
 
     await user.save();
+
+    // Populate department_id for response
+    await user.populate('department_id');
 
     // Return updated user data without password
     const userData = {

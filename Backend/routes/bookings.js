@@ -1,6 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const { Booking, Employee, InvoiceRequest } = require('../models');
+const { Booking, Employee, InvoiceRequest, Department } = require('../models');
 const { createNotificationsForDepartment } = require('./notifications');
 
 const router = express.Router();
@@ -88,7 +88,7 @@ router.post('/:id/review', async (req, res) => {
       amount: booking.amount || null,
       notes: booking.notes || '',
       created_by_employee_id: reviewed_by_employee_id,
-      status: 'SUBMITTED', // Ready for Sales/Operations to process
+      status: 'SUBMITTED', // Ready for Operations to process
       delivery_status: 'PENDING',
       is_leviable: true,
     };
@@ -100,10 +100,10 @@ router.post('/:id/review', async (req, res) => {
     booking.converted_to_invoice_request_id = invoiceRequest._id;
     await booking.save();
 
-    // Create notifications for Sales department about new invoice request
-    const salesDept = await mongoose.model('Department').findOne({ name: 'Sales' });
-    if (salesDept) {
-      await createNotificationsForDepartment('invoice_request', invoiceRequest._id, salesDept._id, reviewed_by_employee_id);
+    // Create notifications for Operations department about new invoice request
+    const operationsDept = await Department.findOne({ name: 'Operations' });
+    if (operationsDept) {
+      await createNotificationsForDepartment('invoice_request', invoiceRequest._id, operationsDept._id, reviewed_by_employee_id);
     }
 
     res.json({
