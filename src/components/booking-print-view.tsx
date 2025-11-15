@@ -1,8 +1,14 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Image as ImageIcon } from 'lucide-react';
 
 interface BookingPrintViewProps {
@@ -12,6 +18,14 @@ interface BookingPrintViewProps {
 
 export default function BookingPrintView({ booking, onClose }: BookingPrintViewProps) {
   const printRef = useRef<HTMLDivElement>(null);
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [viewingImageTitle, setViewingImageTitle] = useState<string>('');
+
+  // Helper function to open image viewer
+  const openImageViewer = (imageSrc: string, title: string) => {
+    setViewingImage(imageSrc);
+    setViewingImageTitle(title);
+  };
 
   // Helper function to get image source
   const getImageSrc = (imageField: string | undefined) => {
@@ -66,17 +80,35 @@ export default function BookingPrintView({ booking, onClose }: BookingPrintViewP
     booking.identityDocuments?.eidBackImage ||
     booking.collections?.identityDocuments?.eidBackImage
   );
+  const philippinesIdFront = getImageSrc(
+    booking.philippinesIdFront ||
+    booking.philippines_id_front ||
+    booking.identityDocuments?.philippinesIdFront ||
+    booking.collections?.identityDocuments?.philippinesIdFront
+  );
+  const philippinesIdBack = getImageSrc(
+    booking.philippinesIdBack ||
+    booking.philippines_id_back ||
+    booking.identityDocuments?.philippinesIdBack ||
+    booking.collections?.identityDocuments?.philippinesIdBack
+  );
   const faceScanImage = getImageSrc(
     booking.face_scan_image ||
     booking.faceScanImage
   );
 
-  const customerImages: string[] = (
+  const baseCustomerImages: string[] = (
     Array.isArray(booking.customerImages) ? booking.customerImages :
     Array.isArray(booking.identityDocuments?.customerImages) ? booking.identityDocuments.customerImages :
     Array.isArray(booking.collections?.identityDocuments?.customerImages) ? booking.collections.identityDocuments.customerImages :
     []
   ).filter(Boolean);
+  
+  // Add singular customerImage if it exists and is not already in the array
+  const singularCustomerImage = booking.customerImage || booking.identityDocuments?.customerImage;
+  const customerImages: string[] = singularCustomerImage && !baseCustomerImages.includes(singularCustomerImage)
+    ? [...baseCustomerImages, singularCustomerImage]
+    : baseCustomerImages;
 
   useEffect(() => {
     // Generate and download PDF automatically
@@ -190,9 +222,18 @@ export default function BookingPrintView({ booking, onClose }: BookingPrintViewP
               </p>
             </div>
             <div>
-              <Label className="text-sm font-semibold">Customer Email</Label>
+              <Label className="text-sm font-semibold">Customer Last Name</Label>
               <p className="text-sm mt-1 border-b pb-1">
-                {formatValue(booking.customer_email || booking.email || sender.emailAddress || sender.email)}
+                {formatValue(
+                  booking.customer_last_name || 
+                  booking.lastName || 
+                  sender.lastName || 
+                  (() => {
+                    const fullName = booking.customer_name || booking.name || sender.fullName || sender.name || '';
+                    const parts = String(fullName).split(' ');
+                    return parts.length > 1 ? parts.slice(1).join(' ') : 'N/A';
+                  })()
+                )}
               </p>
             </div>
             <div>
@@ -202,9 +243,16 @@ export default function BookingPrintView({ booking, onClose }: BookingPrintViewP
               </p>
             </div>
             <div>
-              <Label className="text-sm font-semibold">Agent Name</Label>
+              <Label className="text-sm font-semibold">Sender Address</Label>
               <p className="text-sm mt-1 border-b pb-1">
-                {formatValue(booking.agentName || booking.customer_company || booking.company || sender.company)}
+                {formatValue(
+                  booking.sender_address || 
+                  booking.senderAddress || 
+                  sender.completeAddress || 
+                  sender.address ||
+                  booking.origin_place || 
+                  booking.origin
+                )}
               </p>
             </div>
             <div>
@@ -214,9 +262,9 @@ export default function BookingPrintView({ booking, onClose }: BookingPrintViewP
               </p>
             </div>
             <div>
-              <Label className="text-sm font-semibold">Receiver Email</Label>
+              <Label className="text-sm font-semibold">Receiver Address</Label>
               <p className="text-sm mt-1 border-b pb-1">
-                {formatValue(booking.receiver_email || booking.receiverEmail || receiver.emailAddress || receiver.email)}
+                {formatValue(booking.receiver_address || booking.receiverAddress || receiver.completeAddress || receiver.address)}
               </p>
             </div>
             <div>
@@ -226,45 +274,21 @@ export default function BookingPrintView({ booking, onClose }: BookingPrintViewP
               </p>
             </div>
             <div>
-              <Label className="text-sm font-semibold">Receiver Address</Label>
+              <Label className="text-sm font-semibold">Sender Email</Label>
               <p className="text-sm mt-1 border-b pb-1">
-                {formatValue(booking.receiver_address || booking.receiverAddress || receiver.completeAddress || receiver.address)}
+                {formatValue(booking.customer_email || booking.email || sender.emailAddress || sender.email || 'N/A')}
               </p>
             </div>
             <div>
-              <Label className="text-sm font-semibold">Origin</Label>
+              <Label className="text-sm font-semibold">Receiver Email</Label>
               <p className="text-sm mt-1 border-b pb-1">
-                {formatValue(booking.origin_place || booking.origin || sender.completeAddress || sender.address)}
+                {formatValue(booking.receiver_email || booking.receiverEmail || receiver.emailAddress || receiver.email || 'N/A')}
               </p>
             </div>
             <div>
-              <Label className="text-sm font-semibold">Destination</Label>
+              <Label className="text-sm font-semibold">Sales Agent Email</Label>
               <p className="text-sm mt-1 border-b pb-1">
-                {formatValue(booking.destination_place || booking.destination || receiver.completeAddress || receiver.address)}
-              </p>
-            </div>
-            <div>
-              <Label className="text-sm font-semibold">Shipment Type</Label>
-              <p className="text-sm mt-1 border-b pb-1">
-                {formatValue(booking.shipment_type || booking.shipmentType || booking.deliveryOption || booking.service_type)}
-              </p>
-            </div>
-            <div>
-              <Label className="text-sm font-semibold">Weight (kg)</Label>
-              <p className="text-sm mt-1 border-b pb-1">
-                {booking.weight_kg || booking.weightKg || 'N/A'}
-              </p>
-            </div>
-            <div>
-              <Label className="text-sm font-semibold">Volume (CBM)</Label>
-              <p className="text-sm mt-1 border-b pb-1">
-                {booking.volume_cbm || booking.volumeCbm || 'N/A'}
-              </p>
-            </div>
-            <div>
-              <Label className="text-sm font-semibold">Amount</Label>
-              <p className="text-sm mt-1 border-b pb-1">
-                {booking.amount ? parseFloat(booking.amount.toString()).toFixed(2) : 'N/A'}
+                {formatValue(booking.sales_agent_email || booking.agentEmail || booking.agent?.email || booking.salesAgent?.email || 'N/A')}
               </p>
             </div>
           </div>
@@ -277,38 +301,29 @@ export default function BookingPrintView({ booking, onClose }: BookingPrintViewP
         </CardContent>
       </Card>
 
-      {/* Items - keep with booking details, avoid page breaks within */}
+      {/* Commodities - keep with booking details, avoid page breaks within */}
       {items.length > 0 && (
         <Card className="mb-6 avoid-break">
           <CardHeader>
-            <CardTitle className="text-xl">Items ({items.length})</CardTitle>
+            <CardTitle className="text-xl">Commodities</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="rounded-md border overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-muted/40">
                   <tr>
-                    <th className="text-left p-2">Item</th>
+                    <th className="text-left p-2">Commodity</th>
                     <th className="text-left p-2">Quantity</th>
-                    <th className="text-left p-2">Weight (kg)</th>
-                    <th className="text-left p-2">Value/Amount</th>
-                    <th className="text-left p-2">Notes</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((it, idx) => {
-                    const name = it?.name || it?.description || it?.item || it?.title || `Item ${idx + 1}`;
-                    const qty = it?.quantity || it?.qty || it?.count || 'N/A';
-                    const wt = it?.weight || it?.weightKg || it?.kg || 'N/A';
-                    const val = it?.value || it?.amount || it?.price || 'N/A';
-                    const note = it?.notes || it?.remarks || '';
+                    const commodity = it?.commodity || it?.name || it?.description || it?.item || it?.title || 'N/A';
+                    const qty = it?.qty || it?.quantity || it?.count || 'N/A';
                     return (
-                      <tr key={idx} className="border-t">
-                        <td className="p-2">{formatValue(name)}</td>
+                      <tr key={it?.id || idx} className="border-t">
+                        <td className="p-2">{formatValue(commodity)}</td>
                         <td className="p-2">{formatValue(qty)}</td>
-                        <td className="p-2">{formatValue(wt)}</td>
-                        <td className="p-2">{formatValue(val)}</td>
-                        <td className="p-2">{formatValue(note)}</td>
                       </tr>
                     );
                   })}
@@ -333,7 +348,10 @@ export default function BookingPrintView({ booking, onClose }: BookingPrintViewP
             {idFrontImage && (
               <div className="space-y-2 img-wrap">
                 <Label className="text-sm font-semibold">ID Front Image</Label>
-                <div className="border rounded-md p-2">
+                <div 
+                  className="border rounded-md p-2 cursor-zoom-in"
+                  onClick={() => openImageViewer(idFrontImage, 'ID Front Image')}
+                >
                   <img
                     src={idFrontImage}
                     alt="ID Front"
@@ -347,10 +365,47 @@ export default function BookingPrintView({ booking, onClose }: BookingPrintViewP
             {idBackImage && (
               <div className="space-y-2 img-wrap">
                 <Label className="text-sm font-semibold">ID Back Image</Label>
-                <div className="border rounded-md p-2">
+                <div 
+                  className="border rounded-md p-2 cursor-zoom-in"
+                  onClick={() => openImageViewer(idBackImage, 'ID Back Image')}
+                >
                   <img
                     src={idBackImage}
                     alt="ID Back"
+                    className="w-full max-w-md mx-auto object-contain"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Philippines ID Front Image */}
+            {philippinesIdFront && (
+              <div className="space-y-2 img-wrap">
+                <Label className="text-sm font-semibold">Philippines ID Front Image</Label>
+                <div 
+                  className="border rounded-md p-2 cursor-zoom-in"
+                  onClick={() => openImageViewer(philippinesIdFront, 'Philippines ID Front Image')}
+                >
+                  <img
+                    src={philippinesIdFront}
+                    alt="Philippines ID Front"
+                    className="w-full max-w-md mx-auto object-contain"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Philippines ID Back Image */}
+            {philippinesIdBack && (
+              <div className="space-y-2 img-wrap">
+                <Label className="text-sm font-semibold">Philippines ID Back Image</Label>
+                <div 
+                  className="border rounded-md p-2 cursor-zoom-in"
+                  onClick={() => openImageViewer(philippinesIdBack, 'Philippines ID Back Image')}
+                >
+                  <img
+                    src={philippinesIdBack}
+                    alt="Philippines ID Back"
                     className="w-full max-w-md mx-auto object-contain"
                   />
                 </div>
@@ -361,7 +416,10 @@ export default function BookingPrintView({ booking, onClose }: BookingPrintViewP
             {faceScanImage && (
               <div className="space-y-2 img-wrap">
                 <Label className="text-sm font-semibold">Face Scan Image</Label>
-                <div className="border rounded-md p-2">
+                <div 
+                  className="border rounded-md p-2 cursor-zoom-in"
+                  onClick={() => openImageViewer(faceScanImage, 'Face Scan Image')}
+                >
                   <img
                     src={faceScanImage}
                     alt="Face Scan"
@@ -385,7 +443,11 @@ export default function BookingPrintView({ booking, onClose }: BookingPrintViewP
                     <div key={cidx} className={`space-y-2 ${cidx < chunks.length - 1 ? 'page-break' : ''}`}>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {chunk.map((img, idx) => (
-                          <div key={`${cidx}-${idx}`} className="border rounded-md p-2 img-wrap">
+                          <div 
+                            key={`${cidx}-${idx}`} 
+                            className="border rounded-md p-2 img-wrap cursor-zoom-in"
+                            onClick={() => openImageViewer(img, `Client Face ${cidx * size + idx + 1}`)}
+                          >
                             <img
                               src={img}
                               alt={`Client Face ${cidx * size + idx + 1}`}
@@ -408,6 +470,26 @@ export default function BookingPrintView({ booking, onClose }: BookingPrintViewP
         <p>This document was generated on {new Date().toLocaleString()}</p>
         <p className="mt-2">Click the browser's print button or press Ctrl+P to print/download</p>
       </div>
+
+      {/* Image Viewer Modal */}
+      <Dialog open={!!viewingImage} onOpenChange={() => setViewingImage(null)}>
+        <DialogContent className="max-w-5xl max-h-[95vh] p-0">
+          <DialogHeader className="px-6 pt-6 pb-2">
+            <DialogTitle>{viewingImageTitle}</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 pb-6">
+            {viewingImage && (
+              <div className="relative w-full h-[calc(95vh-120px)] flex items-center justify-center bg-black/5 rounded-md overflow-hidden">
+                <img
+                  src={viewingImage}
+                  alt={viewingImageTitle}
+                  className="max-w-full max-h-full object-contain"
+                />
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

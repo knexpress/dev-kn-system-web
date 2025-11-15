@@ -272,7 +272,9 @@ export default function BookingRequestsPage() {
                       {getStatusBadge(booking.review_status || 'not reviewed')}
                     </TableCell>
                     <TableCell>
-                      {booking.createdAt
+                      {booking.submittedAt
+                        ? new Date(booking.submittedAt).toLocaleDateString()
+                        : booking.createdAt
                         ? new Date(booking.createdAt).toLocaleDateString()
                         : booking.created_at
                         ? new Date(booking.created_at).toLocaleDateString()

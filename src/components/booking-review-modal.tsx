@@ -11,9 +11,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
-import { CheckCircle, X, Loader2, Image as ImageIcon } from 'lucide-react';
+import { CheckCircle, X, Loader2, Image as ImageIcon, XCircle } from 'lucide-react';
 
 interface BookingReviewModalProps {
   booking: any;
@@ -31,6 +32,10 @@ export default function BookingReviewModal({
   currentUser,
 }: BookingReviewModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [viewingImageTitle, setViewingImageTitle] = useState<string>('');
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
   const { toast } = useToast();
 
   // Helpers to safely format nested values
@@ -101,6 +106,62 @@ export default function BookingReviewModal({
     }
   };
 
+  const handleReject = async () => {
+    if (!rejectionReason.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please provide a rejection reason',
+      });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      if (!currentUser?.employee_id && !currentUser?.uid) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'User information not found',
+        });
+        return;
+      }
+
+      // Update booking status to rejected with reason
+      const result = await apiClient.updateBookingStatus(booking._id, {
+        review_status: 'rejected',
+        reviewed_by_employee_id: currentUser.employee_id || currentUser.uid,
+        reason: rejectionReason.trim(),
+      });
+
+      if (result.success) {
+        toast({
+          title: 'Success',
+          description: 'Booking has been rejected',
+        });
+        setShowRejectModal(false);
+        setRejectionReason('');
+        onReviewComplete();
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: result.error || 'Failed to reject booking',
+        });
+      }
+    } catch (error) {
+      console.error('Error rejecting booking:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to reject booking',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Helper function to get image source
   const getImageSrc = (imageField: string | undefined) => {
     if (!imageField) return null;
@@ -119,6 +180,12 @@ export default function BookingReviewModal({
     return imageField;
   };
 
+  // Helper function to open image viewer
+  const openImageViewer = (imageSrc: string, title: string) => {
+    setViewingImage(imageSrc);
+    setViewingImageTitle(title);
+  };
+
   const idFrontImage = getImageSrc(
     booking.id_front_image 
     || booking.idFrontImage 
@@ -131,29 +198,48 @@ export default function BookingReviewModal({
     || booking.identityDocuments?.eidBackImage 
     || booking.collections?.identityDocuments?.eidBackImage
   );
+  const philippinesIdFront = getImageSrc(
+    booking.philippinesIdFront 
+    || booking.philippines_id_front
+    || booking.identityDocuments?.philippinesIdFront
+    || booking.collections?.identityDocuments?.philippinesIdFront
+  );
+  const philippinesIdBack = getImageSrc(
+    booking.philippinesIdBack 
+    || booking.philippines_id_back
+    || booking.identityDocuments?.philippinesIdBack
+    || booking.collections?.identityDocuments?.philippinesIdBack
+  );
   const faceScanImage = getImageSrc(
     booking.face_scan_image 
     || booking.faceScanImage
   );
 
-  const customerImages: string[] = (
+  const baseCustomerImages: string[] = (
     Array.isArray(booking.customerImages) ? booking.customerImages :
     Array.isArray(booking.identityDocuments?.customerImages) ? booking.identityDocuments.customerImages :
     Array.isArray(booking.collections?.identityDocuments?.customerImages) ? booking.collections.identityDocuments.customerImages :
     []
   ).filter(Boolean);
+  
+  // Add singular customerImage if it exists and is not already in the array
+  const singularCustomerImage = booking.customerImage || booking.identityDocuments?.customerImage;
+  const customerImages: string[] = singularCustomerImage && !baseCustomerImages.includes(singularCustomerImage)
+    ? [...baseCustomerImages, singularCustomerImage]
+    : baseCustomerImages;
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Review Booking Request</DialogTitle>
-          <DialogDescription>
-            Review booking details and images before approving
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onClose}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Review Booking Request</DialogTitle>
+            <DialogDescription>
+              Review booking details and images before approving
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="space-y-6 mt-4">
+          <div className="space-y-6 mt-4">
           {/* Booking Details */}
           <Card>
             <CardHeader>
@@ -168,9 +254,18 @@ export default function BookingReviewModal({
                   </p>
                 </div>
                 <div>
-                  <Label className="text-sm font-semibold">Customer Email</Label>
+                  <Label className="text-sm font-semibold">Customer Last Name</Label>
                   <p className="text-sm mt-1">
-                    {formatValue(booking.customer_email || booking.email || sender.emailAddress || sender.email)}
+                    {formatValue(
+                      booking.customer_last_name || 
+                      booking.lastName || 
+                      sender.lastName || 
+                      (() => {
+                        const fullName = booking.customer_name || booking.name || sender.fullName || sender.name || '';
+                        const parts = String(fullName).split(' ');
+                        return parts.length > 1 ? parts.slice(1).join(' ') : 'N/A';
+                      })()
+                    )}
                   </p>
                 </div>
                 <div>
@@ -180,9 +275,16 @@ export default function BookingReviewModal({
                   </p>
                 </div>
                 <div>
-                  <Label className="text-sm font-semibold">Customer Company</Label>
+                  <Label className="text-sm font-semibold">Sender Address</Label>
                   <p className="text-sm mt-1">
-                    {formatValue(booking.customer_company || booking.company || sender.company || booking.agentName)}
+                    {formatValue(
+                      booking.sender_address || 
+                      booking.senderAddress || 
+                      sender.completeAddress || 
+                      sender.address ||
+                      booking.origin_place || 
+                      booking.origin
+                    )}
                   </p>
                 </div>
                 <div>
@@ -204,45 +306,21 @@ export default function BookingReviewModal({
                   </p>
                 </div>
                 <div>
-                  <Label className="text-sm font-semibold">Receiver Company</Label>
+                  <Label className="text-sm font-semibold">Sender Email</Label>
                   <p className="text-sm mt-1">
-                    {formatValue(booking.receiver_company || booking.receiverCompany || receiver.company)}
+                    {formatValue(booking.customer_email || booking.email || sender.emailAddress || sender.email || 'N/A')}
                   </p>
                 </div>
                 <div>
-                  <Label className="text-sm font-semibold">Origin</Label>
+                  <Label className="text-sm font-semibold">Receiver Email</Label>
                   <p className="text-sm mt-1">
-                    {formatValue(booking.origin_place || booking.origin || sender.completeAddress || sender.address)}
+                    {formatValue(booking.receiver_email || booking.receiverEmail || receiver.emailAddress || receiver.email || 'N/A')}
                   </p>
                 </div>
                 <div>
-                  <Label className="text-sm font-semibold">Destination</Label>
+                  <Label className="text-sm font-semibold">Sales Agent Email</Label>
                   <p className="text-sm mt-1">
-                    {formatValue(booking.destination_place || booking.destination || receiver.completeAddress || receiver.address)}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-sm font-semibold">Shipment Type</Label>
-                  <p className="text-sm mt-1">
-                    {formatValue(booking.shipment_type || booking.shipmentType || booking.deliveryOption || booking.service_type)}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-sm font-semibold">Weight (kg)</Label>
-                  <p className="text-sm mt-1">
-                    {booking.weight_kg || booking.weightKg || 'N/A'}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-sm font-semibold">Volume (CBM)</Label>
-                  <p className="text-sm mt-1">
-                    {booking.volume_cbm || booking.volumeCbm || 'N/A'}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-sm font-semibold">Amount</Label>
-                  <p className="text-sm mt-1">
-                    {booking.amount ? parseFloat(booking.amount.toString()).toFixed(2) : 'N/A'}
+                    {formatValue(booking.sales_agent_email || booking.agentEmail || booking.agent?.email || booking.salesAgent?.email || 'N/A')}
                   </p>
                 </div>
               </div>
@@ -255,38 +333,29 @@ export default function BookingReviewModal({
             </CardContent>
           </Card>
 
-        {/* Items */}
+        {/* Commodities */}
         {items.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Items ({items.length})</CardTitle>
+              <CardTitle className="text-lg">Commodities</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="rounded-md border overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/40">
                     <tr>
-                      <th className="text-left p-2">Item</th>
+                      <th className="text-left p-2">Commodity</th>
                       <th className="text-left p-2">Quantity</th>
-                      <th className="text-left p-2">Weight (kg)</th>
-                      <th className="text-left p-2">Value/Amount</th>
-                      <th className="text-left p-2">Notes</th>
                     </tr>
                   </thead>
                   <tbody>
                     {items.map((it, idx) => {
-                      const name = it?.name || it?.description || it?.item || it?.title || `Item ${idx + 1}`;
-                      const qty = it?.quantity || it?.qty || it?.count || 'N/A';
-                      const wt = it?.weight || it?.weightKg || it?.kg || 'N/A';
-                      const val = it?.value || it?.amount || it?.price || 'N/A';
-                      const note = it?.notes || it?.remarks || '';
+                      const commodity = it?.commodity || it?.name || it?.description || it?.item || it?.title || 'N/A';
+                      const qty = it?.qty || it?.quantity || it?.count || 'N/A';
                       return (
-                        <tr key={idx} className="border-t">
-                          <td className="p-2">{formatValue(name)}</td>
+                        <tr key={it?.id || idx} className="border-t">
+                          <td className="p-2">{formatValue(commodity)}</td>
                           <td className="p-2">{formatValue(qty)}</td>
-                          <td className="p-2">{formatValue(wt)}</td>
-                          <td className="p-2">{formatValue(val)}</td>
-                          <td className="p-2">{formatValue(note)}</td>
                         </tr>
                       );
                     })}
@@ -311,15 +380,16 @@ export default function BookingReviewModal({
                     ID Front
                   </Label>
                   {idFrontImage ? (
-                    <a href={idFrontImage} target="_blank" rel="noopener noreferrer">
-                      <div className="relative w-full aspect-video border rounded-md overflow-hidden cursor-zoom-in">
-                        <img
-                          src={idFrontImage}
-                          alt="ID Front"
-                          className="w-full h-full object-contain"
-                        />
-                      </div>
-                    </a>
+                    <div 
+                      className="relative w-full aspect-video border rounded-md overflow-hidden cursor-zoom-in"
+                      onClick={() => openImageViewer(idFrontImage, 'ID Front')}
+                    >
+                      <img
+                        src={idFrontImage}
+                        alt="ID Front"
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
                   ) : (
                     <div className="w-full aspect-video border rounded-md flex items-center justify-center text-muted-foreground">
                       <p className="text-sm">No image available</p>
@@ -334,15 +404,64 @@ export default function BookingReviewModal({
                     ID Back
                   </Label>
                   {idBackImage ? (
-                    <a href={idBackImage} target="_blank" rel="noopener noreferrer">
-                      <div className="relative w-full aspect-video border rounded-md overflow-hidden cursor-zoom-in">
-                        <img
-                          src={idBackImage}
-                          alt="ID Back"
-                          className="w-full h-full object-contain"
-                        />
-                      </div>
-                    </a>
+                    <div 
+                      className="relative w-full aspect-video border rounded-md overflow-hidden cursor-zoom-in"
+                      onClick={() => openImageViewer(idBackImage, 'ID Back')}
+                    >
+                      <img
+                        src={idBackImage}
+                        alt="ID Back"
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-full aspect-video border rounded-md flex items-center justify-center text-muted-foreground">
+                      <p className="text-sm">No image available</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Philippines ID Front Image */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold flex items-center gap-2">
+                    <ImageIcon className="h-4 w-4" />
+                    Philippines ID Front
+                  </Label>
+                  {philippinesIdFront ? (
+                    <div 
+                      className="relative w-full aspect-video border rounded-md overflow-hidden cursor-zoom-in"
+                      onClick={() => openImageViewer(philippinesIdFront, 'Philippines ID Front')}
+                    >
+                      <img
+                        src={philippinesIdFront}
+                        alt="Philippines ID Front"
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-full aspect-video border rounded-md flex items-center justify-center text-muted-foreground">
+                      <p className="text-sm">No image available</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Philippines ID Back Image */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold flex items-center gap-2">
+                    <ImageIcon className="h-4 w-4" />
+                    Philippines ID Back
+                  </Label>
+                  {philippinesIdBack ? (
+                    <div 
+                      className="relative w-full aspect-video border rounded-md overflow-hidden cursor-zoom-in"
+                      onClick={() => openImageViewer(philippinesIdBack, 'Philippines ID Back')}
+                    >
+                      <img
+                        src={philippinesIdBack}
+                        alt="Philippines ID Back"
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
                   ) : (
                     <div className="w-full aspect-video border rounded-md flex items-center justify-center text-muted-foreground">
                       <p className="text-sm">No image available</p>
@@ -357,15 +476,16 @@ export default function BookingReviewModal({
                       <ImageIcon className="h-4 w-4" />
                       Face Scan
                     </Label>
-                    <a href={faceScanImage} target="_blank" rel="noopener noreferrer">
-                      <div className="relative w-full aspect-video border rounded-md overflow-hidden cursor-zoom-in">
-                        <img
-                          src={faceScanImage}
-                          alt="Face Scan"
-                          className="w-full h-full object-contain"
-                        />
-                      </div>
-                    </a>
+                    <div 
+                      className="relative w-full aspect-video border rounded-md overflow-hidden cursor-zoom-in"
+                      onClick={() => openImageViewer(faceScanImage, 'Face Scan')}
+                    >
+                      <img
+                        src={faceScanImage}
+                        alt="Face Scan"
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
                   </div>
                 )}
 
@@ -378,15 +498,17 @@ export default function BookingReviewModal({
                   {customerImages.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {customerImages.map((img, idx) => (
-                        <a key={idx} href={img} target="_blank" rel="noopener noreferrer">
-                          <div className="relative w-full aspect-video border rounded-md overflow-hidden cursor-zoom-in">
-                            <img
-                              src={img}
-                              alt={`Client Face ${idx + 1}`}
-                              className="w-full h-full object-contain"
-                            />
-                          </div>
-                        </a>
+                        <div 
+                          key={idx}
+                          className="relative w-full aspect-video border rounded-md overflow-hidden cursor-zoom-in"
+                          onClick={() => openImageViewer(img, `Client Face ${idx + 1}`)}
+                        >
+                          <img
+                            src={img}
+                            alt={`Client Face ${idx + 1}`}
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
                       ))}
                     </div>
                   ) : (
@@ -406,8 +528,16 @@ export default function BookingReviewModal({
               Cancel
             </Button>
             <Button
+              variant="destructive"
+              onClick={() => setShowRejectModal(true)}
+              disabled={isSubmitting || booking.review_status === 'reviewed' || booking.review_status === 'rejected'}
+            >
+              <XCircle className="h-4 w-4 mr-2" />
+              Reject
+            </Button>
+            <Button
               onClick={handleApprove}
-              disabled={isSubmitting || booking.review_status === 'reviewed'}
+              disabled={isSubmitting || booking.review_status === 'reviewed' || booking.review_status === 'rejected'}
             >
               {isSubmitting ? (
                 <>
@@ -422,9 +552,84 @@ export default function BookingReviewModal({
               )}
             </Button>
           </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Viewer Modal */}
+      <Dialog open={!!viewingImage} onOpenChange={() => setViewingImage(null)}>
+        <DialogContent className="max-w-5xl max-h-[95vh] p-0">
+          <DialogHeader className="px-6 pt-6 pb-2">
+            <DialogTitle>{viewingImageTitle}</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 pb-6">
+            {viewingImage && (
+              <div className="relative w-full h-[calc(95vh-120px)] flex items-center justify-center bg-black/5 rounded-md overflow-hidden">
+                <img
+                  src={viewingImage}
+                  alt={viewingImageTitle}
+                  className="max-w-full max-h-full object-contain"
+                />
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rejection Reason Modal */}
+      <Dialog open={showRejectModal} onOpenChange={setShowRejectModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reject Booking</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for rejecting this booking request.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="rejection-reason">Rejection Reason *</Label>
+              <Textarea
+                id="rejection-reason"
+                placeholder="Enter the reason for rejection..."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                rows={5}
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowRejectModal(false);
+                setRejectionReason('');
+              }}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleReject}
+              disabled={isSubmitting || !rejectionReason.trim()}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Submitting...
+                </>
+              ) : (
+                <>
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Submit Rejection
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

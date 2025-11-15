@@ -849,7 +849,7 @@ class ApiClient {
     });
   }
 
-  async updateBookingStatus(id: string, statusData: { review_status: string; reviewed_by_employee_id?: string }) {
+  async updateBookingStatus(id: string, statusData: { review_status: string; reviewed_by_employee_id?: string; reason?: string }) {
     return this.request(`/bookings/${id}/status`, {
       method: 'PUT',
       body: JSON.stringify(statusData),

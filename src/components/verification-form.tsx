@@ -195,10 +195,49 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     }, 0);
   }, [boxes]);
 
+  // Get service code from booking if available, otherwise use request data
+  const getServiceCodeFromBooking = () => {
+    // Check multiple possible paths for booking data
+    const booking = 
+      request.booking_id || 
+      request.booking || 
+      request.request_id?.booking_id || 
+      request.request_id?.booking ||
+      request.booking_id?.service ? request.booking_id : null;
+    
+    // Check if booking has service field
+    if (booking?.service) {
+      // Map booking service to service code format
+      const service = String(booking.service).toLowerCase().trim();
+      if (service === 'ph-to-uae' || service === 'ph_to_uae') {
+        return 'PH_TO_UAE';
+      } else if (service === 'uae-to-ph' || service === 'uae_to_ph') {
+        return 'UAE_TO_PH';
+      }
+      // Try to match other variations
+      if (service.includes('ph') && service.includes('uae')) {
+        if (service.includes('to') || service.includes('_to_')) {
+          return service.includes('express') ? 'PH_TO_UAE_EXPRESS' : 'PH_TO_UAE';
+        }
+      }
+    }
+    
+    // Also check if service is directly on request (from booking)
+    if (request.service) {
+      const service = String(request.service).toLowerCase().trim();
+      if (service === 'ph-to-uae' || service === 'ph_to_uae') {
+        return 'PH_TO_UAE';
+      }
+    }
+    
+    // Fallback to existing logic
+    return request.service_code || request.verification?.service_code || '';
+  };
+
   const [verificationData, setVerificationData] = useState({
     invoice_number: request.invoice_number || request.verification?.invoice_number || '',
     tracking_code: request.tracking_code || request.verification?.tracking_code || '',
-    service_code: request.service_code || request.verification?.service_code || '',
+    service_code: getServiceCodeFromBooking(),
     amount: request.amount?.toString() || request.verification?.amount?.toString() || '',
     actual_weight: request.weight?.toString() || request.verification?.actual_weight?.toString() || '',
     volume_cbm: request.volume_cbm?.toString() || request.verification?.volume_cbm?.toString() || '',
@@ -242,6 +281,17 @@ export default function VerificationForm({ request, onVerificationComplete, curr
       };
     }
   }, [totalVM, verificationData.actual_weight]);
+
+  // Update service code when booking data is available
+  useEffect(() => {
+    const bookingServiceCode = getServiceCodeFromBooking();
+    if (bookingServiceCode && bookingServiceCode !== verificationData.service_code) {
+      setVerificationData(prev => ({
+        ...prev,
+        service_code: bookingServiceCode
+      }));
+    }
+  }, [request.booking_id, request.booking, request.service, request.request_id?.booking_id, request.request_id?.booking]);
 
   // Determine route from service code (case-insensitive)
   const route = useMemo(() => {
