@@ -131,6 +131,14 @@ export default function BookingReviewModal({
     || booking.identityDocuments?.eidBackImage 
     || booking.collections?.identityDocuments?.eidBackImage
   );
+  const philippinesIdFront = getImageSrc(
+    booking.identityDocuments?.philippinesIdFront
+    || booking.collections?.identityDocuments?.philippinesIdFront
+  );
+  const philippinesIdBack = getImageSrc(
+    booking.identityDocuments?.philippinesIdBack
+    || booking.collections?.identityDocuments?.philippinesIdBack
+  );
   const faceScanImage = getImageSrc(
     booking.face_scan_image 
     || booking.faceScanImage
@@ -162,15 +170,15 @@ export default function BookingReviewModal({
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-sm font-semibold">Customer Name</Label>
+                  <Label className="text-sm font-semibold">Customer First Name</Label>
                   <p className="text-sm mt-1">
-                    {formatValue(booking.customer_name || booking.name || sender.fullName || sender.name)}
+                    {formatValue(sender.firstName || booking.customer_first_name || booking.firstName)}
                   </p>
                 </div>
                 <div>
-                  <Label className="text-sm font-semibold">Customer Email</Label>
+                  <Label className="text-sm font-semibold">Customer Last Name</Label>
                   <p className="text-sm mt-1">
-                    {formatValue(booking.customer_email || booking.email || sender.emailAddress || sender.email)}
+                    {formatValue(sender.lastName || booking.customer_last_name || booking.lastName)}
                   </p>
                 </div>
                 <div>
@@ -180,15 +188,15 @@ export default function BookingReviewModal({
                   </p>
                 </div>
                 <div>
-                  <Label className="text-sm font-semibold">Customer Company</Label>
+                  <Label className="text-sm font-semibold">Receiver First Name</Label>
                   <p className="text-sm mt-1">
-                    {formatValue(booking.customer_company || booking.company || sender.company || booking.agentName)}
+                    {formatValue(receiver.firstName || booking.receiver_first_name)}
                   </p>
                 </div>
                 <div>
-                  <Label className="text-sm font-semibold">Receiver Name</Label>
+                  <Label className="text-sm font-semibold">Receiver Last Name</Label>
                   <p className="text-sm mt-1">
-                    {formatValue(booking.receiver_name || booking.receiverName || receiver.fullName || receiver.name)}
+                    {formatValue(receiver.lastName || booking.receiver_last_name)}
                   </p>
                 </div>
                 <div>
@@ -204,12 +212,6 @@ export default function BookingReviewModal({
                   </p>
                 </div>
                 <div>
-                  <Label className="text-sm font-semibold">Receiver Company</Label>
-                  <p className="text-sm mt-1">
-                    {formatValue(booking.receiver_company || booking.receiverCompany || receiver.company)}
-                  </p>
-                </div>
-                <div>
                   <Label className="text-sm font-semibold">Origin</Label>
                   <p className="text-sm mt-1">
                     {formatValue(booking.origin_place || booking.origin || sender.completeAddress || sender.address)}
@@ -222,36 +224,16 @@ export default function BookingReviewModal({
                   </p>
                 </div>
                 <div>
-                  <Label className="text-sm font-semibold">Shipment Type</Label>
+                  <Label className="text-sm font-semibold">Created At</Label>
                   <p className="text-sm mt-1">
-                    {formatValue(booking.shipment_type || booking.shipmentType || booking.deliveryOption || booking.service_type)}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-sm font-semibold">Weight (kg)</Label>
-                  <p className="text-sm mt-1">
-                    {booking.weight_kg || booking.weightKg || 'N/A'}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-sm font-semibold">Volume (CBM)</Label>
-                  <p className="text-sm mt-1">
-                    {booking.volume_cbm || booking.volumeCbm || 'N/A'}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-sm font-semibold">Amount</Label>
-                  <p className="text-sm mt-1">
-                    {booking.amount ? parseFloat(booking.amount.toString()).toFixed(2) : 'N/A'}
+                    {booking.submittedAt
+                      ? new Date(booking.submittedAt).toLocaleString()
+                      : booking.createdAt
+                      ? new Date(booking.createdAt).toLocaleString()
+                      : 'N/A'}
                   </p>
                 </div>
               </div>
-              {booking.notes && (
-                <div>
-                  <Label className="text-sm font-semibold">Notes</Label>
-                  <p className="text-sm mt-1">{booking.notes}</p>
-                </div>
-              )}
             </CardContent>
           </Card>
 
@@ -266,27 +248,18 @@ export default function BookingReviewModal({
                 <table className="w-full text-sm">
                   <thead className="bg-muted/40">
                     <tr>
-                      <th className="text-left p-2">Item</th>
+                      <th className="text-left p-2">Commodity</th>
                       <th className="text-left p-2">Quantity</th>
-                      <th className="text-left p-2">Weight (kg)</th>
-                      <th className="text-left p-2">Value/Amount</th>
-                      <th className="text-left p-2">Notes</th>
                     </tr>
                   </thead>
                   <tbody>
                     {items.map((it, idx) => {
-                      const name = it?.name || it?.description || it?.item || it?.title || `Item ${idx + 1}`;
+                      const commodity = it?.commodity || it?.name || it?.description || it?.item || it?.title || `Item ${idx + 1}`;
                       const qty = it?.quantity || it?.qty || it?.count || 'N/A';
-                      const wt = it?.weight || it?.weightKg || it?.kg || 'N/A';
-                      const val = it?.value || it?.amount || it?.price || 'N/A';
-                      const note = it?.notes || it?.remarks || '';
                       return (
                         <tr key={idx} className="border-t">
-                          <td className="p-2">{formatValue(name)}</td>
+                          <td className="p-2">{formatValue(commodity)}</td>
                           <td className="p-2">{formatValue(qty)}</td>
-                          <td className="p-2">{formatValue(wt)}</td>
-                          <td className="p-2">{formatValue(val)}</td>
-                          <td className="p-2">{formatValue(note)}</td>
                         </tr>
                       );
                     })}
@@ -304,6 +277,7 @@ export default function BookingReviewModal({
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Note: Grid will expand to accommodate all images */}
                 {/* ID Front Image */}
                 <div className="space-y-2">
                   <Label className="text-sm font-semibold flex items-center gap-2">
@@ -339,6 +313,52 @@ export default function BookingReviewModal({
                         <img
                           src={idBackImage}
                           alt="ID Back"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                    </a>
+                  ) : (
+                    <div className="w-full aspect-video border rounded-md flex items-center justify-center text-muted-foreground">
+                      <p className="text-sm">No image available</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Philippines ID Front Image */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold flex items-center gap-2">
+                    <ImageIcon className="h-4 w-4" />
+                    Philippines ID Front
+                  </Label>
+                  {philippinesIdFront ? (
+                    <a href={philippinesIdFront} target="_blank" rel="noopener noreferrer">
+                      <div className="relative w-full aspect-video border rounded-md overflow-hidden cursor-zoom-in">
+                        <img
+                          src={philippinesIdFront}
+                          alt="Philippines ID Front"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                    </a>
+                  ) : (
+                    <div className="w-full aspect-video border rounded-md flex items-center justify-center text-muted-foreground">
+                      <p className="text-sm">No image available</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Philippines ID Back Image */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold flex items-center gap-2">
+                    <ImageIcon className="h-4 w-4" />
+                    Philippines ID Back
+                  </Label>
+                  {philippinesIdBack ? (
+                    <a href={philippinesIdBack} target="_blank" rel="noopener noreferrer">
+                      <div className="relative w-full aspect-video border rounded-md overflow-hidden cursor-zoom-in">
+                        <img
+                          src={philippinesIdBack}
+                          alt="Philippines ID Back"
                           className="w-full h-full object-contain"
                         />
                       </div>

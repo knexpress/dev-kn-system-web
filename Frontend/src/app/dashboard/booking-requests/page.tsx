@@ -234,7 +234,6 @@ export default function BookingRequestsPage() {
                     <TableHead>Receiver Name</TableHead>
                     <TableHead>Origin</TableHead>
                     <TableHead>Destination</TableHead>
-                    <TableHead>Shipment Type</TableHead>
                     <TableHead>Review Status</TableHead>
                     <TableHead>Created At</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -265,14 +264,13 @@ export default function BookingRequestsPage() {
                         || booking.receiver?.city
                       )}
                       </TableCell>
-                      <TableCell>
-                      {formatValue(getField(booking, ['shipment_type','shipmentType','service_type','service']))}
-                      </TableCell>
                     <TableCell>
                       {getStatusBadge(booking.review_status || 'not reviewed')}
                     </TableCell>
                     <TableCell>
-                      {booking.createdAt
+                      {booking.submittedAt
+                        ? new Date(booking.submittedAt).toLocaleDateString()
+                        : booking.createdAt
                         ? new Date(booking.createdAt).toLocaleDateString()
                         : booking.created_at
                         ? new Date(booking.created_at).toLocaleDateString()
