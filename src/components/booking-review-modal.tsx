@@ -67,6 +67,8 @@ export default function BookingReviewModal({
   const getCoordinates = (source: any, type: 'sender' | 'receiver') => {
     // Try various possible field names for longitude and latitude
     const possibleFields = [
+      // Form filler fields (specific to sender)
+      { lat: source?.formFillerLatitude || source?.form_filler_latitude, lng: source?.formFillerLongitude || source?.form_filler_longitude },
       // Direct fields
       { lat: source?.latitude || source?.lat, lng: source?.longitude || source?.lng || source?.long },
       // Nested in location object
@@ -77,6 +79,8 @@ export default function BookingReviewModal({
       { lat: booking?.[`${type}_latitude`] || booking?.[`${type}_lat`], lng: booking?.[`${type}_longitude`] || booking?.[`${type}_lng`] || booking?.[`${type}_long`] },
       // Booking level nested
       { lat: booking?.[`${type}_location`]?.latitude || booking?.[`${type}_location`]?.lat, lng: booking?.[`${type}_location`]?.longitude || booking?.[`${type}_location`]?.lng || booking?.[`${type}_location`]?.long },
+      // Receiver specific fields (if they exist)
+      { lat: source?.receiverLatitude || source?.receiver_latitude, lng: source?.receiverLongitude || source?.receiver_longitude },
     ];
 
     for (const field of possibleFields) {
@@ -402,6 +406,100 @@ export default function BookingReviewModal({
               )}
             </CardContent>
           </Card>
+
+          {/* Location Coordinates Section */}
+          {(senderCoordinates || receiverCoordinates) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <MapPin className="h-5 w-5" />
+                  Location Coordinates
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Sender Location */}
+                  {senderCoordinates && (
+                    <div className="border rounded-lg p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm font-semibold flex items-center gap-2">
+                          <MapPin className="h-4 w-4" />
+                          Sender Location
+                        </Label>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open(getGoogleMapsUrl(senderCoordinates.lat, senderCoordinates.lng), '_blank')}
+                        >
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          View on Google Maps
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Latitude</Label>
+                          <p className="text-sm font-mono">{senderCoordinates.lat.toFixed(6)}</p>
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Longitude</Label>
+                          <p className="text-sm font-mono">{senderCoordinates.lng.toFixed(6)}</p>
+                        </div>
+                        <div className="pt-2 border-t">
+                          <Label className="text-xs text-muted-foreground">Address</Label>
+                          <p className="text-sm">
+                            {formatValue(
+                              booking.sender_address || 
+                              booking.senderAddress || 
+                              sender.completeAddress || 
+                              sender.address ||
+                              booking.origin_place || 
+                              booking.origin
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Receiver Location */}
+                  {receiverCoordinates && (
+                    <div className="border rounded-lg p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm font-semibold flex items-center gap-2">
+                          <MapPin className="h-4 w-4" />
+                          Receiver Location
+                        </Label>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open(getGoogleMapsUrl(receiverCoordinates.lat, receiverCoordinates.lng), '_blank')}
+                        >
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          View on Google Maps
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Latitude</Label>
+                          <p className="text-sm font-mono">{receiverCoordinates.lat.toFixed(6)}</p>
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Longitude</Label>
+                          <p className="text-sm font-mono">{receiverCoordinates.lng.toFixed(6)}</p>
+                        </div>
+                        <div className="pt-2 border-t">
+                          <Label className="text-xs text-muted-foreground">Address</Label>
+                          <p className="text-sm">
+                            {formatValue(booking.receiver_address || booking.receiverAddress || receiver.completeAddress || receiver.address)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
         {/* Commodities */}
         {items.length > 0 && (
