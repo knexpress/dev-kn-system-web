@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
-import { Loader2, CheckCircle, XCircle, Clock, MapPin, User, CreditCard, Banknote, Smartphone, ArrowLeft } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, Clock, MapPin, User, CreditCard, Banknote, Smartphone, ArrowLeft, Package, Truck } from 'lucide-react';
 
 interface DeliveryAssignment {
   _id: string;
