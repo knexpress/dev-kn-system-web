@@ -47,33 +47,45 @@ export default function AppSidebar() {
 
   return (
     <>
-      <SidebarHeader>
-        <div className="flex h-8 items-center gap-2 px-2">
-            <Truck className="h-6 w-6 text-primary" />
-            <span className="text-lg font-semibold text-white">KNEX</span>
+      <SidebarHeader className="border-b border-sidebar-border/50">
+        <div className="flex h-12 items-center gap-3 px-4">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10">
+            <Truck className="h-5 w-5 text-primary" />
+          </div>
+          <span className="text-lg font-bold tracking-tight text-sidebar-foreground">KNEX</span>
         </div>
       </SidebarHeader>
-      <Separator />
-      <SidebarContent>
-        <SidebarMenu>
+      <SidebarContent className="px-2 py-4">
+        <SidebarMenu className="space-y-1">
           {navLinks.map((link) => {
             const notificationCount = getNotificationCount(link.href);
+            const isActive = pathname === link.href;
             return (
               <SidebarMenuItem key={link.href}>
                 <SidebarMenuButton
                   asChild
-                  isActive={pathname === link.href}
+                  isActive={isActive}
                   tooltip={{ children: link.label }}
+                  className="group relative transition-industrial hover:bg-sidebar-accent/50 data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground data-[active=true]:font-semibold"
                 >
-                  <Link href={link.href} className="flex items-center justify-between w-full">
-                    <div className="flex items-center gap-2">
-                      <link.icon />
-                      <span>{link.label}</span>
+                  <Link 
+                    href={link.href} 
+                    className="flex items-center justify-between w-full px-3 py-2.5 rounded-md"
+                  >
+                    <div className="flex items-center gap-3">
+                      <link.icon className="h-4 w-4 transition-colors group-hover:text-primary" />
+                      <span className="text-sm">{link.label}</span>
                     </div>
                     {notificationCount > 0 && (
-                      <Badge variant="destructive" className="ml-auto h-5 w-5 rounded-full p-0 text-xs">
+                      <Badge 
+                        variant="destructive" 
+                        className="ml-auto h-5 min-w-[20px] rounded-full px-1.5 text-xs font-semibold flex items-center justify-center transition-industrial hover:scale-110"
+                      >
                         {notificationCount > 99 ? '99+' : notificationCount}
                       </Badge>
+                    )}
+                    {isActive && (
+                      <div className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r-full bg-primary" />
                     )}
                   </Link>
                 </SidebarMenuButton>

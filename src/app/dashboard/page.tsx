@@ -18,15 +18,15 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">
+    <div className="flex flex-col gap-6">
+      <div className="space-y-2">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">
           Welcome back, {userProfile?.full_name?.split(' ')[0] || 'User'}!
         </h1>
-        <p className="text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           {department.name === 'Management' 
-            ? 'Here\'s your company-wide performance overview and strategic insights.'
-            : `Here's your performance overview for the ${department.name} department.`
+            ? 'Company-wide performance overview and strategic insights.'
+            : `Performance overview for the ${department.name} department.`
           }
         </p>
       </div>
@@ -35,84 +35,86 @@ export default function Dashboard() {
       <PerformanceMetrics department={department.name as any} />
 
       {/* Department Insights */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5" />
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card className="hover-lift border-border/50 transition-industrial">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10">
+                <Activity className="h-4 w-4 text-primary" />
+              </div>
               {department.name === 'Management' ? 'Company Insights' : 'Department Insights'}
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">
-                  {department.name === 'Management' ? 'Company Productivity' : 'Team Productivity'}
-                </span>
-                <span className="text-sm text-green-600 font-semibold">+12%</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">
-                  {department.name === 'Management' ? 'Strategic Goals Achievement' : 'Goal Achievement'}
-                </span>
-                <span className="text-sm text-blue-600 font-semibold">85%</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">
-                  {department.name === 'Management' ? 'Cross-Department Efficiency' : 'Process Efficiency'}
-                </span>
-                <span className="text-sm text-purple-600 font-semibold">92%</span>
-              </div>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between rounded-md bg-muted/30 p-3 transition-industrial hover:bg-muted/50">
+              <span className="text-sm font-medium text-foreground">
+                {department.name === 'Management' ? 'Company Productivity' : 'Team Productivity'}
+              </span>
+              <span className="text-sm font-bold text-green-600">+12%</span>
+            </div>
+            <div className="flex items-center justify-between rounded-md bg-muted/30 p-3 transition-industrial hover:bg-muted/50">
+              <span className="text-sm font-medium text-foreground">
+                {department.name === 'Management' ? 'Strategic Goals Achievement' : 'Goal Achievement'}
+              </span>
+              <span className="text-sm font-bold text-primary">85%</span>
+            </div>
+            <div className="flex items-center justify-between rounded-md bg-muted/30 p-3 transition-industrial hover:bg-muted/50">
+              <span className="text-sm font-medium text-foreground">
+                {department.name === 'Management' ? 'Cross-Department Efficiency' : 'Process Efficiency'}
+              </span>
+              <span className="text-sm font-bold text-blue-600">92%</span>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
+        <Card className="hover-lift border-border/50 transition-industrial">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10">
+                <TrendingUp className="h-4 w-4 text-primary" />
+              </div>
               Recent Trends
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">This Month vs Last Month</span>
-                <span className="text-sm text-green-600 font-semibold">+8.2%</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">
-                  {department.name === 'Management' ? 'Quarterly Company Performance' : 'Quarterly Performance'}
-                </span>
-                <span className="text-sm text-blue-600 font-semibold">+15.4%</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">
-                  {department.name === 'Management' ? 'Year-to-Date Company Growth' : 'Year-to-Date Growth'}
-                </span>
-                <span className="text-sm text-purple-600 font-semibold">+22.1%</span>
-              </div>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between rounded-md bg-muted/30 p-3 transition-industrial hover:bg-muted/50">
+              <span className="text-sm font-medium text-foreground">This Month vs Last Month</span>
+              <span className="text-sm font-bold text-green-600">+8.2%</span>
+            </div>
+            <div className="flex items-center justify-between rounded-md bg-muted/30 p-3 transition-industrial hover:bg-muted/50">
+              <span className="text-sm font-medium text-foreground">
+                {department.name === 'Management' ? 'Quarterly Company Performance' : 'Quarterly Performance'}
+              </span>
+              <span className="text-sm font-bold text-primary">+15.4%</span>
+            </div>
+            <div className="flex items-center justify-between rounded-md bg-muted/30 p-3 transition-industrial hover:bg-muted/50">
+              <span className="text-sm font-medium text-foreground">
+                {department.name === 'Management' ? 'Year-to-Date Company Growth' : 'Year-to-Date Growth'}
+              </span>
+              <span className="text-sm font-bold text-blue-600">+22.1%</span>
             </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Quick Access */}
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight mb-4">Quick Access</h2>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">Quick Access</h2>
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
           {quickLinks.map(link => (
             <Link key={link.href} href={link.href} className="block">
-              <Card className="hover:shadow-lg transition-all duration-200 cursor-pointer hover:border-primary/50 hover:scale-[1.02] group">
-                <CardHeader className="flex flex-row items-center space-y-0 pb-2">
-                  <link.icon className="h-4 w-4 text-primary group-hover:text-primary/80 transition-colors" />
-                  <CardTitle className="text-sm font-medium ml-2 group-hover:text-primary transition-colors">
+              <Card className="hover-lift border-border/50 transition-industrial group cursor-pointer">
+                <CardHeader className="flex flex-row items-center space-y-0 pb-3 pt-4">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 group-hover:bg-primary/20 transition-industrial">
+                    <link.icon className="h-4 w-4 text-primary" />
+                  </div>
+                  <CardTitle className="text-sm font-semibold ml-3 group-hover:text-primary transition-colors">
                     {link.label}
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-xs text-muted-foreground group-hover:text-foreground/70 transition-colors">
-                    Access {link.label.toLowerCase()} tools and features
+                <CardContent className="pt-0">
+                  <p className="text-xs text-muted-foreground group-hover:text-foreground/80 transition-colors">
+                    Access {link.label.toLowerCase()} tools
                   </p>
                 </CardContent>
               </Card>
