@@ -35,6 +35,8 @@ import { addClient } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
 import { PlusCircle } from 'lucide-react';
 import { Badge } from './ui/badge';
+import { Card, CardContent } from './ui/card';
+import { Users } from 'lucide-react';
 
 const clientSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters.'),
@@ -44,7 +46,12 @@ const clientSchema = z.object({
   address: z.string().min(5, 'Address seems too short.'),
 });
 
-export default function ClientTable({ clients }: { clients: Client[] }) {
+interface ClientTableProps {
+  clients: Client[];
+  onRefresh?: () => void;
+}
+
+export default function ClientTable({ clients, onRefresh }: ClientTableProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const { toast } = useToast();
   const form = useForm<z.infer<typeof clientSchema>>({
@@ -59,19 +66,32 @@ export default function ClientTable({ clients }: { clients: Client[] }) {
   });
 
   async function onSubmit(values: z.infer<typeof clientSchema>) {
-    const result = await addClient(values);
+    // Map form values to database field names
+    const clientData = {
+      company_name: values.name,
+      contact_name: values.contactPerson,
+      email: values.email,
+      phone: values.phone,
+      address: values.address,
+    };
+    
+    const result = await addClient(clientData);
     if (result.success) {
       toast({
         title: 'Client Added',
-        description: `Successfully added ${values.name}.`,
+        description: `Successfully added ${values.name} to Finance database.`,
       });
       setIsDialogOpen(false);
       form.reset();
+      // Refresh the client list
+      if (onRefresh) {
+        onRefresh();
+      }
     } else {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: result.error || 'Could not add client.',
+        description: result.error || 'Could not add client to database.',
       });
     }
   }
@@ -79,7 +99,12 @@ export default function ClientTable({ clients }: { clients: Client[] }) {
   return (
     <div className="space-y-4">
         <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-semibold">Client List</h2>
+            <div>
+                <h2 className="text-xl font-semibold tracking-tight">Clients</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                    Manage clients from Finance database ({clients.length} {clients.length === 1 ? 'client' : 'clients'})
+                </p>
+            </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogTrigger asChild>
                 <Button>
@@ -169,26 +194,40 @@ export default function ClientTable({ clients }: { clients: Client[] }) {
                 </DialogContent>
             </Dialog>
         </div>
-        <Table>
-            <TableHeader>
-            <TableRow>
-                <TableHead>Company Name</TableHead>
-                <TableHead>Contact Person</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Phone</TableHead>
-            </TableRow>
-            </TableHeader>
-            <TableBody>
-            {clients.map((client) => (
-                <TableRow key={client.id}>
-                <TableCell className="font-medium">{client.name}</TableCell>
-                <TableCell>{client.contactPerson}</TableCell>
-                <TableCell>{client.email}</TableCell>
-                <TableCell>{client.phone}</TableCell>
-                </TableRow>
-            ))}
-            </TableBody>
-        </Table>
+        {clients.length === 0 ? (
+            <Card>
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                    <Users className="h-12 w-12 text-muted-foreground mb-4" />
+                    <p className="text-sm font-medium text-foreground mb-1">No clients found</p>
+                    <p className="text-xs text-muted-foreground">Get started by adding a new client to the database.</p>
+                </CardContent>
+            </Card>
+        ) : (
+            <Card>
+                <Table>
+                    <TableHeader>
+                    <TableRow>
+                        <TableHead>Company Name</TableHead>
+                        <TableHead>Contact Person</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Address</TableHead>
+                    </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                    {clients.map((client) => (
+                        <TableRow key={client.id}>
+                        <TableCell className="font-medium">{client.name}</TableCell>
+                        <TableCell>{client.contactPerson}</TableCell>
+                        <TableCell className="text-muted-foreground">{client.email}</TableCell>
+                        <TableCell className="text-muted-foreground">{client.phone}</TableCell>
+                        <TableCell className="text-muted-foreground max-w-xs truncate">{client.address}</TableCell>
+                        </TableRow>
+                    ))}
+                    </TableBody>
+                </Table>
+            </Card>
+        )}
     </div>
   );
 }

@@ -14,11 +14,12 @@ export default function AppHeader() {
   const pageTitle = currentLink ? currentLink.label : 'Dashboard';
 
   return (
-    <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b border-border/50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 px-4 sm:px-6 industrial-shadow">
-      <SidebarTrigger className="transition-industrial hover:bg-accent/10" />
+    <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b border-border/50 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80 px-4 sm:px-6 industrial-shadow-md">
+      <SidebarTrigger className="transition-industrial hover:bg-accent/10 rounded-md p-2" />
       <div className="flex items-center gap-3">
-        <div className="h-1 w-1 rounded-full bg-primary" />
-        <h1 className="text-lg font-semibold tracking-tight text-foreground">{pageTitle}</h1>
+        <div className="h-2 w-2 rounded-full bg-primary shadow-lg shadow-primary/50 animate-pulse" />
+        <div className="h-6 w-px bg-border/50" />
+        <h1 className="text-lg font-bold tracking-tight text-foreground">{pageTitle}</h1>
       </div>
       <div className="ml-auto flex items-center gap-3">
         <UserNav />

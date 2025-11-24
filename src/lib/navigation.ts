@@ -88,12 +88,6 @@ const allLinks: NavLink[] = [
     departments: ['IT'], // Only IT department (superadmin) can access
   },
   {
-    href: '/dashboard/management',
-    label: 'Management',
-    icon: BarChart,
-    departments: ['Management'],
-  },
-  {
     href: '/dashboard/booking-requests',
     label: 'Booking Requests',
     icon: ClipboardCheck,

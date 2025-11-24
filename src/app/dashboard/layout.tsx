@@ -44,10 +44,10 @@ export default function DashboardLayout({
         <SidebarInset className="flex flex-col w-full min-w-0">
           <AppHeader />
           <main 
-            className="flex-1 overflow-y-auto overflow-x-hidden p-5 md:p-6 lg:p-7 w-full min-w-0 scrollbar-hide bg-muted/20"
+            className="flex-1 overflow-y-auto overflow-x-hidden p-6 md:p-8 lg:p-10 w-full min-w-0 scrollbar-hide bg-gradient-to-br from-background via-muted/10 to-background"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
-              <div className="max-w-[1600px] mx-auto">
+              <div className="max-w-[1600px] mx-auto space-y-6">
                 {children}
               </div>
           </main>

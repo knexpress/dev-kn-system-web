@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { getDepartmentPerformanceMetrics, calculateOverallScore, type PerformanceMetric } from '@/lib/performance-metrics';
+import { calculateCompanyMetrics } from '@/lib/metrics-calculator';
 import type { Department } from '@/lib/types';
 
 interface PerformanceMetricsProps {
@@ -71,16 +72,35 @@ export default function PerformanceMetrics({ department }: PerformanceMetricsPro
 
   useEffect(() => {
     fetchPerformanceData();
+    
+    // Auto-refresh every 30 seconds for Management department
+    if (department === 'Management') {
+      const interval = setInterval(() => {
+        fetchPerformanceData();
+      }, 30000); // 30 seconds
+      
+      return () => clearInterval(interval);
+    }
   }, [department]);
 
   const fetchPerformanceData = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.getDepartmentPerformance(department);
-      if (response.success && response.data) {
-        const performanceMetrics = getDepartmentPerformanceMetrics(department, response.data);
+      
+      // For Management department, calculate metrics from actual data
+      if (department === 'Management') {
+        const companyMetrics = await calculateCompanyMetrics();
+        const performanceMetrics = getDepartmentPerformanceMetrics(department, companyMetrics);
         setMetrics(performanceMetrics);
         setOverallScore(calculateOverallScore(performanceMetrics));
+      } else {
+        // For other departments, use API endpoint
+        const response = await apiClient.getDepartmentPerformance(department);
+        if (response.success && response.data) {
+          const performanceMetrics = getDepartmentPerformanceMetrics(department, response.data);
+          setMetrics(performanceMetrics);
+          setOverallScore(calculateOverallScore(performanceMetrics));
+        }
       }
     } catch (error) {
       console.error('Error fetching performance data:', error);

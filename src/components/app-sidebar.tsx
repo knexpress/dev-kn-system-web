@@ -47,16 +47,19 @@ export default function AppSidebar() {
 
   return (
     <>
-      <SidebarHeader className="border-b border-sidebar-border/50">
-        <div className="flex h-12 items-center gap-3 px-4">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10">
-            <Truck className="h-5 w-5 text-primary" />
+      <SidebarHeader className="border-b border-sidebar-border/50 bg-gradient-to-r from-sidebar-background to-sidebar-accent/10">
+        <div className="flex h-14 items-center gap-3 px-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary/30 to-primary/20 shadow-lg">
+            <Truck className="h-6 w-6 text-primary-foreground" />
           </div>
-          <span className="text-lg font-bold tracking-tight text-sidebar-foreground">KNEX</span>
+          <div className="flex flex-col">
+            <span className="text-xl font-bold tracking-tight text-sidebar-foreground">KNEX</span>
+            <span className="text-xs text-sidebar-foreground/60 font-medium">Logistics System</span>
+          </div>
         </div>
       </SidebarHeader>
-      <SidebarContent className="px-2 py-4">
-        <SidebarMenu className="space-y-1">
+      <SidebarContent className="px-3 py-5">
+        <SidebarMenu className="space-y-1.5">
           {navLinks.map((link) => {
             const notificationCount = getNotificationCount(link.href);
             const isActive = pathname === link.href;
@@ -66,26 +69,32 @@ export default function AppSidebar() {
                   asChild
                   isActive={isActive}
                   tooltip={{ children: link.label }}
-                  className="group relative transition-industrial hover:bg-sidebar-accent/50 data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground data-[active=true]:font-semibold"
+                  className="group relative transition-industrial hover:bg-sidebar-accent/60 data-[active=true]:bg-gradient-to-r data-[active=true]:from-sidebar-accent data-[active=true]:to-sidebar-accent/80 data-[active=true]:text-sidebar-accent-foreground data-[active=true]:font-semibold data-[active=true]:shadow-md"
                 >
                   <Link 
                     href={link.href} 
-                    className="flex items-center justify-between w-full px-3 py-2.5 rounded-md"
+                    className="flex items-center justify-between w-full px-3 py-3 rounded-lg"
                   >
                     <div className="flex items-center gap-3">
-                      <link.icon className="h-4 w-4 transition-colors group-hover:text-primary" />
-                      <span className="text-sm">{link.label}</span>
+                      <div className={`flex h-8 w-8 items-center justify-center rounded-md transition-all ${
+                        isActive 
+                          ? 'bg-primary/20 text-primary shadow-sm' 
+                          : 'bg-sidebar-accent/30 text-sidebar-foreground/70 group-hover:bg-primary/20 group-hover:text-primary'
+                      }`}>
+                        <link.icon className="h-4 w-4" />
+                      </div>
+                      <span className="text-sm font-medium">{link.label}</span>
                     </div>
                     {notificationCount > 0 && (
                       <Badge 
                         variant="destructive" 
-                        className="ml-auto h-5 min-w-[20px] rounded-full px-1.5 text-xs font-semibold flex items-center justify-center transition-industrial hover:scale-110"
+                        className="ml-auto h-6 min-w-[24px] rounded-full px-2 text-xs font-bold flex items-center justify-center transition-industrial hover:scale-110 shadow-sm"
                       >
                         {notificationCount > 99 ? '99+' : notificationCount}
                       </Badge>
                     )}
                     {isActive && (
-                      <div className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r-full bg-primary" />
+                      <div className="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-1.5 rounded-r-full bg-primary shadow-lg" />
                     )}
                   </Link>
                 </SidebarMenuButton>

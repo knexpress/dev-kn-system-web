@@ -1,10 +1,34 @@
 // API Client for Backend Communication
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
+// Rate limiting configuration
+const RATE_LIMIT_CONFIG = {
+  maxRequestsPerSecond: 10, // Maximum requests per second
+  maxRequestsPerMinute: 60, // Maximum requests per minute
+  retryDelay: 1000, // Initial retry delay in ms
+  maxRetries: 3, // Maximum number of retries for rate-limited requests
+  exponentialBackoff: true, // Use exponential backoff for retries
+};
+
+interface QueuedRequest {
+  endpoint: string;
+  options: RequestInit;
+  resolve: (value: any) => void;
+  reject: (error: any) => void;
+  retries: number;
+}
+
 class ApiClient {
   private baseUrl: string;
   private token: string | null = null;
   private pendingRequests: Map<string, Promise<any>> = new Map();
+  
+  // Rate limiting state
+  private requestQueue: QueuedRequest[] = [];
+  private requestTimestamps: number[] = [];
+  private isProcessingQueue: boolean = false;
+  private lastRequestTime: number = 0;
+  private minRequestInterval: number = 1000 / RATE_LIMIT_CONFIG.maxRequestsPerSecond; // ms between requests
 
   constructor(baseUrl: string = API_BASE_URL) {
     this.baseUrl = baseUrl;
@@ -32,6 +56,100 @@ class ApiClient {
     return this.token;
   }
 
+  // Rate limiting: Check if we can make a request now
+  private canMakeRequest(): boolean {
+    const now = Date.now();
+    
+    // Clean old timestamps (older than 1 minute)
+    this.requestTimestamps = this.requestTimestamps.filter(
+      timestamp => now - timestamp < 60000
+    );
+    
+    // Check per-second limit
+    const recentRequests = this.requestTimestamps.filter(
+      timestamp => now - timestamp < 1000
+    );
+    if (recentRequests.length >= RATE_LIMIT_CONFIG.maxRequestsPerSecond) {
+      return false;
+    }
+    
+    // Check per-minute limit
+    if (this.requestTimestamps.length >= RATE_LIMIT_CONFIG.maxRequestsPerMinute) {
+      return false;
+    }
+    
+    // Check minimum interval between requests
+    if (now - this.lastRequestTime < this.minRequestInterval) {
+      return false;
+    }
+    
+    return true;
+  }
+
+  // Get delay needed before next request
+  private getDelayUntilNextRequest(): number {
+    const now = Date.now();
+    
+    // Check per-second limit
+    const recentRequests = this.requestTimestamps.filter(
+      timestamp => now - timestamp < 1000
+    );
+    if (recentRequests.length >= RATE_LIMIT_CONFIG.maxRequestsPerSecond && recentRequests.length > 0) {
+      const oldestRecent = Math.min(...recentRequests);
+      const delay = 1000 - (now - oldestRecent) + 50; // Add 50ms buffer
+      return Math.max(0, delay); // Ensure non-negative
+    }
+    
+    // Check minimum interval
+    if (this.lastRequestTime > 0) {
+      const timeSinceLastRequest = now - this.lastRequestTime;
+      if (timeSinceLastRequest < this.minRequestInterval) {
+        return this.minRequestInterval - timeSinceLastRequest;
+      }
+    }
+    
+    return 0;
+  }
+
+  // Process the request queue
+  private async processQueue() {
+    if (this.isProcessingQueue || this.requestQueue.length === 0) {
+      return;
+    }
+
+    this.isProcessingQueue = true;
+
+    while (this.requestQueue.length > 0) {
+      // Wait if we need to throttle
+      if (!this.canMakeRequest()) {
+        const delay = this.getDelayUntilNextRequest();
+        if (delay > 0) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+
+      const queuedRequest = this.requestQueue.shift();
+      if (!queuedRequest) break;
+
+      // Record request timestamp
+      const now = Date.now();
+      this.requestTimestamps.push(now);
+      this.lastRequestTime = now;
+
+      try {
+        const result = await this.executeRequest(
+          queuedRequest.endpoint,
+          queuedRequest.options
+        );
+        queuedRequest.resolve(result);
+      } catch (error) {
+        queuedRequest.reject(error);
+      }
+    }
+
+    this.isProcessingQueue = false;
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -44,7 +162,23 @@ class ApiClient {
       return this.pendingRequests.get(requestKey)!;
     }
 
-    const requestPromise = this.executeRequest<T>(endpoint, options);
+    // Create promise that will be resolved/rejected by the queue processor
+    const requestPromise = new Promise<{ success: boolean; data?: T; error?: string }>(
+      (resolve, reject) => {
+        // Add to queue
+        this.requestQueue.push({
+          endpoint,
+          options,
+          resolve,
+          reject,
+          retries: 0,
+        });
+
+        // Start processing queue if not already processing
+        this.processQueue();
+      }
+    );
+
     this.pendingRequests.set(requestKey, requestPromise);
 
     try {
@@ -72,18 +206,35 @@ class ApiClient {
         headers['Authorization'] = `Bearer ${this.token}`;
       }
 
+      // Log request for debugging (only in development)
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[API] ${options.method || 'GET'} ${url}`);
+      }
+
       const response = await fetch(url, {
         headers,
         ...options,
       });
 
       if (!response.ok) {
-        // Handle rate limiting specifically
+        // Handle rate limiting specifically with retry logic
         if (response.status === 429) {
-          console.log('Rate limited, request will be retried later');
-          // Wait a bit before returning to avoid immediate retries
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          return { success: false, error: 'Rate limited' };
+          const retryAfter = response.headers.get('Retry-After');
+          const retryDelay = retryAfter 
+            ? parseInt(retryAfter) * 1000 
+            : RATE_LIMIT_CONFIG.retryDelay;
+          
+          console.warn(`[Rate Limit] 429 received, retrying after ${retryDelay}ms`);
+          
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          
+          // Retry the request (up to max retries)
+          // Note: This will be handled by the calling code if needed
+          return { 
+            success: false, 
+            error: `Rate limited. Please try again in ${Math.ceil(retryDelay / 1000)} seconds.` 
+          };
         }
         
         const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
@@ -104,9 +255,25 @@ class ApiClient {
       
       // Otherwise wrap in standard format
       return { success: true, data };
-    } catch (error) {
+    } catch (error: any) {
       console.error('API request failed:', error);
-      return { success: false, error: 'Network error' };
+      
+      // Provide more specific error messages
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        return { 
+          success: false, 
+          error: `Unable to connect to server. Please check if the API is running at ${this.baseUrl}` 
+        };
+      }
+      
+      if (error.name === 'NetworkError' || error.message?.includes('network')) {
+        return { success: false, error: 'Network error: Unable to reach the server' };
+      }
+      
+      return { 
+        success: false, 
+        error: error.message || 'Network error' 
+      };
     }
   }
 
