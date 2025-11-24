@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
-import { CheckCircle, X, Loader2, Image as ImageIcon, XCircle } from 'lucide-react';
+import { CheckCircle, X, Loader2, Image as ImageIcon, XCircle, MapPin, ExternalLink } from 'lucide-react';
 
 interface BookingReviewModalProps {
   booking: any;
@@ -62,6 +62,42 @@ export default function BookingReviewModal({
     Array.isArray(booking.listedItems) ? booking.listedItems :
     []
   ).filter(Boolean);
+
+  // Helper function to extract coordinates from various possible locations
+  const getCoordinates = (source: any, type: 'sender' | 'receiver') => {
+    // Try various possible field names for longitude and latitude
+    const possibleFields = [
+      // Direct fields
+      { lat: source?.latitude || source?.lat, lng: source?.longitude || source?.lng || source?.long },
+      // Nested in location object
+      { lat: source?.location?.latitude || source?.location?.lat, lng: source?.location?.longitude || source?.location?.lng || source?.location?.long },
+      // Nested in coordinates object
+      { lat: source?.coordinates?.latitude || source?.coordinates?.lat, lng: source?.coordinates?.longitude || source?.coordinates?.lng || source?.coordinates?.long },
+      // Booking level fields
+      { lat: booking?.[`${type}_latitude`] || booking?.[`${type}_lat`], lng: booking?.[`${type}_longitude`] || booking?.[`${type}_lng`] || booking?.[`${type}_long`] },
+      // Booking level nested
+      { lat: booking?.[`${type}_location`]?.latitude || booking?.[`${type}_location`]?.lat, lng: booking?.[`${type}_location`]?.longitude || booking?.[`${type}_location`]?.lng || booking?.[`${type}_location`]?.long },
+    ];
+
+    for (const field of possibleFields) {
+      if (field.lat && field.lng) {
+        const lat = typeof field.lat === 'string' ? parseFloat(field.lat) : field.lat;
+        const lng = typeof field.lng === 'string' ? parseFloat(field.lng) : field.lng;
+        if (!isNaN(lat) && !isNaN(lng)) {
+          return { lat, lng };
+        }
+      }
+    }
+    return null;
+  };
+
+  const senderCoordinates = getCoordinates(sender, 'sender');
+  const receiverCoordinates = getCoordinates(receiver, 'receiver');
+
+  // Helper function to create Google Maps URL
+  const getGoogleMapsUrl = (lat: number, lng: number) => {
+    return `https://www.google.com/maps?q=${lat},${lng}`;
+  };
 
   const handleApprove = async () => {
     try {
@@ -286,6 +322,23 @@ export default function BookingReviewModal({
                       booking.origin
                     )}
                   </p>
+                  {senderCoordinates && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        <MapPin className="h-3 w-3 inline mr-1" />
+                        Location: {senderCoordinates.lat.toFixed(6)}, {senderCoordinates.lng.toFixed(6)}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => window.open(getGoogleMapsUrl(senderCoordinates.lat, senderCoordinates.lng), '_blank')}
+                      >
+                        <ExternalLink className="h-3 w-3 mr-1" />
+                        View on Maps
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <Label className="text-sm font-semibold">Receiver Name</Label>
@@ -298,6 +351,23 @@ export default function BookingReviewModal({
                   <p className="text-sm mt-1">
                     {formatValue(booking.receiver_address || booking.receiverAddress || receiver.completeAddress || receiver.address)}
                   </p>
+                  {receiverCoordinates && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        <MapPin className="h-3 w-3 inline mr-1" />
+                        Location: {receiverCoordinates.lat.toFixed(6)}, {receiverCoordinates.lng.toFixed(6)}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => window.open(getGoogleMapsUrl(receiverCoordinates.lat, receiverCoordinates.lng), '_blank')}
+                      >
+                        <ExternalLink className="h-3 w-3 mr-1" />
+                        View on Maps
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <Label className="text-sm font-semibold">Receiver Phone</Label>
