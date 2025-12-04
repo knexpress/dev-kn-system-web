@@ -23,6 +23,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
+import { getQRPaymentUrl } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { useNotifications } from '@/contexts/NotificationContext';
@@ -907,7 +908,7 @@ export default function InvoiceRequestsPage() {
       },
       termsAndConditions: 'Cash Upon Receipt of Goods',
       qrCode: qrCodeData ? {
-        url: qrCodeData.qr_url,
+        url: getQRPaymentUrl(qrCodeData.qr_url),
         code: qrCodeData.qr_code
       } : undefined,
       

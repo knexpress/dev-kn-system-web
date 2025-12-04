@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import InvoiceTemplate from "@/components/invoice-template";
 import TaxInvoiceTemplate from "@/components/tax-invoice-template";
 import { apiClient } from "@/lib/api-client";
+import { getQRPaymentUrl } from "@/lib/utils";
 import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, FileText, Receipt, AlertCircle, Download, Printer } from 'lucide-react';
@@ -323,7 +324,7 @@ export default function InvoicePage() {
         },
         termsAndConditions: 'Cash Upon Receipt of Goods',
         qrCode: qrCodeData ? {
-            url: qrCodeData.qr_url || '',
+            url: getQRPaymentUrl(qrCodeData.qr_url || ''),
             code: qrCodeData.qr_code || ''
         } : undefined
     };
