@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { apiClient } from '@/lib/api-client';
+import { apiCache } from '@/lib/api-cache';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { Eye, CheckCircle, XCircle, Image as ImageIcon, Printer } from 'lucide-react';
@@ -36,9 +37,10 @@ import BookingPrintView from '@/components/booking-print-view';
 export default function BookingRequestsPage() {
   const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('not reviewed'); // Default to showing only unreviewed
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
   const [showPrintView, setShowPrintView] = useState(false);
   const [bookingToPrint, setBookingToPrint] = useState<any>(null);
   const { toast } = useToast();
@@ -48,34 +50,57 @@ export default function BookingRequestsPage() {
     fetchBookings();
   }, [filterStatus]);
 
-  const fetchBookings = async () => {
+  const fetchBookings = async (useCache: boolean = true) => {
     try {
-      setLoading(true);
+      // Check cache first for instant display
+      const cacheKey = filterStatus === 'all' ? '/bookings' : `/bookings/status/${filterStatus}`;
+      const cached = apiCache.get(cacheKey, {});
+      
+      if (cached && cached.success && cached.data && useCache) {
+        // Show cached data immediately
+        const bookingData = Array.isArray(cached.data) ? cached.data : [];
+        setBookings(bookingData);
+        setLoading(false);
+        
+        // Continue fetching fresh data in background (stale-while-revalidate)
+        // Don't set loading to true to avoid flicker
+      } else {
+        setLoading(true);
+      }
+
       let result;
       
       if (filterStatus === 'all') {
-        result = await apiClient.getBookings();
+        result = await apiClient.getBookings(useCache);
       } else {
-        result = await apiClient.getBookingsByStatus(filterStatus);
+        result = await apiClient.getBookingsByStatus(filterStatus, useCache);
       }
 
       if (result.success) {
         const bookingData = Array.isArray(result.data) ? result.data : [];
         setBookings(bookingData);
       } else {
-        toast({
-          variant: 'destructive',
-          title: 'Error',
-          description: result.error || 'Failed to fetch bookings',
-        });
+        // Only show error if we don't have cached data
+        if (!cached || !cached.success) {
+          toast({
+            variant: 'destructive',
+            title: 'Error',
+            description: result.error || 'Failed to fetch bookings',
+          });
+        }
       }
     } catch (error) {
       console.error('Error fetching bookings:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to fetch bookings',
-      });
+      // Only show error if we don't have cached data
+      const cacheKey = filterStatus === 'all' ? '/bookings' : `/bookings/status/${filterStatus}`;
+      const cached = apiCache.get(cacheKey, {});
+      if (!cached || !cached.success) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'Failed to fetch bookings',
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -86,10 +111,17 @@ export default function BookingRequestsPage() {
     setShowReviewModal(true);
   };
 
+  const handleView = (booking: any) => {
+    setSelectedBooking(booking);
+    setShowViewModal(true);
+  };
+
   const handleReviewComplete = () => {
     setShowReviewModal(false);
     setSelectedBooking(null);
-    fetchBookings();
+    // Invalidate cache and fetch fresh data
+    apiCache.invalidate('/bookings');
+    fetchBookings(false); // Don't use cache, get fresh data
   };
 
   const handlePrint = (booking: any) => {
@@ -193,7 +225,10 @@ export default function BookingRequestsPage() {
   };
 
   const filteredBookings = bookings.filter(booking => {
-    if (filterStatus === 'all') return true;
+    if (filterStatus === 'all') {
+      // When showing all, still exclude reviewed bookings by default
+      return booking.review_status !== 'reviewed';
+    }
     return booking.review_status === filterStatus;
   });
 
@@ -210,9 +245,9 @@ export default function BookingRequestsPage() {
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Bookings</SelectItem>
                 <SelectItem value="not reviewed">Not Reviewed</SelectItem>
-                <SelectItem value="reviewed">Reviewed</SelectItem>
+                <SelectItem value="all">All (Excluding Reviewed)</SelectItem>
+                <SelectItem value="reviewed">Reviewed (Archive)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -285,6 +320,14 @@ export default function BookingRequestsPage() {
                           <Button
                             variant="outline"
                             size="sm"
+                            onClick={() => handleView(booking)}
+                          >
+                            <Eye className="h-4 w-4 mr-2" />
+                            View
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
                             onClick={() => handlePrint(booking)}
                           >
                             <Printer className="h-4 w-4 mr-2" />
@@ -296,7 +339,7 @@ export default function BookingRequestsPage() {
                             onClick={() => handleReview(booking)}
                             disabled={booking.review_status === 'reviewed'}
                           >
-                            <Eye className="h-4 w-4 mr-2" />
+                            <CheckCircle className="h-4 w-4 mr-2" />
                             Review
                           </Button>
                         </div>
@@ -320,6 +363,23 @@ export default function BookingRequestsPage() {
           }}
           onReviewComplete={handleReviewComplete}
           currentUser={userProfile}
+        />
+      )}
+
+      {showViewModal && selectedBooking && (
+        <BookingReviewModal
+          booking={selectedBooking}
+          open={showViewModal}
+          onClose={() => {
+            setShowViewModal(false);
+            setSelectedBooking(null);
+          }}
+          onReviewComplete={() => {
+            setShowViewModal(false);
+            setSelectedBooking(null);
+          }}
+          currentUser={userProfile}
+          viewOnly={true}
         />
       )}
 

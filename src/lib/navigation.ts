@@ -16,6 +16,7 @@ import {
   CreditCard,
   Truck,
   ClipboardCheck,
+  XCircle,
 } from 'lucide-react';
 import type { Department, DepartmentData } from './types';
 
@@ -88,10 +89,22 @@ const allLinks: NavLink[] = [
     departments: ['IT'], // Only IT department (superadmin) can access
   },
   {
+    href: '/dashboard/employees',
+    label: 'Employee Management',
+    icon: Users,
+    departments: ['IT', 'Management'], // SuperAdmin and Manager (ADMIN) can access
+  },
+  {
     href: '/dashboard/booking-requests',
     label: 'Booking Requests',
     icon: ClipboardCheck,
     departments: ['Management'],
+  },
+  {
+    href: '/dashboard/rejected-requests',
+    label: 'Rejected Requests',
+    icon: XCircle,
+    departments: ['Sales'],
   },
   {
     href: '/dashboard/chat',

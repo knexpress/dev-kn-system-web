@@ -112,13 +112,33 @@ export default function UserManagement() {
   const fetchAvailableEmployees = async () => {
     try {
       const result = await apiClient.getAvailableEmployees();
+      console.log('Available employees result:', result);
       if (result.success) {
-        setAvailableEmployees(result.data || []);
+        const employees = result.data || [];
+        console.log('Available employees:', employees);
+        setAvailableEmployees(employees);
+        if (employees.length === 0) {
+          toast({
+            variant: 'default',
+            title: 'No Available Employees',
+            description: 'All employees already have user accounts. Create a new employee first.',
+          });
+        }
       } else {
         console.error('Error fetching available employees:', result.error);
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: result.error || 'Failed to fetch available employees',
+        });
       }
     } catch (error) {
       console.error('Error fetching available employees:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to fetch available employees. Please check the console for details.',
+      });
     }
   };
 
@@ -313,16 +333,31 @@ export default function UserManagement() {
                   }}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select an employee" />
+                    <SelectValue placeholder={
+                      availableEmployees.length === 0 
+                        ? "No available employees" 
+                        : "Select an employee"
+                    } />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableEmployees.map((employee) => (
-                      <SelectItem key={employee._id} value={employee._id}>
-                        {employee.full_name} - {employee.department_id.name}
-                      </SelectItem>
-                    ))}
+                    {availableEmployees.length === 0 ? (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                        No employees available. All employees have user accounts.
+                      </div>
+                    ) : (
+                      availableEmployees.map((employee) => (
+                        <SelectItem key={employee._id} value={employee._id}>
+                          {employee.full_name} - {employee.department_id?.name || 'No Department'}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
+                {availableEmployees.length === 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Create a new employee in the Employee Management page first.
+                  </p>
+                )}
               </div>
               <div>
                 <Label htmlFor="full_name">Full Name</Label>

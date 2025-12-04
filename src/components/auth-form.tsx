@@ -26,7 +26,13 @@ export function AuthForm() {
     console.log('🔐 Login result:', result);
 
     if (result.success) {
-      console.log('✅ Login successful, redirecting to dashboard');
+      console.log('✅ Login successful');
+      if (result.requiresPasswordChange) {
+        console.log('⚠️ Password change required, redirecting to dashboard');
+        // Password change modal will show automatically in dashboard
+      } else {
+        console.log('✅ No password change needed, redirecting to dashboard');
+      }
       router.push('/dashboard');
     } else {
       console.error('❌ Login failed:', result.error);

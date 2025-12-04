@@ -38,26 +38,63 @@ export default function AuditReportPage() {
                             const reportData = report.report_data || {};
                             const cargoDetails = reportData.cargo_details || {};
                             
+                            // Check if this is a historical upload entry
+                            if (reportData.upload_type === 'historical') {
+                                // Format origin and destination for historical data
+                                const origin = reportData.origin_country 
+                                    ? `${reportData.origin_country}${reportData.origin_city ? ` - ${reportData.origin_city}` : ''}`
+                                    : 'N/A';
+                                const destination = reportData.destination_country
+                                    ? `${reportData.destination_country}${reportData.destination_city ? ` - ${reportData.destination_city}` : ''}`
+                                    : 'N/A';
+                                
+                                // Determine leviable status from additional_info2
+                                const isLeviableValue = reportData.additional_info2 === 'LEVIABLE' ? 'Leviable' 
+                                    : reportData.additional_info2 === 'NON-LEVIABLE' ? 'Non-Leviable'
+                                    : reportData.additional_info2 || 'N/A';
+                                
+                                return {
+                                    id: report._id,
+                                    awbNumber: reportData.awb_number || 'N/A',
+                                    deliveryDate: 'N/A', // Not available in historical data
+                                    invoicingDate: reportData.transaction_date || 'N/A',
+                                    clientName: reportData.customer_name || 'N/A',
+                                    receiverName: 'N/A', // Not available in historical data
+                                    origin: origin,
+                                    destination: destination,
+                                    shipmentType: reportData.shipment_type || 'N/A',
+                                    serviceType: 'N/A', // Not available in historical data
+                                    deliveryStatus: reportData.shipment_status || 'N/A',
+                                    weight: reportData.weight || 'N/A',
+                                    leviableItem: isLeviableValue,
+                                    invoice: undefined, // Historical uploads don't have invoices
+                                    generatedBy: report.generated_by_employee_name || 'System',
+                                    uploadType: 'historical'
+                                };
+                            }
+                            
+                            // Regular report entry (existing logic)
                             return {
                                 id: report._id,
-                                awbNumber: cargoDetails.awb_number || 'N/A',
+                                awbNumber: cargoDetails.awb_number || reportData.awb_number || 'N/A',
                                 deliveryDate: reportData.invoice_date || 'N/A',
                                 invoicingDate: reportData.invoice_date || 'N/A',
                                 clientName: reportData.client_name || cargoDetails.customer?.name || 'N/A',
                                 receiverName: cargoDetails.receiver?.name || 'N/A',
                                 origin: cargoDetails.route?.split(' → ')[0] || 'N/A',
                                 destination: cargoDetails.route?.split(' → ')[1] || cargoDetails.route || 'N/A',
-                                shipmentType: cargoDetails.shipment?.weight_type || 'N/A',
+                                shipmentType: cargoDetails.shipment?.weight_type || reportData.shipment_type || 'N/A',
                                 serviceType: 'N/A',
-                                deliveryStatus: reportData.current_status || cargoDetails.delivery_status || reportData.invoice_status || 'N/A',
-                                weight: cargoDetails.shipment?.weight || 'N/A',
+                                deliveryStatus: reportData.current_status || cargoDetails.delivery_status || reportData.invoice_status || reportData.shipment_status || 'N/A',
+                                weight: cargoDetails.shipment?.weight || reportData.weight || 'N/A',
                                 invoice: reportData.invoice_id ? {
                                     id: reportData.invoice_id,
                                     issueDate: reportData.invoice_date,
                                     amount: reportData.invoice_amount,
                                     status: reportData.invoice_status
                                 } : undefined,
-                                generatedBy: report.generated_by_employee_name || 'System'
+                                generatedBy: report.generated_by_employee_name || 'System',
+                                uploadType: 'regular'
                             };
                         });
                         

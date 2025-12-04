@@ -12,13 +12,14 @@ import {
 } from '@/components/ui/sidebar';
 import AppSidebar from '@/components/app-sidebar';
 import AppHeader from '@/components/app-header';
+import { ChangePasswordModal } from '@/components/change-password-modal';
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { userProfile, loading } = useAuth();
+  const { userProfile, loading, requiresPasswordChange, clearPasswordChangeRequirement } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -34,6 +35,14 @@ export default function DashboardLayout({
       </div>
     );
   }
+
+  const handlePasswordChanged = () => {
+    clearPasswordChangeRequirement();
+    // Optionally refresh user data
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
+  };
 
   return (
     <NotificationProvider>
@@ -53,6 +62,10 @@ export default function DashboardLayout({
           </main>
         </SidebarInset>
       </SidebarProvider>
+      <ChangePasswordModal 
+        open={requiresPasswordChange} 
+        onPasswordChanged={handlePasswordChanged}
+      />
     </NotificationProvider>
   );
 }

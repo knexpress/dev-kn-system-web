@@ -8,16 +8,20 @@ interface AuthContextType {
   userProfile: UserProfile | null;
   department: DepartmentData | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  requiresPasswordChange: boolean;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; requiresPasswordChange?: boolean }>;
   logout: () => void;
+  clearPasswordChangeRequirement: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
   userProfile: null,
   department: null,
   loading: true,
+  requiresPasswordChange: false,
   login: async () => ({ success: false, error: 'Auth not ready' }),
   logout: () => {},
+  clearPasswordChangeRequirement: () => {},
 });
 
 const SESSION_STORAGE_KEY = 'knex-user';
@@ -25,6 +29,7 @@ const SESSION_STORAGE_KEY = 'knex-user';
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [requiresPasswordChange, setRequiresPasswordChange] = useState(false);
 
   useEffect(() => {
     // Only run on client side to avoid hydration mismatch
@@ -53,7 +58,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; error?: string; requiresPasswordChange?: boolean }> => {
     setLoading(true);
     
     try {
@@ -62,45 +67,100 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log('Login result:', result);
       console.log('Login result.success:', result.success);
       console.log('Login result.data:', result.data);
+      console.log('Login result.data type:', typeof result.data);
+      console.log('Login result.data keys:', result.data ? Object.keys(result.data) : 'no data');
       
       if (!result.success) {
         setLoading(false);
         return { success: false, error: result.error || 'Login failed' };
       }
       
-      // Extract user and token from result.data
-      const data = result.data as any;
-      const userData = data?.user || data;
-      const token = data?.token;
+      // Extract user and token from result.data - handle multiple possible structures
+      // The API client wraps auth responses, so result.data might be the full response
+      // or just the data portion depending on backend structure
+      let responseData = result.data as any;
+      
+      // If the response has a nested data structure (backend returns { success, data: {...}, message })
+      // then we need to extract the inner data
+      if (responseData && responseData.data && (responseData.data.user || responseData.data.token)) {
+        responseData = responseData.data;
+      }
+      
+      // Try different possible response structures
+      let userData = null;
+      let token = null;
+      let needsPasswordChange = false;
+      
+      if (responseData) {
+        // Structure 1: { user: {...}, token: "...", requiresPasswordChange: boolean }
+        if (responseData.user && responseData.token) {
+          userData = responseData.user;
+          token = responseData.token;
+          needsPasswordChange = responseData.requiresPasswordChange || responseData.user.requiresPasswordChange || false;
+        }
+        // Structure 2: { ...userFields, token: "...", requiresPasswordChange: boolean }
+        else if (responseData.token && (responseData.email || responseData._id || responseData.id)) {
+          userData = responseData;
+          token = responseData.token;
+          needsPasswordChange = responseData.requiresPasswordChange || false;
+          // Remove token from userData to avoid storing it twice
+          const { token: _, ...userWithoutToken } = userData;
+          userData = userWithoutToken;
+        }
+        // Structure 3: Direct user object with token as separate field
+        else if (responseData.email || responseData._id || responseData.id) {
+          userData = responseData;
+          // Token might be in a different location or missing
+          token = responseData.token || responseData.accessToken || responseData.access_token;
+          needsPasswordChange = responseData.requiresPasswordChange || false;
+        }
+      }
       
       console.log('Extracted userData:', userData);
-      console.log('Extracted token:', !!token);
+      console.log('Extracted token:', !!token, token ? `${token.substring(0, 20)}...` : 'none');
+      console.log('Requires password change:', needsPasswordChange);
       
-      if (userData && token) {
-        // Store user data in sessionStorage
-        setUserProfile(userData);
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(userData));
-        }
-        
-        // Store token in API client (which stores it in localStorage)
-        apiClient.setToken(token);
-        
+      if (!userData) {
+        console.error('❌ No user data found in response. Response structure:', JSON.stringify(result.data, null, 2));
         setLoading(false);
-        return { success: true };
-      } else {
-        setLoading(false);
-        return { success: false, error: result.error || 'Login failed - invalid response structure' };
+        return { success: false, error: 'Login failed - user data not found in response' };
       }
+      
+      if (!token) {
+        console.error('❌ No token found in response. Response structure:', JSON.stringify(result.data, null, 2));
+        setLoading(false);
+        return { success: false, error: 'Login failed - authentication token not found in response' };
+      }
+      
+      // Store user data in sessionStorage
+      setUserProfile(userData);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(userData));
+      }
+      
+      // Store token in API client (which stores it in localStorage)
+      apiClient.setToken(token);
+      
+      // Check if password is default (password123)
+      // Backend should return this in the response, but we also check here as fallback
+      if (needsPasswordChange || password === 'password123') {
+        setRequiresPasswordChange(true);
+        setLoading(false);
+        return { success: true, requiresPasswordChange: true };
+      }
+      
+      setLoading(false);
+      return { success: true, requiresPasswordChange: false };
     } catch (error) {
       console.error('Login error:', error);
       setLoading(false);
-      return { success: false, error: 'Network error' };
+      return { success: false, error: error instanceof Error ? error.message : 'Network error' };
     }
   }, []);
 
   const logout = useCallback(() => {
     setUserProfile(null);
+    setRequiresPasswordChange(false);
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem(SESSION_STORAGE_KEY);
     }
@@ -108,10 +168,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     apiClient.clearToken();
   }, []);
 
+  const clearPasswordChangeRequirement = useCallback(() => {
+    setRequiresPasswordChange(false);
+  }, []);
+
   const department = userProfile ? userProfile.department : null;
 
   return (
-    <AuthContext.Provider value={{ userProfile, department, loading, login, logout }}>
+    <AuthContext.Provider value={{ 
+      userProfile, 
+      department, 
+      loading, 
+      requiresPasswordChange,
+      login, 
+      logout,
+      clearPasswordChangeRequirement
+    }}>
       {children}
     </AuthContext.Provider>
   );

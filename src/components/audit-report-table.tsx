@@ -21,10 +21,16 @@ export default function AuditReportTable({ data: initialData }: AuditReportTable
     const { toast } = useToast();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const isLeviable = (shipmentType?: string) => {
-        const nonLeviableTypes = ['Docs', 'Documents'];
+    const isLeviable = (shipmentType?: string, leviableItem?: string) => {
+        // If leviableItem is explicitly provided (from historical data), use it
+        if (leviableItem && leviableItem !== 'N/A') {
+            return leviableItem;
+        }
+        
+        // Otherwise, determine from shipment type
+        const nonLeviableTypes = ['Docs', 'Documents', 'DOCUMENT'];
         if (!shipmentType) return 'N/A';
-        return nonLeviableTypes.includes(shipmentType) ? 'Non-Leviable' : 'Leviable';
+        return nonLeviableTypes.includes(shipmentType.toUpperCase()) ? 'Non-Leviable' : 'Leviable';
     };
 
     const handleExport = () => {
@@ -35,7 +41,7 @@ export default function AuditReportTable({ data: initialData }: AuditReportTable
             const dataToExport = tableData.map(item => ({
                 'AWB Number': item.awbNumber || 'N/A',
                 'Delivery Date': item.deliveryDate || 'N/A',
-                'Invoicing Date': item.invoice?.issueDate || 'N/A',
+                'Invoicing Date': item.invoice?.issueDate || (item as any).invoicingDate || 'N/A',
                 'Customer / sender name': item.clientName || 'N/A',
                 'Receiver name': item.receiverName || 'N/A',
                 'Origin': item.origin || 'N/A',
@@ -44,7 +50,7 @@ export default function AuditReportTable({ data: initialData }: AuditReportTable
                 'Service type': item.serviceType || 'N/A',
                 'Delivery status': item.deliveryStatus || 'N/A',
                 'Weight': item.weight || 'N/A',
-                'Leviable Item': isLeviable(item.shipmentType)
+                'Leviable Item': isLeviable(item.shipmentType, (item as any).leviableItem)
             }));
             
             // Create worksheet
@@ -246,28 +252,37 @@ export default function AuditReportTable({ data: initialData }: AuditReportTable
                                        item.deliveryStatus || 
                                        item.weight;
                             })
-                            .map((item) => (
-                            <TableRow key={item.id}>
-                                <TableCell className="font-mono">{item.awbNumber || 'N/A'}</TableCell>
-                                <TableCell>{item.deliveryDate || 'N/A'}</TableCell>
-                                <TableCell>{item.invoice?.issueDate || 'N/A'}</TableCell>
-                                <TableCell>{item.clientName || 'N/A'}</TableCell>
-                                <TableCell>{item.receiverName || 'N/A'}</TableCell>
-                                <TableCell>{item.origin || 'N/A'}</TableCell>
-                                <TableCell>{item.destination || 'N/A'}</TableCell>
-                                <TableCell>
-                                    <Badge variant="outline">{item.shipmentType || 'N/A'}</Badge>
-                                </TableCell>
-                                <TableCell>
-                                    <Badge variant="secondary">{item.serviceType || 'N/A'}</Badge>
-                                </TableCell>
-                                <TableCell>
-                                     <Badge className={item.deliveryStatus === 'Completed' ? 'bg-green-500' : 'bg-gray-500'}>{item.deliveryStatus || 'N/A'}</Badge>
-                                </TableCell>
-                                <TableCell>{item.weight || 'N/A'}</TableCell>
-                                <TableCell>{isLeviable(item.shipmentType)}</TableCell>
-                            </TableRow>
-                        ))}
+                            .map((item) => {
+                                const invoicingDate = item.invoice?.issueDate || (item as any).invoicingDate || 'N/A';
+                                const leviableItem = isLeviable(item.shipmentType, (item as any).leviableItem);
+                                
+                                return (
+                                    <TableRow key={item.id}>
+                                        <TableCell className="font-mono">{item.awbNumber || 'N/A'}</TableCell>
+                                        <TableCell>{item.deliveryDate || 'N/A'}</TableCell>
+                                        <TableCell>{invoicingDate}</TableCell>
+                                        <TableCell>{item.clientName || 'N/A'}</TableCell>
+                                        <TableCell>{item.receiverName || 'N/A'}</TableCell>
+                                        <TableCell>{item.origin || 'N/A'}</TableCell>
+                                        <TableCell>{item.destination || 'N/A'}</TableCell>
+                                        <TableCell>
+                                            <Badge variant="outline">{item.shipmentType || 'N/A'}</Badge>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Badge variant="secondary">{item.serviceType || 'N/A'}</Badge>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Badge className={
+                                                item.deliveryStatus === 'Completed' || item.deliveryStatus === 'DELIVERED' 
+                                                    ? 'bg-green-500' 
+                                                    : 'bg-gray-500'
+                                            }>{item.deliveryStatus || 'N/A'}</Badge>
+                                        </TableCell>
+                                        <TableCell>{item.weight || 'N/A'}</TableCell>
+                                        <TableCell>{leviableItem}</TableCell>
+                                    </TableRow>
+                                );
+                            })}
                         {tableData.filter((item) => {
                             return item.awbNumber || 
                                    item.deliveryDate || 

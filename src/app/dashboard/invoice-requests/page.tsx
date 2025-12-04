@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -27,8 +28,6 @@ import { useAuth } from '@/hooks/use-auth';
 import { useNotifications } from '@/contexts/NotificationContext';
 import InvoiceRequestForm from '@/components/invoice-request-form';
 import VerificationForm from '@/components/verification-form';
-import InvoiceTemplate from '@/components/invoice-template';
-import TaxInvoiceTemplate from '@/components/tax-invoice-template';
 import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText, ArrowRight, Phone, MapPin, AlertTriangle } from 'lucide-react';
 
 const normalizeServiceCode = (code?: string | null) =>
@@ -48,18 +47,17 @@ const isUaeToPhService = (code?: string | null) => {
 };
 
 export default function InvoiceRequestsPage() {
+  const router = useRouter();
   const [invoiceRequests, setInvoiceRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterDeliveryStatus, setFilterDeliveryStatus] = useState('all');
-  const [showInvoicePreview, setShowInvoicePreview] = useState(false);
   const [selectedRequestForInvoice, setSelectedRequestForInvoice] = useState(null);
   const [showTaxInputDialog, setShowTaxInputDialog] = useState(false);
   const [hasDelivery, setHasDelivery] = useState(false); // Delivery required flag
   const [customerTRN, setCustomerTRN] = useState(''); // Optional customer TRN
   const [batchNumber, setBatchNumber] = useState(''); // Optional batch number
   const [customDeliveryCharge, setCustomDeliveryCharge] = useState(''); // Manual delivery charge for UAE->PH
-  const [showTaxInvoice, setShowTaxInvoice] = useState(false);
   const [qrCodeData, setQrCodeData] = useState<any>(null);
   const getRequestServiceCode = (request?: any) =>
     request?.service_code ||
@@ -738,12 +736,15 @@ export default function InvoiceRequestsPage() {
           });
           
           setShowTaxInputDialog(false);
-          setShowInvoicePreview(true);
           setCustomerTRN('');
           setBatchNumber('');
-        setCustomDeliveryCharge('');
-        setHasDelivery(false);
+          setCustomDeliveryCharge('');
+          setHasDelivery(false);
+          setSelectedRequestForInvoice(null);
           fetchInvoiceRequests();
+          
+          // Navigate to invoices page to view the created invoice
+          router.push('/dashboard/invoices');
         }
       } else {
         toast({
@@ -1290,71 +1291,6 @@ export default function InvoiceRequestsPage() {
               >
                 Generate Both Invoices
               </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Invoice Preview Modal */}
-      {showInvoicePreview && selectedRequestForInvoice && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-4 border-b flex justify-between items-center">
-              <h2 className="text-xl font-bold">Invoice Preview</h2>
-              <div className="space-x-2">
-                <Button
-                  onClick={() => window.print()}
-                  variant="outline"
-                >
-                  <FileText className="mr-2 h-4 w-4" />
-                  Print
-                </Button>
-                <Button
-                  onClick={() => setShowInvoicePreview(false)}
-                  variant="outline"
-                >
-                  Close
-                </Button>
-              </div>
-            </div>
-            <div className="p-4">
-              <div className="flex space-x-4 mb-4">
-                <button
-                  className={`px-4 py-2 rounded-md font-medium ${
-                    !showTaxInvoice ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
-                  }`}
-                  onClick={() => setShowTaxInvoice(false)}
-                >
-                  Regular Invoice
-                </button>
-                <button
-                  className={`px-4 py-2 rounded-md font-medium ${
-                    showTaxInvoice ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
-                  }`}
-                  onClick={() => setShowTaxInvoice(true)}
-                >
-                  Tax Invoice ({selectedRequestTaxRate}% VAT)
-                </button>
-              </div>
-              
-              {!showTaxInvoice ? (
-                <InvoiceTemplate
-                  data={convertRequestToInvoiceData(selectedRequestForInvoice, 0, qrCodeData, {
-                    batchNumber,
-                    manualDeliveryCharge:
-                      manualChargeForPreview && manualChargeForPreview > 0 ? manualChargeForPreview : undefined,
-                  })}
-                />
-              ) : (
-                <TaxInvoiceTemplate
-                  data={convertRequestToInvoiceData(selectedRequestForInvoice, selectedRequestTaxRate, qrCodeData, {
-                    mode: 'tax',
-                    batchNumber,
-                    manualDeliveryCharge:
-                      manualChargeForPreview && manualChargeForPreview > 0 ? manualChargeForPreview : undefined,
-                  })}
-                />
-              )}
             </div>
           </div>
         </div>

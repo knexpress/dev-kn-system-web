@@ -22,6 +22,7 @@ interface BookingReviewModalProps {
   onClose: () => void;
   onReviewComplete: () => void;
   currentUser: any;
+  viewOnly?: boolean; // If true, hide approve/reject buttons and make it view-only
 }
 
 export default function BookingReviewModal({
@@ -30,6 +31,7 @@ export default function BookingReviewModal({
   onClose,
   onReviewComplete,
   currentUser,
+  viewOnly = false,
 }: BookingReviewModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
@@ -273,7 +275,7 @@ export default function BookingReviewModal({
       <Dialog open={open} onOpenChange={onClose}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Review Booking Request</DialogTitle>
+            <DialogTitle>{viewOnly ? 'View Booking Request' : 'Review Booking Request'}</DialogTitle>
             <DialogDescription>
               Review booking details and images before approving
             </DialogDescription>
@@ -392,9 +394,26 @@ export default function BookingReviewModal({
                   </p>
                 </div>
                 <div>
-                  <Label className="text-sm font-semibold">Sales Agent Email</Label>
+                  <Label className="text-sm font-semibold">Sales Agent Name</Label>
                   <p className="text-sm mt-1">
-                    {formatValue(booking.sales_agent_email || booking.agentEmail || booking.agent?.email || booking.salesAgent?.email || 'N/A')}
+                    {formatValue(
+                      sender.agentName ||
+                      booking.sales_agent_name || 
+                      booking.agentName || 
+                      booking.agent?.name || 
+                      booking.agent?.full_name || 
+                      booking.agent?.fullName ||
+                      booking.salesAgent?.name ||
+                      booking.salesAgent?.full_name ||
+                      booking.salesAgent?.fullName ||
+                      booking.created_by_employee?.full_name ||
+                      booking.created_by_employee?.fullName ||
+                      booking.created_by_employee?.name ||
+                      booking.createdByEmployee?.full_name ||
+                      booking.createdByEmployee?.fullName ||
+                      booking.createdByEmployee?.name ||
+                      'N/A'
+                    )}
                   </p>
                 </div>
               </div>
@@ -690,36 +709,46 @@ export default function BookingReviewModal({
           </Card>
 
           {/* Action Buttons */}
-          <div className="flex justify-end gap-4 pt-4">
-            <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
-              <X className="h-4 w-4 mr-2" />
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => setShowRejectModal(true)}
-              disabled={isSubmitting || booking.review_status === 'reviewed' || booking.review_status === 'rejected'}
-            >
-              <XCircle className="h-4 w-4 mr-2" />
-              Reject
-            </Button>
-            <Button
-              onClick={handleApprove}
-              disabled={isSubmitting || booking.review_status === 'reviewed' || booking.review_status === 'rejected'}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Approve & Convert to Invoice Request
-                </>
-              )}
-            </Button>
-          </div>
+          {!viewOnly && (
+            <div className="flex justify-end gap-4 pt-4">
+              <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
+                <X className="h-4 w-4 mr-2" />
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => setShowRejectModal(true)}
+                disabled={isSubmitting || booking.review_status === 'reviewed' || booking.review_status === 'rejected'}
+              >
+                <XCircle className="h-4 w-4 mr-2" />
+                Reject
+              </Button>
+              <Button
+                onClick={handleApprove}
+                disabled={isSubmitting || booking.review_status === 'reviewed' || booking.review_status === 'rejected'}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Approve & Convert to Invoice Request
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+          {viewOnly && (
+            <div className="flex justify-end gap-4 pt-4">
+              <Button variant="outline" onClick={onClose}>
+                <X className="h-4 w-4 mr-2" />
+                Close
+              </Button>
+            </div>
+          )}
           </div>
         </DialogContent>
       </Dialog>

@@ -169,7 +169,7 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
             <div>
               <h4 className="font-semibold mb-2">PAYMENT QR CODE</h4>
               <p className="text-sm text-gray-600 mb-2">
-                Scan this QR code to make payment for this invoice
+                This QR code is for the driver to scan when collecting payment
               </p>
               <p className="text-xs text-gray-500 font-mono">
                 Code: {data.qrCode.code}
@@ -180,7 +180,7 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
             </div>
             <div className="text-center">
               <QRCode value={data.qrCode.url} size={200} className="mx-auto" />
-              <p className="text-xs text-gray-500 mt-2">Scan to Pay</p>
+              <p className="text-xs text-gray-500 mt-2">For Driver Use</p>
             </div>
           </div>
         </div>

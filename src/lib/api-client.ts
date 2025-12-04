@@ -1,34 +1,12 @@
 // API Client for Backend Communication
+import { apiCache } from './api-cache';
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
-
-// Rate limiting configuration
-const RATE_LIMIT_CONFIG = {
-  maxRequestsPerSecond: 10, // Maximum requests per second
-  maxRequestsPerMinute: 60, // Maximum requests per minute
-  retryDelay: 1000, // Initial retry delay in ms
-  maxRetries: 3, // Maximum number of retries for rate-limited requests
-  exponentialBackoff: true, // Use exponential backoff for retries
-};
-
-interface QueuedRequest {
-  endpoint: string;
-  options: RequestInit;
-  resolve: (value: any) => void;
-  reject: (error: any) => void;
-  retries: number;
-}
 
 class ApiClient {
   private baseUrl: string;
   private token: string | null = null;
   private pendingRequests: Map<string, Promise<any>> = new Map();
-  
-  // Rate limiting state
-  private requestQueue: QueuedRequest[] = [];
-  private requestTimestamps: number[] = [];
-  private isProcessingQueue: boolean = false;
-  private lastRequestTime: number = 0;
-  private minRequestInterval: number = 1000 / RATE_LIMIT_CONFIG.maxRequestsPerSecond; // ms between requests
 
   constructor(baseUrl: string = API_BASE_URL) {
     this.baseUrl = baseUrl;
@@ -56,104 +34,27 @@ class ApiClient {
     return this.token;
   }
 
-  // Rate limiting: Check if we can make a request now
-  private canMakeRequest(): boolean {
-    const now = Date.now();
-    
-    // Clean old timestamps (older than 1 minute)
-    this.requestTimestamps = this.requestTimestamps.filter(
-      timestamp => now - timestamp < 60000
-    );
-    
-    // Check per-second limit
-    const recentRequests = this.requestTimestamps.filter(
-      timestamp => now - timestamp < 1000
-    );
-    if (recentRequests.length >= RATE_LIMIT_CONFIG.maxRequestsPerSecond) {
-      return false;
-    }
-    
-    // Check per-minute limit
-    if (this.requestTimestamps.length >= RATE_LIMIT_CONFIG.maxRequestsPerMinute) {
-      return false;
-    }
-    
-    // Check minimum interval between requests
-    if (now - this.lastRequestTime < this.minRequestInterval) {
-      return false;
-    }
-    
-    return true;
-  }
-
-  // Get delay needed before next request
-  private getDelayUntilNextRequest(): number {
-    const now = Date.now();
-    
-    // Check per-second limit
-    const recentRequests = this.requestTimestamps.filter(
-      timestamp => now - timestamp < 1000
-    );
-    if (recentRequests.length >= RATE_LIMIT_CONFIG.maxRequestsPerSecond && recentRequests.length > 0) {
-      const oldestRecent = Math.min(...recentRequests);
-      const delay = 1000 - (now - oldestRecent) + 50; // Add 50ms buffer
-      return Math.max(0, delay); // Ensure non-negative
-    }
-    
-    // Check minimum interval
-    if (this.lastRequestTime > 0) {
-      const timeSinceLastRequest = now - this.lastRequestTime;
-      if (timeSinceLastRequest < this.minRequestInterval) {
-        return this.minRequestInterval - timeSinceLastRequest;
-      }
-    }
-    
-    return 0;
-  }
-
-  // Process the request queue
-  private async processQueue() {
-    if (this.isProcessingQueue || this.requestQueue.length === 0) {
-      return;
-    }
-
-    this.isProcessingQueue = true;
-
-    while (this.requestQueue.length > 0) {
-      // Wait if we need to throttle
-      if (!this.canMakeRequest()) {
-        const delay = this.getDelayUntilNextRequest();
-        if (delay > 0) {
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
-
-      const queuedRequest = this.requestQueue.shift();
-      if (!queuedRequest) break;
-
-      // Record request timestamp
-      const now = Date.now();
-      this.requestTimestamps.push(now);
-      this.lastRequestTime = now;
-
-      try {
-        const result = await this.executeRequest(
-          queuedRequest.endpoint,
-          queuedRequest.options
-        );
-        queuedRequest.resolve(result);
-      } catch (error) {
-        queuedRequest.reject(error);
-      }
-    }
-
-    this.isProcessingQueue = false;
+  // Public method to invalidate cache
+  invalidateCache(pattern?: string) {
+    apiCache.invalidate(pattern);
   }
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    useCache: boolean = true,
+    cacheTTL?: number
   ): Promise<{ success: boolean; data?: T; error?: string }> {
+    // For GET requests, check cache first
+    const isGetRequest = !options.method || options.method === 'GET';
+    if (isGetRequest && useCache) {
+      const cachedData = apiCache.get(endpoint, options);
+      if (cachedData) {
+        // Return cached data immediately
+        return cachedData;
+      }
+    }
+
     // Create a unique key for this request to enable deduplication
     const requestKey = `${options.method || 'GET'}:${endpoint}`;
     
@@ -162,27 +63,19 @@ class ApiClient {
       return this.pendingRequests.get(requestKey)!;
     }
 
-    // Create promise that will be resolved/rejected by the queue processor
-    const requestPromise = new Promise<{ success: boolean; data?: T; error?: string }>(
-      (resolve, reject) => {
-        // Add to queue
-        this.requestQueue.push({
-          endpoint,
-          options,
-          resolve,
-          reject,
-          retries: 0,
-        });
-
-        // Start processing queue if not already processing
-        this.processQueue();
-      }
-    );
+    // Execute request directly (no rate limiting queue)
+    const requestPromise = this.executeRequest<T>(endpoint, options);
 
     this.pendingRequests.set(requestKey, requestPromise);
 
     try {
       const result = await requestPromise;
+      
+      // Cache successful GET responses
+      if (isGetRequest && useCache && result.success) {
+        apiCache.set(endpoint, result, options, cacheTTL);
+      }
+      
       return result;
     } finally {
       // Clean up the pending request
@@ -217,26 +110,6 @@ class ApiClient {
       });
 
       if (!response.ok) {
-        // Handle rate limiting specifically with retry logic
-        if (response.status === 429) {
-          const retryAfter = response.headers.get('Retry-After');
-          const retryDelay = retryAfter 
-            ? parseInt(retryAfter) * 1000 
-            : RATE_LIMIT_CONFIG.retryDelay;
-          
-          console.warn(`[Rate Limit] 429 received, retrying after ${retryDelay}ms`);
-          
-          // Wait before retrying
-          await new Promise(resolve => setTimeout(resolve, retryDelay));
-          
-          // Retry the request (up to max retries)
-          // Note: This will be handled by the calling code if needed
-          return { 
-            success: false, 
-            error: `Rate limited. Please try again in ${Math.ceil(retryDelay / 1000)} seconds.` 
-          };
-        }
-        
         const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
         return { success: false, error: errorData.error || 'Request failed' };
       }
@@ -293,8 +166,8 @@ class ApiClient {
   }
 
   // Users
-  async getUsers() {
-    return this.request('/users');
+  async getUsers(useCache: boolean = true) {
+    return this.request('/users', {}, useCache, 60000); // Cache for 60 seconds
   }
 
   async createUser(userData: any) {
@@ -311,6 +184,13 @@ class ApiClient {
     });
   }
 
+  async updatePassword(newPassword: string) {
+    return this.request('/users/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ password: newPassword }),
+    });
+  }
+
   async deleteUser(id: string) {
     return this.request(`/users/${id}`, {
       method: 'DELETE',
@@ -318,8 +198,8 @@ class ApiClient {
   }
 
   // Departments
-  async getDepartments() {
-    return this.request('/departments');
+  async getDepartments(useCache: boolean = true) {
+    return this.request('/departments', {}, useCache, 300000); // Cache for 5 minutes (departments rarely change)
   }
 
   async createDepartment(departmentData: any) {
@@ -330,12 +210,12 @@ class ApiClient {
   }
 
   // Employees
-  async getEmployees() {
-    return this.request('/employees');
+  async getEmployees(useCache: boolean = true) {
+    return this.request('/employees', {}, useCache, 60000); // Cache for 60 seconds
   }
 
-  async getAvailableEmployees() {
-    return this.request('/employees/available');
+  async getAvailableEmployees(useCache: boolean = true) {
+    return this.request('/employees/available', {}, useCache, 60000); // Cache for 60 seconds
   }
 
   async createEmployee(employeeData: any) {
@@ -345,9 +225,22 @@ class ApiClient {
     });
   }
 
+  async updateEmployee(id: string, employeeData: any) {
+    return this.request(`/employees/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(employeeData),
+    });
+  }
+
+  async deleteEmployee(id: string) {
+    return this.request(`/employees/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Clients
-  async getClients() {
-    return this.request('/clients');
+  async getClients(useCache: boolean = true) {
+    return this.request('/clients', {}, useCache, 60000); // Cache for 60 seconds
   }
 
   async createClient(clientData: any) {
@@ -595,8 +488,8 @@ class ApiClient {
 
   // Invoices
   // Invoices (Unified)
-  async getInvoicesUnified() {
-    return this.request('/invoices-unified');
+  async getInvoicesUnified(useCache: boolean = true) {
+    return this.request('/invoices-unified', {}, useCache, 30000); // Cache for 30 seconds
   }
 
   async getInvoiceUnified(id: string) {
@@ -959,6 +852,35 @@ class ApiClient {
     return { success: true, data: text };
   }
 
+  // Historical CSV Upload (for old data Jan 1 - Sep 29)
+  async uploadHistoricalCSV(file: File) {
+    const formData = new FormData();
+    formData.append('csvFile', file);
+    
+    // Use fetch directly for file uploads to let browser set Content-Type with boundary
+    const url = `${this.baseUrl}/csv-upload/historical`;
+    const headers: Record<string, string> = {};
+    
+    // Add authorization header if token is available
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return { success: false, error: data.error || 'Historical upload failed' };
+    }
+    
+    return data;
+  }
+
   // Payment Remittances
   async getPaymentRemittances() {
     return this.request('/payment-remittances');
@@ -997,16 +919,16 @@ class ApiClient {
   }
 
   // Bookings
-  async getBookings() {
-    return this.request('/bookings');
+  async getBookings(useCache: boolean = true) {
+    return this.request('/bookings', {}, useCache, 30000); // Cache for 30 seconds
   }
 
-  async getBooking(id: string) {
-    return this.request(`/bookings/${id}`);
+  async getBooking(id: string, useCache: boolean = true) {
+    return this.request(`/bookings/${id}`, {}, useCache, 60000); // Cache for 60 seconds
   }
 
-  async getBookingsByStatus(reviewStatus: string) {
-    return this.request(`/bookings/status/${reviewStatus}`);
+  async getBookingsByStatus(reviewStatus: string, useCache: boolean = true) {
+    return this.request(`/bookings/status/${reviewStatus}`, {}, useCache, 30000); // Cache for 30 seconds
   }
 
   async reviewBooking(id: string, reviewData: { reviewed_by_employee_id: string }) {
