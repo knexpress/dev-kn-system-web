@@ -225,10 +225,19 @@ export default function InvoicePage() {
     
     // Get weight and number of boxes for PH TO UAE tax invoice recalculation and shipment details
     const weight = parseDecimal(invoice.weight_kg || invoice.request_id?.shipment?.weight || invoice.request_id?.verification?.actual_weight || 0, 2);
+    // Derive number of boxes with additional fallback to verification boxes array (summing quantities)
+    const verificationBoxes = invoice.request_id?.verification?.boxes;
+    const boxesCountFromArray = Array.isArray(verificationBoxes) && verificationBoxes.length > 0
+        ? verificationBoxes.reduce((sum: number, box: any) => {
+            const qty = parseInt((box?.quantity ?? 1).toString(), 10);
+            return sum + (Number.isFinite(qty) && qty > 0 ? qty : 1);
+          }, 0)
+        : null;
     const numberOfBoxesRaw = invoice.request_id?.shipment?.number_of_boxes ||
         invoice.request_id?.verification?.number_of_boxes ||
         invoice.request_id?.number_of_boxes ||
         invoice.number_of_boxes ||
+        boxesCountFromArray ||
         1;
     const parsedNumberOfBoxes = parseInt(numberOfBoxesRaw.toString(), 10);
     const validNumberOfBoxes = (!isNaN(parsedNumberOfBoxes) && parsedNumberOfBoxes >= 1) ? parsedNumberOfBoxes : 1;
@@ -274,18 +283,9 @@ export default function InvoicePage() {
         }
     }
     
-    // For PH TO UAE tax invoices, recalculate delivery charge using box-based formula
-    // This ensures tax invoice shows correct box-based calculation even if line items have normal invoice value
-    if (isPhToUae && invoiceType === 'tax' && deliveryCharge > 0) {
-        // Check if delivery is required (has_delivery flag or delivery charge exists)
-        const hasDelivery = invoice.has_delivery || deliveryCharge > 0;
-        if (hasDelivery) {
-            // Get base delivery amount from invoice or default to 20
-            const baseDeliveryAmount = parseDecimal(invoice.delivery_base_amount || 20, 2);
-            // Recalculate using box-based formula with custom base amount for tax invoice
-            const recalculatedDeliveryCharge = weight > 30 ? 0 : (validNumberOfBoxes <= 1 ? baseDeliveryAmount : baseDeliveryAmount + ((validNumberOfBoxes - 1) * 5));
-            deliveryCharge = parseDecimal(recalculatedDeliveryCharge, 2);
-        }
+    // For PH TO UAE tax invoices: use delivery_charge from DB as-is (backend-calculated)
+    if (isPhToUae && invoiceType === 'tax') {
+        deliveryCharge = deliveryChargeFromInvoice;
     }
 
     // Calculate subtotal first
@@ -436,8 +436,9 @@ export default function InvoicePage() {
             total: total
         },
         remarks: {
-            boxNumbers: invoice.notes || 'No remarks',
-            agent: invoice.created_by?.full_name || 'SYSTEM'
+        boxNumbers: invoice.notes || 'No remarks',
+        agent: invoice.created_by?.full_name || 'SYSTEM',
+        items: invoice.request_id?.verification?.listed_commodities || invoice.notes || 'No remarks'
         },
         termsAndConditions: 'Cash Upon Receipt of Goods',
         qrCode: qrCodeData ? {

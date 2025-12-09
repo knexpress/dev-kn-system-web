@@ -145,18 +145,20 @@ class ApiClient {
           (typeof errorData === 'string' ? errorData : null) ||
           response.statusText ||
           `Request failed with status ${response.status}`;
+        const safeErrorMessage = errorMessage || `Request failed with status ${response.status}`;
         
         if (process.env.NODE_ENV === 'development') {
-          console.error('[API] Error Response:', {
+          // Use warn instead of error to avoid noisy overlays in dev
+          console.warn('[API] Error Response:', {
             status: response.status,
             statusText: response.statusText,
             url: url,
             errorData: errorData,
-            errorMessage: errorMessage
+            errorMessage: safeErrorMessage
           });
         }
         
-        return { success: false, error: errorMessage };
+        return { success: false, error: safeErrorMessage };
       }
 
       const data = await response.json();
@@ -177,7 +179,7 @@ class ApiClient {
       // Otherwise wrap in standard format
       return { success: true, data };
     } catch (error: any) {
-      console.error('API request failed:', error);
+      console.warn('API request failed:', error);
       
       // Provide more specific error messages
       if (error instanceof TypeError && error.message === 'Failed to fetch') {
@@ -354,6 +356,11 @@ class ApiClient {
   // Tickets
   async getTickets() {
     return this.request('/tickets');
+  }
+
+  // Activity last-updated (for per-tab new indicators)
+  async getActivityLastUpdated() {
+    return this.request('/activity/last-updated', {}, false); // no cache
   }
 
   async createTicket(ticketData: any) {

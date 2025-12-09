@@ -42,6 +42,7 @@ interface InvoiceData {
   remarks: {
     boxNumbers: string;
     agent: string;
+    items?: string;
   };
   termsAndConditions: string;
   qrCode?: {
@@ -225,6 +226,7 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
           <div className="space-y-1 text-sm">
             <p>BOX# {data.remarks.boxNumbers}</p>
             <p>AGENT: {data.remarks.agent}</p>
+            {data.remarks.items && <p>ITEMS: {data.remarks.items}</p>}
           </div>
         </div>
 

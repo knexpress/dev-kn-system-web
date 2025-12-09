@@ -1583,7 +1583,8 @@ export default function InvoiceRequestsPage() {
       },
       remarks: {
         boxNumbers: request.verification?.listed_commodities || 'N/A',
-        agent: request.verification?.agents_name || 'N/A'
+        agent: request.verification?.agents_name || 'N/A',
+        items: request.verification?.listed_commodities || 'N/A'
       },
       termsAndConditions: 'Cash Upon Receipt of Goods',
       qrCode: qrCodeData ? {

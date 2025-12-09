@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
-import { useNotifications } from '@/contexts/NotificationContext';
 import { getNavigationLinks } from '@/lib/navigation';
 import {
   SidebarContent,
@@ -15,34 +14,28 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Truck } from 'lucide-react';
+import { useActivityBadges } from '@/hooks/use-activity-badges';
 
 export default function AppSidebar() {
   const { department } = useAuth();
   const pathname = usePathname();
-  const { counts } = useNotifications();
+  const { hasNew, markSeen } = useActivityBadges();
   const navLinks = getNavigationLinks(department);
 
-  // Debug logging
-  console.log('📊 Sidebar notification counts:', counts);
-
-  // Function to get notification count for a specific route
-  const getNotificationCount = (href: string): number => {
-    const routeMap: { [key: string]: keyof typeof counts } = {
+  // Map sidebar links to activity keys
+  const activityKeyForHref = (href: string): string | undefined => {
+    const map: Record<string, string> = {
       '/dashboard/invoices': 'invoices',
-      '/dashboard/chat': 'chat',
-      '/dashboard/tickets': 'tickets',
-      '/dashboard/invoice-requests': 'invoiceRequests',
+      '/dashboard/invoice-requests': 'invoice_requests',
       '/dashboard/requests': 'requests',
+      '/dashboard/delivery-assignments': 'delivery_assignments',
+      '/dashboard/tickets': 'tickets',
+      '/dashboard/collections': 'collections',
+      '/dashboard/jobs': 'jobs',
+      '/dashboard/cash-flow': 'cash_flow',
+      '/dashboard/reports/audit': 'reports',
     };
-    
-    const notificationType = routeMap[href];
-    const count = notificationType ? counts[notificationType] : 0;
-    
-    if (href === '/dashboard/invoice-requests') {
-      console.log(`🔍 Invoice Requests notification count: ${count} (type: ${notificationType})`);
-    }
-    
-    return count;
+    return map[href];
   };
 
   return (
@@ -61,7 +54,8 @@ export default function AppSidebar() {
       <SidebarContent className="px-3 py-5">
         <SidebarMenu className="space-y-1.5">
           {navLinks.map((link) => {
-            const notificationCount = getNotificationCount(link.href);
+            const activityKey = activityKeyForHref(link.href);
+            const hasNewFlag = activityKey ? hasNew[activityKey] : false;
             const isActive = pathname === link.href;
             return (
               <SidebarMenuItem key={link.href}>
@@ -74,6 +68,9 @@ export default function AppSidebar() {
                   <Link 
                     href={link.href} 
                     className="flex items-center justify-between w-full px-3 py-3 rounded-lg"
+                    onClick={() => {
+                      if (activityKey) markSeen(activityKey);
+                    }}
                   >
                     <div className="flex items-center gap-3">
                       <div className={`flex h-8 w-8 items-center justify-center rounded-md transition-all ${
@@ -85,12 +82,12 @@ export default function AppSidebar() {
                       </div>
                       <span className="text-sm font-medium">{link.label}</span>
                     </div>
-                    {notificationCount > 0 && (
+                    {hasNewFlag && (
                       <Badge 
                         variant="destructive" 
-                        className="ml-auto h-6 min-w-[24px] rounded-full px-2 text-xs font-bold flex items-center justify-center transition-industrial hover:scale-110 shadow-sm"
+                        className="ml-auto h-6 min-w-[10px] rounded-full px-2 text-[10px] font-bold flex items-center justify-center transition-industrial hover:scale-110 shadow-sm"
                       >
-                        {notificationCount > 99 ? '99+' : notificationCount}
+                        •
                       </Badge>
                     )}
                     {isActive && (
