@@ -1,11 +1,17 @@
 'use client';
 
-import CashFlowTracker from "@/components/cash-flow-tracker";
+import dynamic from 'next/dynamic';
 import { fetchCashFlowTransactions } from "@/lib/data";
 import { useState, useEffect } from "react";
 import { CashFlowTransaction } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
+
+// Dynamically import CashFlowTracker to reduce initial bundle size
+const CashFlowTracker = dynamic(() => import("@/components/cash-flow-tracker"), {
+    loading: () => <div className="flex items-center justify-center h-64"><div className="text-lg">Loading cash flow data...</div></div>,
+    ssr: false
+});
 
 export default function CashFlowPage() {
     const [transactions, setTransactions] = useState<CashFlowTransaction[]>([]);

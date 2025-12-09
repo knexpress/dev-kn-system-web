@@ -1,11 +1,17 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import InternalRequestSystem from "@/components/internal-request-system";
+import dynamic from 'next/dynamic';
 import { useAuth } from "@/hooks/use-auth";
 import { useNotifications } from '@/contexts/NotificationContext';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
+
+// Dynamically import InternalRequestSystem to reduce initial bundle size
+const InternalRequestSystem = dynamic(() => import("@/components/internal-request-system"), {
+    loading: () => <div className="flex items-center justify-center h-64"><div className="text-lg">Loading tickets...</div></div>,
+    ssr: false
+});
 
 export default function InternalRequestsPage() {
     const { userProfile } = useAuth();

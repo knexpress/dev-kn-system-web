@@ -28,9 +28,10 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Trash2, Edit, UserCheck, UserX } from 'lucide-react';
+import { PlusCircle, Trash2, Edit, UserCheck, UserX, KeyRound } from 'lucide-react';
 
 interface Employee {
   _id: string;
@@ -67,7 +68,15 @@ export default function UserManagement() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('users');
   const { toast } = useToast();
+
+  // Reset password form state
+  const [resetPasswordData, setResetPasswordData] = useState({
+    userId: '',
+    password: '',
+  });
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -284,6 +293,62 @@ export default function UserManagement() {
     }
   };
 
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!resetPasswordData.userId) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please select a user',
+      });
+      return;
+    }
+
+    setIsResettingPassword(true);
+    try {
+      // Get the password value - if empty, send undefined to use default
+      const passwordValue = resetPasswordData.password.trim();
+      const password = passwordValue.length > 0 ? passwordValue : undefined;
+      
+      console.log('Resetting password for user:', resetPasswordData.userId);
+      console.log('Password provided:', password ? 'Yes (custom)' : 'No (will use default)');
+      console.log('Password value:', password ? '***' : 'undefined');
+      
+      const result = await apiClient.resetUserPassword(resetPasswordData.userId, password);
+
+      console.log('Reset password result:', result);
+
+      if (result.success) {
+        toast({
+          title: 'Success',
+          description: password 
+            ? `Password reset successfully for user` 
+            : 'Password reset to default (password123)',
+        });
+        setResetPasswordData({ userId: '', password: '' });
+        // Invalidate users cache to refresh data
+        apiClient.invalidateCache('/users');
+      } else {
+        console.error('Password reset failed:', result.error);
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: result.error || 'Failed to reset password',
+        });
+      }
+    } catch (error: any) {
+      console.error('Password reset error:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message || 'Failed to reset password. Please try again.',
+      });
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case 'SUPERADMIN':
@@ -305,6 +370,16 @@ export default function UserManagement() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">User Management</h1>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="reset-password">Reset Password</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="users" className="space-y-6">
+          <div className="flex justify-end">
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button>
@@ -503,9 +578,9 @@ export default function UserManagement() {
             </form>
           </DialogContent>
         </Dialog>
-      </div>
+          </div>
 
-      <Card>
+          <Card>
         <CardHeader>
           <CardTitle>Users ({users.length})</CardTitle>
         </CardHeader>
@@ -581,6 +656,57 @@ export default function UserManagement() {
           </Table>
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="reset-password" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <KeyRound className="h-5 w-5" />
+                Reset User Password
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleResetPassword} className="space-y-4">
+                <div>
+                  <Label htmlFor="reset_user">Select User</Label>
+                  <Select
+                    value={resetPasswordData.userId}
+                    onValueChange={(value) => setResetPasswordData({ ...resetPasswordData, userId: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a user to reset password" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {users.map((user) => (
+                        <SelectItem key={user._id} value={user._id}>
+                          {user.full_name} ({user.email}) - {user.role}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="reset_password">New Password (Optional)</Label>
+                  <Input
+                    id="reset_password"
+                    type="password"
+                    value={resetPasswordData.password}
+                    onChange={(e) => setResetPasswordData({ ...resetPasswordData, password: e.target.value })}
+                    placeholder="Leave empty to reset to default password (password123)"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    If left empty, password will be reset to the default: <strong>password123</strong>
+                  </p>
+                </div>
+                <Button type="submit" disabled={isResettingPassword || !resetPasswordData.userId} className="w-full">
+                  {isResettingPassword ? 'Resetting...' : 'Reset Password'}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

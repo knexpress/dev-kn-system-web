@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import InvoiceTemplate from "@/components/invoice-template";
 import TaxInvoiceTemplate from "@/components/tax-invoice-template";
 import { apiClient } from "@/lib/api-client";
-import { getQRPaymentUrl } from "@/lib/utils";
 import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, FileText, Receipt, AlertCircle, Download, Printer } from 'lucide-react';
@@ -35,6 +34,15 @@ const isPhToUaeService = (code?: string | null) => {
   return normalized === 'PH_TO_UAE' || normalized.startsWith('PH_TO_UAE_');
 };
 
+const isUaeToPhService = (code?: string | null) => {
+  const normalized = normalizeServiceCode(code);
+  return normalized === 'UAE_TO_PH' || 
+         normalized === 'UAE_TO_PINAS' ||
+         normalized.startsWith('UAE_TO_PH_') ||
+         normalized.startsWith('UAE_TO_PINAS_') ||
+         normalized.includes('UAE_TO_PINAS');
+};
+
 export default function InvoicePage() {
     const params = useParams();
     const searchParams = useSearchParams();
@@ -54,6 +62,7 @@ export default function InvoicePage() {
         receiver_address: '',
         receiver_phone: '',
         amount: '',
+        pickup_charge: '',
         delivery_charge: '',
         tax_rate: '',
         due_date: '',
@@ -84,6 +93,7 @@ export default function InvoicePage() {
                         receiver_address: result.data.receiver_address || '',
                         receiver_phone: result.data.receiver_phone || '',
                         amount: result.data.amount ? parseFloat(result.data.amount).toString() : '',
+                        pickup_charge: result.data.pickup_charge ? parseFloat(result.data.pickup_charge).toString() : '',
                         delivery_charge: result.data.delivery_charge ? parseFloat(result.data.delivery_charge).toString() : '',
                         tax_rate: result.data.tax_rate != null ? result.data.tax_rate.toString() : '',
                         due_date: result.data.due_date ? new Date(result.data.due_date).toISOString().split('T')[0] : '',
@@ -200,20 +210,11 @@ export default function InvoicePage() {
         baseAmountWithDelivery
     });
     
-    // Get shipping and delivery charges
+    // Get shipping, pickup, delivery, and insurance charges
     let shippingCharge = baseAmount; // Base amount is shipping only
-    let deliveryCharge = deliveryChargeFromInvoice; // Use delivery_charge from invoice
-    
-    // If delivery_charge is not in invoice, try to calculate from line items
-    if (deliveryCharge === 0 && invoice.line_items && invoice.line_items.length > 0) {
-        invoice.line_items.forEach((item: any) => {
-            const itemTotal = parseDecimal(item.total || item.unit_price, 2);
-            if (item.description?.toLowerCase().includes('delivery')) {
-                deliveryCharge += itemTotal;
-            }
-        });
-        deliveryCharge = parseDecimal(deliveryCharge, 2);
-    }
+    let pickupCharge = parseDecimal(invoice.pickup_charge || 0, 2);
+    let deliveryCharge = 0;
+    let insuranceCharge = 0;
     
     const serviceCodeRaw =
         invoice.service_code ||
@@ -221,13 +222,130 @@ export default function InvoicePage() {
         invoice.request_id?.verification?.service_code ||
         '';
     const isPhToUae = isPhToUaeService(serviceCodeRaw);
-
-    // Calculate tax based on delivery charge only
-    const taxRate = deliveryCharge > 0 && isPhToUae ? 5 : 0;
-    const taxAmount = deliveryCharge > 0 && taxRate > 0 ? parseDecimal((deliveryCharge * taxRate) / 100, 2) : 0;
     
-    const subtotal = baseAmountWithDelivery; // Shipping + Delivery
-    const total = parseDecimal(subtotal + taxAmount, 2); // Subtotal + Tax
+    // Get weight and number of boxes for PH TO UAE tax invoice recalculation and shipment details
+    const weight = parseDecimal(invoice.weight_kg || invoice.request_id?.shipment?.weight || invoice.request_id?.verification?.actual_weight || 0, 2);
+    const numberOfBoxesRaw = invoice.request_id?.shipment?.number_of_boxes ||
+        invoice.request_id?.verification?.number_of_boxes ||
+        invoice.request_id?.number_of_boxes ||
+        invoice.number_of_boxes ||
+        1;
+    const parsedNumberOfBoxes = parseInt(numberOfBoxesRaw.toString(), 10);
+    const validNumberOfBoxes = (!isNaN(parsedNumberOfBoxes) && parsedNumberOfBoxes >= 1) ? parsedNumberOfBoxes : 1;
+    const numberOfBoxes = validNumberOfBoxes; // Use for shipment details display
+    
+    // Calculate charges from line items (preferred source)
+    if (invoice.line_items && invoice.line_items.length > 0) {
+        invoice.line_items.forEach((item: any) => {
+            const itemTotal = parseDecimal(item.total || item.unit_price, 2);
+            const description = item.description?.toLowerCase() || '';
+            if (description.includes('pickup')) {
+                pickupCharge += itemTotal;
+            } else if (description.includes('delivery')) {
+                deliveryCharge += itemTotal; // Sum all delivery charge line items
+            } else if (description.includes('insurance')) {
+                insuranceCharge += itemTotal; // Sum all insurance charge line items
+            }
+        });
+        pickupCharge = parseDecimal(pickupCharge, 2);
+        deliveryCharge = parseDecimal(deliveryCharge, 2);
+        insuranceCharge = parseDecimal(insuranceCharge, 2);
+    } else {
+        // Fallback to invoice.delivery_charge if no line items
+        deliveryCharge = deliveryChargeFromInvoice;
+        // Try to get insurance charge from invoice or request
+        const request = invoice.request_id;
+        if (request) {
+            const insured = request.insured || request.booking?.insured || request.sender?.insured || false;
+            const declaredAmount = request.declaredAmount || request.declared_amount || 
+                                 request.booking?.declaredAmount || request.booking?.declared_amount ||
+                                 request.sender?.declaredAmount || request.sender?.declared_amount || 0;
+            if (insured === true && declaredAmount) {
+                let parsedDeclaredAmount = 0;
+                if (typeof declaredAmount === 'object' && declaredAmount.$numberDecimal) {
+                    parsedDeclaredAmount = parseFloat(declaredAmount.$numberDecimal);
+                } else if (typeof declaredAmount === 'number') {
+                    parsedDeclaredAmount = declaredAmount;
+                } else {
+                    parsedDeclaredAmount = parseFloat(declaredAmount.toString());
+                }
+                insuranceCharge = parseDecimal(parsedDeclaredAmount * 0.01, 2);
+            }
+        }
+    }
+    
+    // For PH TO UAE tax invoices, recalculate delivery charge using box-based formula
+    // This ensures tax invoice shows correct box-based calculation even if line items have normal invoice value
+    if (isPhToUae && invoiceType === 'tax' && deliveryCharge > 0) {
+        // Check if delivery is required (has_delivery flag or delivery charge exists)
+        const hasDelivery = invoice.has_delivery || deliveryCharge > 0;
+        if (hasDelivery) {
+            // Get base delivery amount from invoice or default to 20
+            const baseDeliveryAmount = parseDecimal(invoice.delivery_base_amount || 20, 2);
+            // Recalculate using box-based formula with custom base amount for tax invoice
+            const recalculatedDeliveryCharge = weight > 30 ? 0 : (validNumberOfBoxes <= 1 ? baseDeliveryAmount : baseDeliveryAmount + ((validNumberOfBoxes - 1) * 5));
+            deliveryCharge = parseDecimal(recalculatedDeliveryCharge, 2);
+        }
+    }
+
+    // Calculate subtotal first
+    const subtotal = parseDecimal(shippingCharge + pickupCharge + deliveryCharge + insuranceCharge, 2); // Shipping + Pickup + Delivery + Insurance
+    
+    // Check if shipment is flowmic/personal for UAE_TO_PH services
+    const isUaeToPh = isUaeToPhService(serviceCodeRaw);
+    const isFlowmicOrPersonal = (() => {
+      if (!isUaeToPh) return false;
+      const norm = (v: any) => (v || '').toString().trim().toUpperCase();
+      
+      // Check box-level classification
+      const boxes = invoice.request_id?.verification?.boxes || [];
+      if (Array.isArray(boxes) && boxes.length > 0) {
+        const boxHit = boxes.some((box: any) => {
+          const sc = norm(box.shipment_classification);
+          const c = norm(box.classification);
+          return sc === 'PERSONAL' || sc === 'FLOWMIC' || c === 'PERSONAL' || c === 'FLOWMIC';
+        });
+        if (boxHit) return true;
+      }
+      
+      // Check top-level shipment classification
+      const topClass = norm(
+        invoice.request_id?.verification?.shipment_classification ||
+        invoice.request_id?.shipment?.classification
+      );
+      return topClass === 'PERSONAL' || topClass === 'FLOWMIC';
+    })();
+    
+    // Use database values if available, otherwise recalculate
+    let taxRate = parseDecimal(invoice.tax_rate || 0, 2);
+    let taxAmount = parseDecimal(invoice.tax_amount || 0, 2);
+    let total = parseDecimal(invoice.total_amount || 0, 2);
+    
+    // If database values are missing or zero, recalculate
+    if (taxRate === 0 && taxAmount === 0) {
+      if (isFlowmicOrPersonal && isUaeToPh) {
+        // Flowmic/Personal UAE_TO_PH: 5% VAT on subtotal
+        taxRate = 5;
+        taxAmount = parseDecimal((subtotal * taxRate) / 100, 2);
+        total = parseDecimal(subtotal + taxAmount, 2);
+      } else if (deliveryCharge > 0 && isPhToUae) {
+        // PH_TO_UAE: 5% VAT on delivery charge only
+        taxRate = 5;
+        taxAmount = parseDecimal((deliveryCharge * taxRate) / 100, 2);
+        total = parseDecimal(subtotal + taxAmount, 2);
+      } else {
+        // No tax
+        taxRate = 0;
+        taxAmount = 0;
+        total = subtotal;
+      }
+    } else {
+      // Database has tax values, use them but ensure total matches
+      if (total === 0 || Math.abs(total - (subtotal + taxAmount)) > 0.01) {
+        // Recalculate total if it doesn't match
+        total = parseDecimal(subtotal + taxAmount, 2);
+      }
+    }
 
     // Get AWB number - check direct field first, then request_id
     const awbNumber = invoice.awb_number || invoice.request_id?.awb_number || invoice.request_id?.request_id || 'N/A';
@@ -242,14 +360,10 @@ export default function InvoicePage() {
     const emirate = addressParts.length > 1 ? addressParts[addressParts.length - 2] : (invoice.request_id?.receiver?.city || 'Dubai');
     
     // Get shipment details - use direct fields first
-    const weight = parseDecimal(invoice.weight_kg || invoice.request_id?.shipment?.weight, 2);
+    // Note: weight and numberOfBoxes are already defined above for tax invoice recalculation
     const volume = parseDecimal(invoice.volume_cbm || invoice.request_id?.shipment?.volume, 2);
-    const numberOfBoxes =
-        invoice.request_id?.shipment?.number_of_boxes ||
-        invoice.request_id?.verification?.number_of_boxes ||
-        invoice.request_id?.number_of_boxes ||
-        invoice.number_of_boxes ||
-        1;
+    // Use weight already defined above, but ensure it's the correct format for display
+    const displayWeight = parseDecimal(weight, 2);
     const weightType = invoice.request_id?.shipment?.weight_type || 'ACTUAL';
     
     // Calculate rate from amount and weight if not provided
@@ -296,7 +410,8 @@ export default function InvoicePage() {
             name: receiverName.toUpperCase(),
             address: receiverAddress,
             emirate: emirate,
-            mobile: receiverPhone
+            mobile: receiverPhone,
+            trn: invoice.customer_trn || invoice.request_id?.customer_trn || undefined
         },
         senderInfo: {
             name: senderName,
@@ -306,13 +421,15 @@ export default function InvoicePage() {
         },
         shipmentDetails: {
             numberOfBoxes: numberOfBoxes,
-            weight: weight,
+            weight: displayWeight,
             weightType: weightType,
             rate: rate
         },
         charges: {
             shippingCharge: shippingCharge,
+            pickupCharge: pickupCharge > 0 ? pickupCharge : undefined,
             deliveryCharge: deliveryCharge,
+            insuranceCharge: insuranceCharge > 0 ? insuranceCharge : undefined,
             subtotal: subtotal,
             taxRate: taxRate,
             taxAmount: taxAmount,
@@ -324,21 +441,26 @@ export default function InvoicePage() {
         },
         termsAndConditions: 'Cash Upon Receipt of Goods',
         qrCode: qrCodeData ? {
-            url: getQRPaymentUrl(qrCodeData.qr_url || ''),
+            url: qrCodeData.qr_url || '',
             code: qrCodeData.qr_code || ''
         } : undefined
     };
 
-    const shouldShowDeliveryOnlyInTaxInvoice = isPhToUae;
+    // For tax invoice: PH_TO_UAE shows delivery only (unless flowmic/personal)
+    // Flowmic/Personal UAE_TO_PH shows full subtotal with tax
+    const shouldShowDeliveryOnlyInTaxInvoice = isPhToUae && !isFlowmicOrPersonal;
     const deliveryOnlyTaxAmount = parseDecimal((deliveryCharge * taxRate) / 100, 2);
-    const deliveryOnlyTotal = parseDecimal(deliveryCharge + deliveryOnlyTaxAmount, 2);
+    // For tax invoice showing delivery only, include insurance charge in subtotal
+    const deliveryOnlySubtotal = parseDecimal(deliveryCharge + insuranceCharge, 2);
+    const deliveryOnlyTotal = parseDecimal(deliveryOnlySubtotal + deliveryOnlyTaxAmount, 2);
     const taxInvoiceData = shouldShowDeliveryOnlyInTaxInvoice
         ? {
             ...invoiceData,
             charges: {
                 ...invoiceData.charges,
+                pickupCharge: pickupCharge > 0 ? pickupCharge : undefined,
                 shippingCharge: 0,
-                subtotal: deliveryCharge,
+                subtotal: deliveryOnlySubtotal,
                 taxAmount: deliveryOnlyTaxAmount,
                 total: deliveryOnlyTotal
             }
@@ -399,9 +521,25 @@ export default function InvoicePage() {
             };
 
             if (editForm.amount) payload.amount = parseFloat(editForm.amount);
+            if (editForm.pickup_charge) payload.pickup_charge = parseFloat(editForm.pickup_charge);
             if (editForm.delivery_charge) payload.delivery_charge = parseFloat(editForm.delivery_charge);
             if (editForm.tax_rate) payload.tax_rate = parseFloat(editForm.tax_rate);
             if (editForm.due_date) payload.due_date = new Date(editForm.due_date).toISOString();
+            
+            // Recalculate subtotal and total when charges change
+            const shippingCharge = editForm.amount ? parseFloat(editForm.amount) : 0;
+            const pickupCharge = editForm.pickup_charge ? parseFloat(editForm.pickup_charge) : 0;
+            const deliveryCharge = editForm.delivery_charge ? parseFloat(editForm.delivery_charge) : 0;
+            const taxRate = editForm.tax_rate ? parseFloat(editForm.tax_rate) : 0;
+            
+            const subtotal = shippingCharge + pickupCharge + deliveryCharge;
+            const taxAmount = deliveryCharge > 0 && taxRate > 0 ? (deliveryCharge * taxRate) / 100 : 0;
+            const total = subtotal + taxAmount;
+            
+            // Update calculated values
+            payload.subtotal = subtotal;
+            payload.tax_amount = taxAmount;
+            payload.total = total;
 
             const result = await apiClient.updateInvoiceUnified(invoiceIdentifier, payload);
             if (result.success && result.data) {
@@ -549,7 +687,7 @@ export default function InvoicePage() {
                                 rows={3}
                             />
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <div>
                                 <Label>Shipping Charge (AED)</Label>
                                 <Input
@@ -557,6 +695,15 @@ export default function InvoicePage() {
                                     step="0.01"
                                     value={editForm.amount}
                                     onChange={(e) => handleEditChange('amount', e.target.value)}
+                                />
+                            </div>
+                            <div>
+                                <Label>Pickup Charge (AED)</Label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={editForm.pickup_charge}
+                                    onChange={(e) => handleEditChange('pickup_charge', e.target.value)}
                                 />
                             </div>
                             <div>

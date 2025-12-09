@@ -1,10 +1,14 @@
 'use client';
 
-import AuditReportTable from "@/components/audit-report-table";
-import { fetchRequests, fetchInvoices } from "@/lib/data";
-import { Request, Invoice } from "@/lib/types";
 import { useState, useEffect } from "react";
+import dynamic from 'next/dynamic';
 import { apiClient } from "@/lib/api-client";
+
+// Dynamically import AuditReportTable to reduce initial bundle size
+const AuditReportTable = dynamic(() => import("@/components/audit-report-table"), {
+  loading: () => <div className="flex items-center justify-center h-64">Loading audit table...</div>,
+  ssr: false
+});
 
 export default function AuditReportPage() {
     const [allData, setAllData] = useState<any[]>([]);
@@ -104,25 +108,9 @@ export default function AuditReportPage() {
                     }
                 } catch (reportsError) {
                     console.error('❌ Error fetching audit reports:', reportsError);
-                    console.warn('Falling back to requests/invoices method');
+                    // If reports API fails, show empty state instead of fallback
+                    setAllData([]);
                 }
-                
-                // Fallback to old method if reports API doesn't work or returns no data
-                const [requests, invoices] = await Promise.all([
-                    fetchRequests(),
-                    fetchInvoices()
-                ]);
-                
-                // Join requests with invoices
-                const joinedData = requests.map(request => {
-                    const invoice = invoices.find(inv => inv.requestId === request.id);
-                    return {
-                        ...request,
-                        invoice,
-                    }
-                });
-                
-                setAllData(joinedData);
             } catch (error) {
                 console.error('Error loading audit data:', error);
             } finally {

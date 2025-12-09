@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo, type ReactNode, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -23,13 +25,21 @@ import {
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
-import { getQRPaymentUrl } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { useNotifications } from '@/contexts/NotificationContext';
-import InvoiceRequestForm from '@/components/invoice-request-form';
-import VerificationForm from '@/components/verification-form';
+// Dynamically import heavy form components to reduce initial bundle size
+const InvoiceRequestForm = dynamic(() => import('@/components/invoice-request-form'), {
+  ssr: false
+});
+const VerificationForm = dynamic(() => import('@/components/verification-form'), {
+  ssr: false
+});
+const BookingPrintView = dynamic(() => import('@/components/booking-print-view'), {
+  ssr: false
+});
 import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText, ArrowRight, Phone, MapPin, AlertTriangle } from 'lucide-react';
+import BookingReviewModal from '@/components/booking-review-modal';
 
 const normalizeServiceCode = (code?: string | null) =>
   (code || '')
@@ -44,22 +54,223 @@ const isPhToUaeService = (code?: string | null) => {
 
 const isUaeToPhService = (code?: string | null) => {
   const normalized = normalizeServiceCode(code);
-  return normalized === 'UAE_TO_PH' || normalized.startsWith('UAE_TO_PH_');
+  // Check for UAE_TO_PH, UAE_TO_PINAS, and variations
+  return normalized === 'UAE_TO_PH' || 
+         normalized === 'UAE_TO_PINAS' ||
+         normalized.startsWith('UAE_TO_PH_') ||
+         normalized.startsWith('UAE_TO_PINAS_') ||
+         normalized.includes('UAE_TO_PINAS');
 };
 
+// Memoized Invoice Request Card Component - Only re-renders when its props change
+interface InvoiceRequestCardProps {
+  request: any;
+  userProfile: any;
+  formatWeightValue: (value: any) => string | null;
+  formatDateLabel: (date: string | Date) => string;
+  formatServiceCode: (code?: string | null) => string;
+  getStatusBadgeColor: (status: string) => string;
+  getDeliveryStatusBadgeColor: (status?: string) => string;
+  renderActionControls: (request: any) => ReactNode;
+  fetchInvoiceRequests: () => void;
+  onBadgeClick?: (request: any) => void;
+}
+
+const InvoiceRequestCard = memo(({
+  request,
+  userProfile,
+  formatWeightValue,
+  formatDateLabel,
+  formatServiceCode,
+  getStatusBadgeColor,
+  getDeliveryStatusBadgeColor,
+  renderActionControls,
+  fetchInvoiceRequests,
+  onBadgeClick,
+}: InvoiceRequestCardProps) => {
+  const shortId =
+    request.invoice_number ||
+    request.tracking_code ||
+    (request._id ? request._id.slice(-8) : 'REQUEST');
+  const weightDisplay =
+    formatWeightValue(request.weight) ||
+    formatWeightValue(request.weight_kg) ||
+    formatWeightValue(request.verification?.actual_weight);
+  const routeFrom = request.origin_place || 'Not set';
+  const routeTo = request.destination_place || 'Not set';
+  const createdLabel = formatDateLabel(request.createdAt);
+  const totalBoxes =
+    request.verification?.number_of_boxes ||
+    request.number_of_boxes ||
+    request.verification?.boxes?.length;
+  const actions = renderActionControls(request);
+
+  return (
+    <div
+      key={request._id}
+      className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm transition hover:border-primary/40"
+    >
+      <div className="flex flex-col gap-3 border-b border-dashed pb-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-wrap items-center gap-3">
+          <Badge 
+            variant="outline" 
+            className={`font-mono text-xs uppercase ${userProfile?.department?.name === 'Sales' && onBadgeClick ? 'cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors' : ''}`}
+            onClick={() => {
+              if (userProfile?.department?.name === 'Sales' && onBadgeClick) {
+                onBadgeClick(request);
+              }
+            }}
+          >
+            {shortId}
+          </Badge>
+          <span className="text-xs text-muted-foreground">
+            Created {createdLabel}
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge className={getStatusBadgeColor(request.status)}>
+            {request.status}
+          </Badge>
+          <Badge className={getDeliveryStatusBadgeColor(request.delivery_status)}>
+            {request.delivery_status}
+          </Badge>
+          {request.has_delivery && (
+            <Badge variant="secondary">Delivery</Badge>
+          )}
+        </div>
+      </div>
+
+      <div className="grid gap-4 pt-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Customer</p>
+          <p className="font-semibold text-foreground">{request.customer_name}</p>
+          {request.customer_phone && (
+            <div className="flex items-center gap-1 text-sm text-muted-foreground">
+              <Phone className="h-3.5 w-3.5" />
+              <span>{request.customer_phone}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Receiver</p>
+          <p className="font-semibold text-foreground">{request.receiver_name}</p>
+          {request.receiver_company && (
+            <p className="text-sm text-muted-foreground">{request.receiver_company}</p>
+          )}
+          {request.receiver_phone && (
+            <div className="flex items-center gap-1 text-sm text-muted-foreground">
+              <Phone className="h-3.5 w-3.5" />
+              <span>{request.receiver_phone}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Route</p>
+          <div className="flex items-start gap-2 text-sm text-muted-foreground">
+            <div className="flex-1 space-y-1">
+              <div className="flex items-start gap-1 font-medium text-foreground">
+                <MapPin className="mt-0.5 h-3.5 w-3.5 text-primary" />
+                <span className="break-words">{routeFrom}</span>
+              </div>
+              <p className="text-xs uppercase tracking-wide opacity-80">Origin</p>
+            </div>
+            <ArrowRight className="mt-1 h-4 w-4 text-primary" />
+            <div className="flex-1 space-y-1">
+              <div className="flex items-start gap-1 font-medium text-foreground">
+                <MapPin className="mt-0.5 h-3.5 w-3.5 text-orange-500" />
+                <span className="break-words">{routeTo}</span>
+              </div>
+              <p className="text-xs uppercase tracking-wide opacity-80">Destination</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Shipment</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">
+              {request.shipment_type === 'DOCUMENT' ? 'Document' : 'Non-Document'}
+            </Badge>
+            {request.is_leviable && <Badge variant="secondary">Taxable</Badge>}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Weight:{' '}
+            {weightDisplay ? (
+              <span className="font-semibold text-foreground">{weightDisplay} kg</span>
+            ) : (
+              'Not set'
+            )}
+          </p>
+          {totalBoxes && (
+            <p className="text-sm text-muted-foreground">
+              Boxes:{' '}
+              <span className="font-semibold text-foreground">{totalBoxes}</span>
+            </p>
+          )}
+        </div>
+      </div>
+
+      {userProfile.department.name === 'Operations' && request.status === 'IN_PROGRESS' && (
+        <div className="mt-4 rounded-lg border border-dashed border-orange-200 bg-orange-50 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-orange-700">
+            <AlertTriangle className="h-4 w-4" />
+            <span>Complete the 6-point verification before sending to Finance</span>
+          </div>
+          <div className="mt-3">
+            <VerificationForm
+              request={request}
+              onVerificationComplete={fetchInvoiceRequests}
+              currentUser={userProfile}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 flex flex-col gap-3 border-t pt-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span>Service:</span>
+          <Badge variant="outline">{formatServiceCode(request.service_code)}</Badge>
+          {request.has_delivery && <Badge variant="secondary">Delivery Required</Badge>}
+          {request.is_leviable && <Badge variant="outline">VAT applicable</Badge>}
+        </div>
+        {actions ? (
+          <div className="flex flex-wrap gap-2">{actions}</div>
+        ) : (
+          <div className="text-xs text-muted-foreground">No actions available</div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+InvoiceRequestCard.displayName = 'InvoiceRequestCard';
+
 export default function InvoiceRequestsPage() {
-  const router = useRouter();
   const [invoiceRequests, setInvoiceRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState('all');
   const [filterDeliveryStatus, setFilterDeliveryStatus] = useState('all');
+  const [awbSearch, setAwbSearch] = useState('');
+  const [showAwbSuggestions, setShowAwbSuggestions] = useState(false);
+  const awbInputRef = useRef<HTMLInputElement>(null);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
+  const [showInvoicePreview, setShowInvoicePreview] = useState(false);
   const [selectedRequestForInvoice, setSelectedRequestForInvoice] = useState(null);
   const [showTaxInputDialog, setShowTaxInputDialog] = useState(false);
-  const [hasDelivery, setHasDelivery] = useState(false); // Delivery required flag
+  const [selectedBooking, setSelectedBooking] = useState<any>(null);
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [loadingBooking, setLoadingBooking] = useState(false);
+  const [showShipmentDetailsDialog, setShowShipmentDetailsDialog] = useState(false);
+  const [showPrintView, setShowPrintView] = useState(false);
+  const [bookingToPrint, setBookingToPrint] = useState<any>(null);
+  const [hasDelivery, setHasDelivery] = useState(false); // Delivery required flag for PH TO UAE
   const [customerTRN, setCustomerTRN] = useState(''); // Optional customer TRN
   const [batchNumber, setBatchNumber] = useState(''); // Optional batch number
-  const [customDeliveryCharge, setCustomDeliveryCharge] = useState(''); // Manual delivery charge for UAE->PH
-  const [qrCodeData, setQrCodeData] = useState<any>(null);
+  const [pickupCharge, setPickupCharge] = useState(''); // Pickup charge when sender_delivery_option is "pickup"
+  const [deliveryCharge, setDeliveryCharge] = useState(''); // Delivery charge when receiver_delivery_option is "delivery"
+  const [deliveryBaseAmount, setDeliveryBaseAmount] = useState('20'); // Base delivery amount for PH_TO_UAE (default 20)
+  const router = useRouter();
   const getRequestServiceCode = (request?: any) =>
     request?.service_code ||
     request?.verification?.service_code ||
@@ -69,22 +280,147 @@ export default function InvoiceRequestsPage() {
   const { toast } = useToast();
   const { userProfile } = useAuth();
   const { clearCount } = useNotifications();
+  const [insuranceOption, setInsuranceOption] = useState<'none' | 'percent' | 'fixed'>('none');
+  const [fixedInsuranceType, setFixedInsuranceType] = useState<'mobile' | 'laptop' | 'other'>('mobile');
+  const [insuranceManualAmount, setInsuranceManualAmount] = useState('');
+  
+  // Helper function to check if shipment is flowmic
+  const isFlowmicShipment = (request?: any): boolean => {
+    if (!request) return false;
+    // Check verification boxes and shipment classification for flowmic/personal
+    const boxes =
+      request.verification?.boxes ||
+      request.request_id?.verification?.boxes ||
+      request.booking?.verification?.boxes ||
+      [];
+    const boxIsFlowmic =
+      Array.isArray(boxes) &&
+      boxes.length > 0 &&
+      boxes.some((box: any) => {
+        const classification = (box.classification || '').toUpperCase();
+        return classification === 'FLOWMIC' || classification === 'PERSONAL';
+      });
+
+    // Check shipment classification fields as a fallback
+    const classificationFields = [
+      request.verification?.shipment_classification,
+      request.request_id?.verification?.shipment_classification,
+      request.shipment?.classification,
+      request.request_id?.shipment?.classification,
+      request.classification,
+    ]
+      .map((c: any) => (c || '').toString().toUpperCase())
+      .filter(Boolean);
+
+    const hasPersonalClassification = classificationFields.some(
+      (c) => c === 'PERSONAL' || c === 'FLOWMIC'
+    );
+
+    return boxIsFlowmic || hasPersonalClassification;
+  };
+  
   const getAutoTaxRate = (request?: any) => {
-    if (!request || !hasDelivery) return 0;
+    if (!request) return 0;
+    // If shipment is flowmic, apply 5% VAT on subtotal
+    if (isFlowmicShipment(request)) {
+      return 5;
+    }
     const serviceCode = getRequestServiceCode(request);
+    // Tax is calculated on delivery charge if present (PH to UAE = 5%, others = 0%)
     return isPhToUaeService(serviceCode) ? 5 : 0;
+  };
+
+  // Helper to extract declared amount as number
+  const getDeclaredAmount = (request: any): number => {
+    const declaredAmount = request?.declaredAmount ||
+      request?.declared_amount ||
+      request?.request_id?.declaredAmount ||
+      request?.request_id?.declared_amount ||
+      request?.booking?.declaredAmount ||
+      request?.booking?.declared_amount ||
+      request?.sender?.declaredAmount ||
+      request?.sender?.declared_amount ||
+      request?.request_id?.sender?.declaredAmount ||
+      request?.request_id?.sender?.declared_amount ||
+      0;
+
+    if (!declaredAmount) return 0;
+    if (typeof declaredAmount === 'object' && declaredAmount.$numberDecimal) {
+      return parseFloat(declaredAmount.$numberDecimal) || 0;
+    }
+    const parsed = typeof declaredAmount === 'number' ? declaredAmount : parseFloat(declaredAmount.toString());
+    return Number.isFinite(parsed) ? parsed : 0;
   };
   const selectedRequestTaxRate = getAutoTaxRate(selectedRequestForInvoice || undefined);
   const selectedServiceCode = getRequestServiceCode(selectedRequestForInvoice || undefined);
   const isUaeToPhSelected = isUaeToPhService(selectedServiceCode);
+  
+  // Get delivery options from request (check multiple possible locations)
+  // Normalize to lowercase for case-insensitive comparison
+  const senderDeliveryOptionRaw = selectedRequestForInvoice?.sender_delivery_option || 
+                                   selectedRequestForInvoice?.request_id?.sender_delivery_option || 
+                                   selectedRequestForInvoice?.booking?.sender_delivery_option ||
+                                   selectedRequestForInvoice?.sender?.delivery_option ||
+                                   selectedRequestForInvoice?.request_id?.sender?.delivery_option ||
+                                   selectedRequestForInvoice?.request_id?.booking?.sender_delivery_option ||
+                                   '';
+  const receiverDeliveryOptionRaw = selectedRequestForInvoice?.receiver_delivery_option || 
+                                    selectedRequestForInvoice?.request_id?.receiver_delivery_option || 
+                                    selectedRequestForInvoice?.booking?.receiver_delivery_option ||
+                                    selectedRequestForInvoice?.receiver?.delivery_option ||
+                                    selectedRequestForInvoice?.request_id?.receiver?.delivery_option ||
+                                    selectedRequestForInvoice?.request_id?.booking?.receiver_delivery_option ||
+                                    '';
+  
+  // Normalize to lowercase for case-insensitive matching
+  const senderDeliveryOption = senderDeliveryOptionRaw?.toString().toLowerCase().trim() || '';
+  const receiverDeliveryOption = receiverDeliveryOptionRaw?.toString().toLowerCase().trim() || '';
+  
+  // Debug logging - Always log when dialog is open
+  if (selectedRequestForInvoice) {
+    console.log('🔍 Invoice Generation Dialog - Checking service and delivery options:');
+    console.log('  - Service Code:', selectedServiceCode);
+    console.log('  - Normalized Service Code:', normalizeServiceCode(selectedServiceCode));
+    console.log('  - Is UAE TO PH:', isUaeToPhSelected);
+    console.log('  - Sender Delivery Option (raw):', senderDeliveryOptionRaw);
+    console.log('  - Sender Delivery Option (normalized):', senderDeliveryOption);
+    console.log('  - Receiver Delivery Option (raw):', receiverDeliveryOptionRaw);
+    console.log('  - Receiver Delivery Option (normalized):', receiverDeliveryOption);
+    console.log('  - Full request object keys:', Object.keys(selectedRequestForInvoice));
+    console.log('  - Request ID keys:', selectedRequestForInvoice?.request_id ? Object.keys(selectedRequestForInvoice.request_id) : 'N/A');
+    console.log('  - Booking keys:', selectedRequestForInvoice?.booking ? Object.keys(selectedRequestForInvoice.booking) : 'N/A');
+  }
+  
+  // For UAE TO PH: Use manual entry based on delivery options
+  // For PH TO UAE: Use old automatic calculation method
+  // Use case-insensitive comparison
+  const needsPickupCharge = isUaeToPhSelected && (senderDeliveryOption === 'pickup');
+  const needsDeliveryCharge = isUaeToPhSelected && (receiverDeliveryOption === 'delivery');
+  
+  // For UAE TO PH: Show fields based on delivery option combinations
+  // - sender="pickup" AND receiver="delivery" → show both fields
+  // - sender="delivery" AND receiver="delivery" → show only delivery charge
+  // - sender="pickup" AND receiver="pickup" → show only pickup charge
+  const showPickupChargeField = isUaeToPhSelected && (senderDeliveryOption === 'pickup');
+  const showDeliveryChargeField = isUaeToPhSelected && (receiverDeliveryOption === 'delivery');
+  
+  // For PH TO UAE: Check if delivery is required (old method)
+  const isPhToUaeSelected = isPhToUaeService(selectedServiceCode);
+  
+  // PH TO UAE: Always disable insurance (no insurance offered)
+  useEffect(() => {
+    if (isPhToUaeSelected) {
+      setInsuranceOption('none');
+      setFixedInsuranceType('mobile');
+      setInsuranceManualAmount('');
+    }
+  }, [isPhToUaeSelected]);
+  
   const generateDisabled =
     !batchNumber.trim() ||
-    (isUaeToPhSelected && hasDelivery && !customDeliveryCharge.trim());
-  const manualChargeForPreview = (() => {
-    if (!isUaeToPhSelected || !customDeliveryCharge.trim()) return undefined;
-    const parsed = parseFloat(customDeliveryCharge);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-  })();
+    (needsPickupCharge && !pickupCharge.trim()) ||
+    (needsDeliveryCharge && !deliveryCharge.trim());
+  // Manual charges are now handled via pickupCharge and deliveryCharge based on delivery options
 
   // Determine which requests to show based on department
   const getVisibleRequests = () => {
@@ -112,10 +448,23 @@ export default function InvoiceRequestsPage() {
         );
       
       case 'Finance':
-        // Finance can see VERIFIED requests ready for invoicing
-        return safeInvoiceRequests.filter(request => 
-          request.status === 'VERIFIED'
-        );
+        // Finance can see VERIFIED requests ready for invoicing, but exclude cancelled shipments
+        return safeInvoiceRequests.filter(request => {
+          // Must be VERIFIED status
+          if (request.status !== 'VERIFIED') return false;
+          
+          // Exclude if invoice request itself is cancelled
+          if (request.status === 'CANCELLED') return false;
+          
+          // Exclude if delivery status is cancelled
+          if (request.delivery_status === 'CANCELLED') return false;
+          
+          // Exclude if related shipment request is cancelled
+          if (request.request_id?.status === 'CANCELLED') return false;
+          if (request.request_id?.delivery_status === 'CANCELLED') return false;
+          
+          return true;
+        });
       
       default:
         return [];
@@ -136,6 +485,30 @@ export default function InvoiceRequestsPage() {
     // Cleanup interval on unmount
     return () => clearInterval(intervalId);
   }, []);
+
+  // Update dropdown position on scroll and resize
+  useEffect(() => {
+    if (!showAwbSuggestions || !awbInputRef.current) return;
+
+    const updatePosition = () => {
+      if (awbInputRef.current) {
+        const rect = awbInputRef.current.getBoundingClientRect();
+        setDropdownPosition({
+          top: rect.bottom + window.scrollY + 4,
+          left: rect.left + window.scrollX,
+          width: rect.width,
+        });
+      }
+    };
+
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [showAwbSuggestions]);
 
   const fetchInvoiceRequests = async () => {
     try {
@@ -298,12 +671,14 @@ export default function InvoiceRequestsPage() {
     switch (deliveryStatus) {
       case 'PENDING':
         return 'bg-gray-500 text-white';
-      case 'PICKED_UP':
-        return 'bg-blue-500 text-white';
-      case 'IN_TRANSIT':
-        return 'bg-yellow-500 text-white';
       case 'DELIVERED':
         return 'bg-green-500 text-white';
+      case 'CANCELLED':
+        return 'bg-red-500 text-white';
+      // Handle legacy statuses for backward compatibility
+      case 'PICKED_UP':
+      case 'IN_TRANSIT':
+        return 'bg-blue-500 text-white';
       case 'FAILED':
         return 'bg-red-500 text-white';
       default:
@@ -316,10 +691,41 @@ export default function InvoiceRequestsPage() {
   // Ensure visibleRequests is always an array
   const safeVisibleRequests = Array.isArray(visibleRequests) ? visibleRequests : [];
   
+  // Helper function to extract AWB number from request
+  const getAwbNumber = (request: any): string => {
+    return (
+      request.tracking_code ||
+      request.awb_number ||
+      request.request_id?.tracking_code ||
+      request.request_id?.awb_number ||
+      ''
+    ).toLowerCase().trim();
+  };
+  
+  // Get unique AWB numbers from visible requests for autocomplete
+  const availableAwbNumbers = Array.from(
+    new Set(
+      safeVisibleRequests
+        .map(getAwbNumber)
+        .filter(awb => awb.length > 0)
+    )
+  ).sort();
+  
+  // Filter AWB suggestions based on search input
+  const awbSuggestions = awbSearch.trim().length > 0
+    ? availableAwbNumbers.filter(awb => 
+        awb.includes(awbSearch.toLowerCase().trim())
+      ).slice(0, 10) // Limit to 10 suggestions
+    : [];
+  
   const filteredRequests = safeVisibleRequests.filter(request => {
-    const statusMatch = filterStatus === 'all' || request.status === filterStatus;
     const deliveryStatusMatch = filterDeliveryStatus === 'all' || request.delivery_status === filterDeliveryStatus;
-    return statusMatch && deliveryStatusMatch;
+    
+    // AWB search filter
+    const awbMatch = !awbSearch.trim() || 
+      getAwbNumber(request).includes(awbSearch.toLowerCase().trim());
+    
+    return deliveryStatusMatch && awbMatch;
   });
 
   // Department-specific actions
@@ -349,6 +755,116 @@ export default function InvoiceRequestsPage() {
     }
   };
 
+  // Handle badge click for Sales users to view booking details
+  const handleBadgeClick = async (request: any) => {
+    if (userProfile?.department?.name !== 'Sales') return;
+    
+    setLoadingBooking(true);
+    setShowBookingModal(true);
+    
+    try {
+      // First, check if booking data is already embedded in the request
+      let bookingData = null;
+      
+      // Check various locations for embedded booking data
+      if (request.booking && typeof request.booking === 'object') {
+        bookingData = request.booking;
+      } else if (request.request_id && typeof request.request_id === 'object') {
+        // request_id might be the booking object
+        if (request.request_id.sender || request.request_id.receiver || request.request_id.service) {
+          bookingData = request.request_id;
+        }
+      }
+      
+      // If we have booking data, use it directly
+      if (bookingData) {
+        console.log('Using embedded booking data');
+        setSelectedBooking(bookingData);
+        setLoadingBooking(false);
+        return;
+      }
+      
+      // Otherwise, try to fetch booking by ID
+      // Try to get booking ID from various possible locations
+      const bookingId = 
+        request.booking_id ||
+        request.request_id?.booking_id ||
+        request.request_id?._id ||
+        request.booking?._id;
+      
+      // If no booking ID found, use request as booking data
+      if (!bookingId) {
+        console.log('No booking ID found, using request data');
+        setSelectedBooking(request);
+        setLoadingBooking(false);
+        return;
+      }
+      
+      // Validate booking ID format (should be a valid MongoDB ObjectId or string)
+      if (typeof bookingId !== 'string' || bookingId.trim().length === 0) {
+        console.log('Invalid booking ID format, using request data');
+        setSelectedBooking(request);
+        setLoadingBooking(false);
+        return;
+      }
+      
+      console.log('Fetching booking with ID:', bookingId);
+      const result = await apiClient.getBooking(bookingId.trim());
+      
+      if (result.success && result.data) {
+        setSelectedBooking(result.data);
+      } else {
+        // If booking not found via API, try using embedded data
+        let fallbackData = null;
+        
+        if (request.request_id && typeof request.request_id === 'object') {
+          // Check if request_id looks like booking data
+          if (request.request_id.sender || request.request_id.receiver || request.request_id.service) {
+            fallbackData = request.request_id;
+          }
+        }
+        
+        if (!fallbackData) {
+          // Use request as booking data (some requests are bookings)
+          fallbackData = request;
+        }
+        
+        setSelectedBooking(fallbackData);
+        
+        // Only show warning if it's not a 404 (not found is expected sometimes)
+        const errorMsg = result.error || '';
+        if (errorMsg && !errorMsg.includes('404') && !errorMsg.includes('Not Found') && !errorMsg.includes('Request failed')) {
+          toast({
+            variant: 'destructive',
+            title: 'Warning',
+            description: errorMsg,
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error('Error fetching booking:', error);
+      
+      // Try to use request data as fallback
+      if (request.request_id && typeof request.request_id === 'object') {
+        setSelectedBooking(request.request_id);
+      } else {
+        setSelectedBooking(request);
+      }
+      
+      // Only show error if we can't use fallback data
+      const errorMessage = error?.message || error?.error || 'Failed to fetch booking details';
+      if (!errorMessage.includes('404') && !errorMessage.includes('Not Found')) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: errorMessage,
+        });
+      }
+    } finally {
+      setLoadingBooking(false);
+    }
+  };
+
   const handleFinanceAction = async (id: string) => {
     try {
       // Find the request first
@@ -363,8 +879,8 @@ export default function InvoiceRequestsPage() {
         setShowTaxInputDialog(true);
         setCustomerTRN('');
         setBatchNumber(existingBatch);
-        setHasDelivery(false);
-        setCustomDeliveryCharge('');
+        setPickupCharge('');
+        setDeliveryCharge('');
       }
     } catch (error) {
       toast({
@@ -377,9 +893,6 @@ export default function InvoiceRequestsPage() {
 
   const handleDeliveryToggle = (checked: boolean) => {
     setHasDelivery(checked);
-    if (!checked) {
-      setCustomDeliveryCharge('');
-    }
   };
 
   const formatWeightValue = (weight: any) => {
@@ -478,10 +991,8 @@ export default function InvoiceRequestsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="PENDING">Pending</SelectItem>
-                <SelectItem value="PICKED_UP">Picked Up</SelectItem>
-                <SelectItem value="IN_TRANSIT">In Transit</SelectItem>
                 <SelectItem value="DELIVERED">Delivered</SelectItem>
-                <SelectItem value="FAILED">Failed</SelectItem>
+                <SelectItem value="CANCELLED">Cancelled</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -511,30 +1022,87 @@ export default function InvoiceRequestsPage() {
       return;
     }
 
+    // Validate pickup charge if needed
+    if (needsPickupCharge) {
+      const parsedPickup = parseFloat(pickupCharge);
+      if (!pickupCharge.trim() || isNaN(parsedPickup) || parsedPickup <= 0) {
+        toast({
+          variant: 'destructive',
+          title: 'Pickup Charge Required',
+          description: 'Please enter a positive pickup charge amount.',
+        });
+        return;
+      }
+    }
+
+    // Validate delivery charge if needed
+    if (needsDeliveryCharge) {
+      const parsedDelivery = parseFloat(deliveryCharge);
+      if (!deliveryCharge.trim() || isNaN(parsedDelivery) || parsedDelivery <= 0) {
+        toast({
+          variant: 'destructive',
+          title: 'Delivery Charge Required',
+          description: 'Please enter a positive delivery charge amount.',
+        });
+        return;
+      }
+    }
+
     try {
       const serviceCode = getRequestServiceCode(selectedRequestForInvoice);
       const isUaeToPh = isUaeToPhService(serviceCode);
       const taxRateForRequest = getAutoTaxRate(selectedRequestForInvoice);
 
-      let manualDeliveryChargeValue: number | undefined;
-      if (isUaeToPh && hasDelivery) {
-        const parsed = parseFloat(customDeliveryCharge);
-        if (!customDeliveryCharge.trim() || isNaN(parsed) || parsed <= 0) {
+      // Get pickup and delivery charges from user input (manual entry only)
+      const pickupChargeValue = needsPickupCharge ? parseFloat(pickupCharge) : 0;
+      const deliveryChargeValue = needsDeliveryCharge ? parseFloat(deliveryCharge) : 0;
+
+      // Compute insurance charge based on selection
+      let insuranceChargeValue = 0;
+      if (insuranceOption === 'percent') {
+        const declared = getDeclaredAmount(selectedRequestForInvoice);
+        if (declared <= 0) {
           toast({
             variant: 'destructive',
-            title: 'Delivery Charge Required',
-            description: 'Enter a positive delivery charge amount for UAE → PH shipments or disable delivery.',
+            title: 'Declared Amount Required',
+            description: 'Declared amount is required to calculate 1% insurance.',
           });
           return;
         }
-        manualDeliveryChargeValue = parsed;
+        insuranceChargeValue = parseFloat((declared * 0.01).toFixed(2));
+      } else if (insuranceOption === 'fixed') {
+        if (fixedInsuranceType === 'mobile') {
+          insuranceChargeValue = 300;
+        } else if (fixedInsuranceType === 'laptop') {
+          insuranceChargeValue = 400;
+        } else {
+          const manual = parseFloat(insuranceManualAmount);
+          if (!insuranceManualAmount.trim() || isNaN(manual) || manual <= 0) {
+            toast({
+              variant: 'destructive',
+              title: 'Insurance Amount Required',
+              description: 'Enter a positive insurance amount for Other.',
+            });
+            return;
+          }
+          insuranceChargeValue = parseFloat(manual.toFixed(2));
+        }
       }
+      
       // Convert request to invoice data
       const invoiceData = convertRequestToInvoiceData(
         selectedRequestForInvoice,
         taxRateForRequest,
         undefined,
-        { batchNumber, manualDeliveryCharge: manualDeliveryChargeValue }
+        { 
+          batchNumber, 
+          pickupCharge: pickupChargeValue > 0 ? pickupChargeValue : undefined,
+          deliveryCharge: deliveryChargeValue > 0 ? deliveryChargeValue : undefined,
+          insuranceCharge: insuranceChargeValue > 0 ? insuranceChargeValue : undefined,
+          hasDelivery: isPhToUaeSelected ? hasDelivery : false, // Only for PH TO UAE
+          deliveryBaseAmount: isPhToUaeSelected && hasDelivery ? parseFloat(deliveryBaseAmount) || 20 : undefined, // Base delivery amount for PH_TO_UAE
+          customerTRN: customerTRN || undefined // Pass customer TRN to invoice data
+        }
       );
       
       // Validate invoice data
@@ -605,7 +1173,8 @@ export default function InvoiceRequestsPage() {
           total: item.total
         })),
         tax_rate: taxRateForRequest,
-        has_delivery: hasDelivery, // Pass delivery flag
+        has_delivery: needsDeliveryCharge, // Pass delivery flag based on receiver_delivery_option
+        delivery_base_amount: isPhToUaeSelected && hasDelivery ? (parseFloat(deliveryBaseAmount) || 20) : undefined, // Base delivery amount for PH_TO_UAE
         customer_trn: customerTRN || undefined,
         batch_number: batchNumber || undefined,
         notes: invoiceData.notes,
@@ -683,8 +1252,8 @@ export default function InvoiceRequestsPage() {
         if (assignmentResult.success) {
           console.log('✅ Delivery assignment created with QR code:', assignmentResult.data.qr_url);
           console.log('📊 Full assignment data:', assignmentResult.data);
-          setQrCodeData(assignmentResult.data); // Store QR code data for invoice template
-          console.log('🔗 QR Code data set:', assignmentResult.data);
+          // QR code data is stored in delivery assignment, no need to store in state
+          console.log('🔗 QR Code data:', assignmentResult.data);
 
           // Create collection entry for payment tracking
           console.log('💰 Creating collection entry...');
@@ -707,10 +1276,14 @@ export default function InvoiceRequestsPage() {
           // Update shipment status
           console.log('📦 Updating shipment status...');
           try {
-            await apiClient.updateShipmentStatus((selectedRequestForInvoice as any).request_id, {
+            if (requestId) {
+              await apiClient.updateShipmentStatus(requestId, {
               delivery_status: 'DELIVERED'
             });
             console.log('✅ Shipment status updated');
+            } else {
+              console.warn('⚠️ Skipping shipment status update: requestId is missing');
+            }
           } catch (statusError) {
             console.error('❌ Failed to update shipment status:', statusError);
           }
@@ -736,16 +1309,30 @@ export default function InvoiceRequestsPage() {
             description: 'Invoice created with QR code and request completed successfully',
           });
           
-          setShowTaxInputDialog(false);
-          setCustomerTRN('');
-          setBatchNumber('');
-          setCustomDeliveryCharge('');
-          setHasDelivery(false);
-          setSelectedRequestForInvoice(null);
-          fetchInvoiceRequests();
-          
-          // Navigate to invoices page to view the created invoice
-          router.push('/dashboard/invoices');
+          // Get invoice ID and redirect to invoice page
+          const invoiceId = invoiceResult.data._id || invoiceResult.data.invoice_id;
+          if (invoiceId) {
+            setShowTaxInputDialog(false);
+            setCustomerTRN('');
+            setBatchNumber('');
+            setPickupCharge('');
+            setDeliveryCharge('');
+            fetchInvoiceRequests();
+            // Redirect to invoice page
+            router.push(`/dashboard/invoices/${invoiceId}`);
+          } else {
+            toast({
+              variant: 'destructive',
+              title: 'Error',
+              description: 'Invoice created but could not redirect. Please find the invoice manually.',
+            });
+            setShowTaxInputDialog(false);
+            setCustomerTRN('');
+            setBatchNumber('');
+            setPickupCharge('');
+            setDeliveryCharge('');
+            fetchInvoiceRequests();
+          }
         }
       } else {
         toast({
@@ -778,7 +1365,16 @@ export default function InvoiceRequestsPage() {
     request: any,
     taxRateOverride?: number,
     qrCodeData?: any,
-    options: { mode?: 'normal' | 'tax'; batchNumber?: string; manualDeliveryCharge?: number } = {}
+    options: { 
+      mode?: 'normal' | 'tax'; 
+      batchNumber?: string; 
+      pickupCharge?: number;
+      deliveryCharge?: number;
+      insuranceCharge?: number;
+      hasDelivery?: boolean; // For PH TO UAE automatic calculation
+      deliveryBaseAmount?: number; // Base delivery amount for PH_TO_UAE (default 20)
+      customerTRN?: string; // Customer TRN from invoice generation
+    } = {}
   ) => {
     console.log('🔄 Converting request to invoice data...');
     console.log('📋 Request data:', request);
@@ -837,26 +1433,106 @@ export default function InvoiceRequestsPage() {
     let numberOfBoxes = request.verification?.number_of_boxes || request.shipment?.number_of_boxes || request.number_of_boxes || 1;
     numberOfBoxes = parseInt(numberOfBoxes, 10);
     if (!Number.isFinite(numberOfBoxes) || numberOfBoxes < 1) numberOfBoxes = 1;
+    
+    // Get pickup and delivery charges from options
+    const pickupChargeValue = typeof options.pickupCharge === 'number' && options.pickupCharge > 0 
+      ? parseFloat(options.pickupCharge.toFixed(2)) 
+      : 0;
+    const deliveryChargeValue = typeof options.deliveryCharge === 'number' && options.deliveryCharge > 0 
+      ? parseFloat(options.deliveryCharge.toFixed(2)) 
+      : 0;
+    
+    // Delivery charge calculation:
+    // - UAE TO PH: Manual entry only (from user input)
+    // - PH TO UAE: 
+    //   * Normal Invoice: Fixed 25 AED
+    //   * Tax Invoice: Automatic calculation based on weight and boxes with custom base amount
+    const hasDeliveryFlag = options.hasDelivery || false;
+    const baseDeliveryAmount = options.deliveryBaseAmount || 20; // Default to 20 if not provided
     let deliveryCharge = 0;
-    if (hasDelivery) {
-      if (isUaeToPh && typeof options.manualDeliveryCharge === 'number' && options.manualDeliveryCharge > 0) {
-        deliveryCharge = parseFloat(options.manualDeliveryCharge.toFixed(2));
-      } else if (!isUaeToPh) {
-        deliveryCharge = weight > 30 ? 0 : (numberOfBoxes <= 1 ? 20 : 20 + ((numberOfBoxes - 1) * 5));
+    if (isUaeToPh) {
+      // UAE TO PH: Use manual entry
+      deliveryCharge = deliveryChargeValue;
+    } else if (isPhToUae) {
+      // PH TO UAE: Different calculation based on invoice mode
+      if (isTaxMode) {
+        // Tax Invoice: Box-based calculation with custom base amount (only if delivery is required)
+        if (hasDeliveryFlag) {
+          deliveryCharge = weight > 30 ? 0 : (numberOfBoxes <= 1 ? baseDeliveryAmount : baseDeliveryAmount + ((numberOfBoxes - 1) * 5));
+        } else {
+          deliveryCharge = 0;
+        }
+      } else {
+        // Normal Invoice: Use custom base amount (only if delivery is required)
+        if (hasDeliveryFlag) {
+          deliveryCharge = baseDeliveryAmount;
+        } else {
+          deliveryCharge = 0;
+        }
       }
     }
-    const subtotal = shippingCharge + deliveryCharge;
+    
+    // Calculate insurance charge (PH→UAE: no insurance)
+    let insuranceCharge = 0;
+    if (!isPhToUae) {
+      const insured = request.insured || 
+                     request.request_id?.insured ||
+                     request.booking?.insured ||
+                     request.sender?.insured ||
+                     request.request_id?.sender?.insured ||
+                     false;
+      const declaredAmount = getDeclaredAmount(request);
+      
+      // Calculate insurance charge (override wins): 
+      // - If options.insuranceCharge provided, use it
+      // - Else: 1% of declaredAmount if insured flag is true
+      insuranceCharge = typeof options.insuranceCharge === 'number'
+        ? parseFloat(options.insuranceCharge.toFixed(2))
+        : (insured === true && declaredAmount > 0) 
+          ? parseFloat((declaredAmount * 0.01).toFixed(2)) 
+          : 0;
+    }
+    
+    const subtotal = shippingCharge + pickupChargeValue + deliveryCharge + insuranceCharge;
     const fallbackTaxRate = isPhToUae ? 5 : 0;
     const effectiveTaxRate = typeof taxRateOverride === 'number' ? taxRateOverride : fallbackTaxRate;
-    const taxRateForDelivery = deliveryCharge > 0 ? effectiveTaxRate : 0;
-    const taxAmount = deliveryCharge > 0 && taxRateForDelivery > 0 ? (deliveryCharge * taxRateForDelivery) / 100 : 0;
+    
+    // Check if shipment is flowmic
+    const boxes = request.verification?.boxes || request.request_id?.verification?.boxes || [];
+    const isFlowmic = Array.isArray(boxes) && boxes.length > 0 && 
+      boxes.some((box: any) => {
+        const classification = (box.classification || '').toUpperCase();
+        return classification === 'FLOWMIC';
+      });
+    
+    // Calculate tax:
+    // - If flowmic: 5% VAT on subtotal
+    // - Otherwise: Tax on delivery charge only (if present and PH to UAE)
+    let taxAmount = 0;
+    let taxRateForDelivery = 0;
+    
+    if (isFlowmic && effectiveTaxRate > 0) {
+      // Flowmic: Apply 5% VAT on subtotal
+      taxAmount = (subtotal * effectiveTaxRate) / 100;
+      taxRateForDelivery = effectiveTaxRate; // Store the rate for display
+    } else {
+      // Normal: Calculate tax on delivery charge only (pickup charge is typically not taxed)
+      taxRateForDelivery = deliveryCharge > 0 ? effectiveTaxRate : 0;
+      taxAmount = deliveryCharge > 0 && taxRateForDelivery > 0 ? (deliveryCharge * taxRateForDelivery) / 100 : 0;
+    }
+    
     const total = subtotal + taxAmount;
 
-    const shouldShowDeliveryOnly = isTaxMode && isPhToUae;
+    const shouldShowDeliveryOnly = isTaxMode && isPhToUae && !isFlowmic; // Don't show delivery only for flowmic
     const displayShippingCharge = shouldShowDeliveryOnly ? 0 : shippingCharge;
-    const displaySubtotal = shouldShowDeliveryOnly ? deliveryCharge : subtotal;
-    const displayTaxAmount = shouldShowDeliveryOnly ? (deliveryCharge > 0 ? (deliveryCharge * taxRateForDelivery) / 100 : 0) : taxAmount;
-    const displayTotal = shouldShowDeliveryOnly ? deliveryCharge + displayTaxAmount : total;
+    // For tax mode showing delivery only, insurance charge should still be included in subtotal
+    const displaySubtotal = shouldShowDeliveryOnly ? (deliveryCharge + insuranceCharge) : subtotal;
+    // For flowmic, tax is already calculated on subtotal, so use it directly
+    // For tax mode (non-flowmic), calculate tax on delivery charge only
+    const displayTaxAmount = shouldShowDeliveryOnly 
+      ? (deliveryCharge > 0 ? (deliveryCharge * taxRateForDelivery) / 100 : 0) 
+      : taxAmount;
+    const displayTotal = shouldShowDeliveryOnly ? (deliveryCharge + insuranceCharge) + displayTaxAmount : total;
     
     return {
       invoiceNumber,
@@ -880,7 +1556,8 @@ export default function InvoiceRequestsPage() {
           if (parts.length === 1) return parts[0];
           return 'N/A';
         })(),
-        mobile: request.receiver_phone || request.verification?.receiver_phone || request.customer_phone || '+971XXXXXXXXX'
+        mobile: request.receiver_phone || request.verification?.receiver_phone || request.customer_phone || '+971XXXXXXXXX',
+        trn: request.customer_trn || request.request_id?.customer_trn || options.customerTRN || undefined
       },
       senderInfo: {
         name: senderName,
@@ -896,7 +1573,9 @@ export default function InvoiceRequestsPage() {
       },
       charges: {
         shippingCharge: displayShippingCharge,
+        pickupCharge: pickupChargeValue,
         deliveryCharge: deliveryCharge,
+        insuranceCharge: insuranceCharge,
         subtotal: displaySubtotal,
         taxRate: taxRateForDelivery,
         taxAmount: displayTaxAmount,
@@ -908,7 +1587,7 @@ export default function InvoiceRequestsPage() {
       },
       termsAndConditions: 'Cash Upon Receipt of Goods',
       qrCode: qrCodeData ? {
-        url: getQRPaymentUrl(qrCodeData.qr_url),
+        url: qrCodeData.qr_url,
         code: qrCodeData.qr_code
       } : undefined,
       
@@ -922,11 +1601,23 @@ export default function InvoiceRequestsPage() {
           unitPrice: shippingCharge,
           total: shippingCharge
         },
+        ...(pickupChargeValue > 0 ? [{
+          description: 'Pickup Charge',
+          quantity: 1,
+          unitPrice: pickupChargeValue,
+          total: pickupChargeValue
+        }] : []),
         ...(deliveryCharge > 0 ? [{
           description: 'Delivery Charge',
-          quantity: isUaeToPh ? 1 : numberOfBoxes,
-          unitPrice: isUaeToPh ? deliveryCharge : parseFloat((deliveryCharge / numberOfBoxes).toFixed(2)),
+          quantity: isUaeToPh ? 1 : (isPhToUae && !isTaxMode ? 1 : numberOfBoxes), // PH TO UAE Normal Invoice: 1, Tax Invoice: numberOfBoxes
+          unitPrice: isUaeToPh ? deliveryCharge : (isPhToUae && !isTaxMode ? deliveryCharge : parseFloat((deliveryCharge / numberOfBoxes).toFixed(2))), // PH TO UAE Normal Invoice: fixed 25, Tax Invoice: divides by boxes
           total: deliveryCharge
+        }] : []),
+        ...(insuranceCharge > 0 ? [{
+          description: 'Insurance Charge',
+          quantity: 1,
+          unitPrice: insuranceCharge,
+          total: insuranceCharge
         }] : [])
       ],
       baseAmount: shippingCharge, // Base shipping amount (for invoice.amount field)
@@ -972,22 +1663,44 @@ export default function InvoiceRequestsPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="status-filter">Status</Label>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="DRAFT">Draft</SelectItem>
-                  <SelectItem value="SUBMITTED">Submitted</SelectItem>
-                  <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-                  <SelectItem value="VERIFIED">Verified</SelectItem>
-                  <SelectItem value="COMPLETED">Completed</SelectItem>
-                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="relative">
+              <Label htmlFor="awb-search">Search by AWB Number</Label>
+              <Input
+                ref={awbInputRef}
+                id="awb-search"
+                type="text"
+                placeholder="Enter AWB number..."
+                value={awbSearch}
+                onChange={(e) => {
+                  setAwbSearch(e.target.value);
+                  setShowAwbSuggestions(true);
+                  // Update dropdown position
+                  if (awbInputRef.current) {
+                    const rect = awbInputRef.current.getBoundingClientRect();
+                    setDropdownPosition({
+                      top: rect.bottom + window.scrollY + 4,
+                      left: rect.left + window.scrollX,
+                      width: rect.width,
+                    });
+                  }
+                }}
+                onFocus={() => {
+                  setShowAwbSuggestions(true);
+                  // Update dropdown position
+                  if (awbInputRef.current) {
+                    const rect = awbInputRef.current.getBoundingClientRect();
+                    setDropdownPosition({
+                      top: rect.bottom + window.scrollY + 4,
+                      left: rect.left + window.scrollX,
+                      width: rect.width,
+                    });
+                  }
+                }}
+                onBlur={() => {
+                  // Delay hiding suggestions to allow click
+                  setTimeout(() => setShowAwbSuggestions(false), 200);
+                }}
+              />
             </div>
             
             <div>
@@ -999,16 +1712,44 @@ export default function InvoiceRequestsPage() {
                 <SelectContent>
                   <SelectItem value="all">All Delivery Statuses</SelectItem>
                   <SelectItem value="PENDING">Pending</SelectItem>
-                  <SelectItem value="PICKED_UP">Picked Up</SelectItem>
-                  <SelectItem value="IN_TRANSIT">In Transit</SelectItem>
                   <SelectItem value="DELIVERED">Delivered</SelectItem>
-                  <SelectItem value="FAILED">Failed</SelectItem>
+                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* AWB Suggestions Dropdown Portal */}
+      {typeof window !== 'undefined' && showAwbSuggestions && awbSuggestions.length > 0 && createPortal(
+        <div
+          className="fixed z-[9999] max-h-60 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md"
+          style={{
+            top: `${dropdownPosition.top}px`,
+            left: `${dropdownPosition.left}px`,
+            width: `${dropdownPosition.width}px`,
+          }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <div className="p-1 max-h-60 overflow-auto">
+            {awbSuggestions.map((awb, index) => (
+              <div
+                key={index}
+                className="relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 px-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setAwbSearch(awb);
+                  setShowAwbSuggestions(false);
+                }}
+              >
+                {awb}
+              </div>
+            ))}
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Invoice Requests Table */}
       <Card>
@@ -1032,155 +1773,21 @@ export default function InvoiceRequestsPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredRequests.map((request) => {
-                const shortId =
-                  request.invoice_number ||
-                  request.tracking_code ||
-                  (request._id ? request._id.slice(-8) : 'REQUEST');
-                const weightDisplay =
-                  formatWeightValue(request.weight) ||
-                  formatWeightValue(request.weight_kg) ||
-                  formatWeightValue(request.verification?.actual_weight);
-                const routeFrom = request.origin_place || 'Not set';
-                const routeTo = request.destination_place || 'Not set';
-                const createdLabel = formatDateLabel(request.createdAt);
-                const totalBoxes =
-                  request.verification?.number_of_boxes ||
-                  request.number_of_boxes ||
-                  request.verification?.boxes?.length;
-                const actions = renderActionControls(request);
-
-                return (
-                  <div
-                    key={request._id}
-                    className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm transition hover:border-primary/40"
-                  >
-                    <div className="flex flex-col gap-3 border-b border-dashed pb-4 md:flex-row md:items-center md:justify-between">
-                      <div className="flex flex-wrap items-center gap-3">
-                        <Badge variant="outline" className="font-mono text-xs uppercase">
-                          {shortId}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          Created {createdLabel}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge className={getStatusBadgeColor(request.status)}>
-                          {request.status}
-                        </Badge>
-                        <Badge className={getDeliveryStatusBadgeColor(request.delivery_status)}>
-                          {request.delivery_status}
-                        </Badge>
-                        {request.has_delivery && (
-                          <Badge variant="secondary">Delivery</Badge>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="grid gap-4 pt-4 md:grid-cols-2 lg:grid-cols-4">
-                      <div className="space-y-1">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Customer</p>
-                        <p className="font-semibold text-foreground">{request.customer_name}</p>
-                        {request.customer_phone && (
-                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                            <Phone className="h-3.5 w-3.5" />
-                            <span>{request.customer_phone}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="space-y-1">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Receiver</p>
-                        <p className="font-semibold text-foreground">{request.receiver_name}</p>
-                        {request.receiver_company && (
-                          <p className="text-sm text-muted-foreground">{request.receiver_company}</p>
-                        )}
-                        {request.receiver_phone && (
-                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                            <Phone className="h-3.5 w-3.5" />
-                            <span>{request.receiver_phone}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="space-y-2">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Route</p>
-                        <div className="flex items-start gap-2 text-sm text-muted-foreground">
-                          <div className="flex-1 space-y-1">
-                            <div className="flex items-start gap-1 font-medium text-foreground">
-                              <MapPin className="mt-0.5 h-3.5 w-3.5 text-primary" />
-                              <span className="break-words">{routeFrom}</span>
-                            </div>
-                            <p className="text-xs uppercase tracking-wide opacity-80">Origin</p>
-                          </div>
-                          <ArrowRight className="mt-1 h-4 w-4 text-primary" />
-                          <div className="flex-1 space-y-1">
-                            <div className="flex items-start gap-1 font-medium text-foreground">
-                              <MapPin className="mt-0.5 h-3.5 w-3.5 text-orange-500" />
-                              <span className="break-words">{routeTo}</span>
-                            </div>
-                            <p className="text-xs uppercase tracking-wide opacity-80">Destination</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Shipment</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant="outline">
-                            {request.shipment_type === 'DOCUMENT' ? 'Document' : 'Non-Document'}
-                          </Badge>
-                          {request.is_leviable && <Badge variant="secondary">Taxable</Badge>}
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          Weight:{' '}
-                          {weightDisplay ? (
-                            <span className="font-semibold text-foreground">{weightDisplay} kg</span>
-                          ) : (
-                            'Not set'
-                          )}
-                        </p>
-                        {totalBoxes && (
-                          <p className="text-sm text-muted-foreground">
-                            Boxes:{' '}
-                            <span className="font-semibold text-foreground">{totalBoxes}</span>
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {userProfile.department.name === 'Operations' && request.status === 'IN_PROGRESS' && (
-                      <div className="mt-4 rounded-lg border border-dashed border-orange-200 bg-orange-50 p-4">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-orange-700">
-                          <AlertTriangle className="h-4 w-4" />
-                          <span>Complete the 6-point verification before sending to Finance</span>
-                        </div>
-                        <div className="mt-3">
-                          <VerificationForm
-                            request={request}
-                            onVerificationComplete={fetchInvoiceRequests}
-                            currentUser={userProfile}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="mt-4 flex flex-col gap-3 border-t pt-4 md:flex-row md:items-center md:justify-between">
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span>Service:</span>
-                        <Badge variant="outline">{formatServiceCode(request.service_code)}</Badge>
-                        {request.has_delivery && <Badge variant="secondary">Delivery Required</Badge>}
-                        {request.is_leviable && <Badge variant="outline">VAT applicable</Badge>}
-                      </div>
-                      {actions ? (
-                        <div className="flex flex-wrap gap-2">{actions}</div>
-                      ) : (
-                        <div className="text-xs text-muted-foreground">No actions available</div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+              {filteredRequests.map((request) => (
+                <InvoiceRequestCard
+                  key={request._id}
+                  request={request}
+                  userProfile={userProfile}
+                  formatWeightValue={formatWeightValue}
+                  formatDateLabel={formatDateLabel}
+                  formatServiceCode={formatServiceCode}
+                  getStatusBadgeColor={getStatusBadgeColor}
+                  getDeliveryStatusBadgeColor={getDeliveryStatusBadgeColor}
+                  renderActionControls={renderActionControls}
+                  fetchInvoiceRequests={fetchInvoiceRequests}
+                  onBadgeClick={handleBadgeClick}
+                />
+              ))}
             </div>
           )}
         </CardContent>
@@ -1195,24 +1802,94 @@ export default function InvoiceRequestsPage() {
               Confirm whether delivery is required. VAT will be calculated automatically based on the service route.
             </p>
 
-            <div className="mb-4">
-              <label className="flex items-center space-x-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={hasDelivery}
-                  onChange={(e) => handleDeliveryToggle(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            {/* Pickup Charge - Shown only if sender_delivery_option is "pickup" */}
+            {showPickupChargeField && (
+              <div className="mb-4">
+                <Label className="block text-sm font-medium text-gray-700 mb-2">
+                  Pickup Charge (AED) *
+                </Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={pickupCharge}
+                  onChange={(e) => setPickupCharge(e.target.value)}
+                  placeholder="Enter pickup charge amount"
+                  className="w-full"
+                  required
                 />
-                <span className="text-sm font-medium text-gray-700">
-                  Delivery Required
-                </span>
-              </label>
-              <p className="text-xs text-gray-500 mt-1 ml-6">
-                {hasDelivery 
-                  ? "Delivery charge will be calculated based on weight and number of boxes (FREE if weight > 30kg, otherwise 20 AED + 5 AED per additional box)"
-                  : "No delivery charge will be applied"}
-              </p>
-            </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Required when sender delivery option is "pickup".
+                </p>
+              </div>
+            )}
+
+            {/* Delivery Charge - Shown only if receiver_delivery_option is "delivery" */}
+            {showDeliveryChargeField && (
+              <div className="mb-4">
+                <Label className="block text-sm font-medium text-gray-700 mb-2">
+                  Delivery Charge (AED) *
+                </Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={deliveryCharge}
+                  onChange={(e) => setDeliveryCharge(e.target.value)}
+                  placeholder="Enter delivery charge amount"
+                  className="w-full"
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Required when receiver delivery option is "delivery".
+                </p>
+              </div>
+            )}
+
+            {/* PH TO UAE: Legacy Delivery Required checkbox (old method) */}
+            {isPhToUaeSelected && (
+              <div className="mb-4">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={hasDelivery}
+                    onChange={(e) => handleDeliveryToggle(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    Delivery Required
+                  </span>
+                </label>
+                {hasDelivery && (
+                  <div className="mt-3 ml-6 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                    <Label className="block text-sm font-medium text-gray-700 mb-2">
+                      Base Delivery Amount (AED)
+                    </Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={deliveryBaseAmount}
+                      onChange={(e) => setDeliveryBaseAmount(e.target.value)}
+                      placeholder="20"
+                      className="w-full max-w-xs"
+                    />
+                    <p className="text-xs text-gray-500 mt-2">
+                      Base amount for first box. Additional boxes: +5 AED each.
+                      <br />
+                      Example: Base 20 = 1 box (20), 2 boxes (25), 3 boxes (30)
+                      <br />
+                      Example: Base 27 = 1 box (27), 2 boxes (32), 3 boxes (37)
+                    </p>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 mt-1 ml-6">
+                  {hasDelivery 
+                    ? `Delivery charge will be calculated based on weight and number of boxes (FREE if weight > 30kg, otherwise ${deliveryBaseAmount || 20} AED + 5 AED per additional box)`
+                    : "No delivery charge will be applied"}
+                </p>
+              </div>
+            )}
 
             <div className="mb-4">
               <Label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1228,6 +1905,98 @@ export default function InvoiceRequestsPage() {
                 If provided, this TRN will be stored on the generated invoice.
               </p>
             </div>
+
+            {!isPhToUaeSelected && (
+              <div className="mb-4">
+                <Label className="block text-sm font-medium text-gray-700 mb-2">
+                  Insurance Amount
+                </Label>
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-3">
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="insurance-option"
+                        value="none"
+                        checked={insuranceOption === 'none'}
+                        onChange={() => setInsuranceOption('none')}
+                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                      />
+                      <span className="text-sm">No insurance</span>
+                    </label>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="insurance-option"
+                        value="percent"
+                        checked={insuranceOption === 'percent'}
+                        onChange={() => setInsuranceOption('percent')}
+                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                      />
+                      <span className="text-sm">1% of declared amount</span>
+                    </label>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="insurance-option"
+                        value="fixed"
+                        checked={insuranceOption === 'fixed'}
+                        onChange={() => setInsuranceOption('fixed')}
+                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                      />
+                      <span className="text-sm">Fixed amount</span>
+                    </label>
+                  </div>
+
+                  {insuranceOption === 'fixed' && (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <button
+                          type="button"
+                          className={`border rounded px-3 py-2 text-sm ${fixedInsuranceType === 'mobile' ? 'border-green-600 text-green-700 font-semibold' : 'border-gray-300 text-gray-700'}`}
+                          onClick={() => setFixedInsuranceType('mobile')}
+                        >
+                          Mobile (300 AED)
+                        </button>
+                        <button
+                          type="button"
+                          className={`border rounded px-3 py-2 text-sm ${fixedInsuranceType === 'laptop' ? 'border-green-600 text-green-700 font-semibold' : 'border-gray-300 text-gray-700'}`}
+                          onClick={() => setFixedInsuranceType('laptop')}
+                        >
+                          Laptop (400 AED)
+                        </button>
+                        <button
+                          type="button"
+                          className={`border rounded px-3 py-2 text-sm ${fixedInsuranceType === 'other' ? 'border-green-600 text-green-700 font-semibold' : 'border-gray-300 text-gray-700'}`}
+                          onClick={() => setFixedInsuranceType('other')}
+                        >
+                          Other
+                        </button>
+                      </div>
+                      {fixedInsuranceType === 'other' && (
+                        <div>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={insuranceManualAmount}
+                            onChange={(e) => setInsuranceManualAmount(e.target.value)}
+                            placeholder="Enter insurance amount (AED)"
+                            className="w-full"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Enter a custom insurance amount.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Choose 1% of declared value or a fixed amount (mobile 300, laptop 400, or custom).
+                </p>
+              </div>
+            )}
 
             <div className="mb-4">
               <Label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1247,27 +2016,13 @@ export default function InvoiceRequestsPage() {
 
             {isUaeToPhSelected && (
               <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                UAE → PH shipments always use 0% VAT. Delivery charges must be entered manually when required.
+                UAE → PH shipments always use 0% VAT. Delivery charges must be entered manually based on delivery options.
               </div>
             )}
-
-            {isUaeToPhSelected && hasDelivery && (
-              <div className="mb-4">
-                <Label className="block text-sm font-medium text-gray-700 mb-2">
-                  Delivery Charge (AED) *
-                </Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={customDeliveryCharge}
-                  onChange={(e) => setCustomDeliveryCharge(e.target.value)}
-                  placeholder="Enter delivery charge amount"
-                  className="w-full"
-                />
-                <p className="text-xs text-amber-600 mt-1">
-                  Required when delivery is enabled for UAE → PH. Leave blank to exclude the charge.
-                </p>
+            
+            {isPhToUaeSelected && (
+              <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                PH → UAE shipments use automatic delivery charge calculation based on weight and number of boxes.
               </div>
             )}
 
@@ -1277,13 +2032,25 @@ export default function InvoiceRequestsPage() {
                 onClick={() => {
                   setShowTaxInputDialog(false);
                   setSelectedRequestForInvoice(null);
-                  setHasDelivery(false); // Reset delivery flag
                   setCustomerTRN('');
                   setBatchNumber('');
-                  setCustomDeliveryCharge('');
+                  setPickupCharge('');
+                  setDeliveryCharge('');
+                  setDeliveryBaseAmount('20'); // Reset to default
+                  setInsuranceOption('none');
+                  setFixedInsuranceType('mobile');
+                  setInsuranceManualAmount('');
                 }}
               >
                 Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowShipmentDetailsDialog(true)}
+                className="flex items-center gap-2"
+              >
+                <FileText className="h-4 w-4" />
+                View
               </Button>
               <Button
                 onClick={handleGenerateInvoices}
@@ -1296,6 +2063,452 @@ export default function InvoiceRequestsPage() {
           </div>
         </div>
       )}
+
+      {/* Shipment Details Dialog */}
+      {showShipmentDetailsDialog && selectedRequestForInvoice && (() => {
+        // Helper function to safely parse Decimal128 and other numeric values
+        const parseNumericValue = (value: any): number | string => {
+          if (value === null || value === undefined || value === '') {
+            return 'N/A';
+          }
+          if (typeof value === 'number') {
+            return value;
+          }
+          if (typeof value === 'string') {
+            const parsed = parseFloat(value);
+            return isNaN(parsed) ? 'N/A' : parsed;
+          }
+          if (value && typeof value === 'object') {
+            // Handle MongoDB Decimal128 format
+            if (value.$numberDecimal) {
+              return parseFloat(value.$numberDecimal);
+            }
+            if (typeof value.toString === 'function') {
+              const parsed = parseFloat(value.toString());
+              return isNaN(parsed) ? 'N/A' : parsed;
+            }
+          }
+          return 'N/A';
+        };
+
+        const formatWeight = (value: any): string => {
+          const parsed = parseNumericValue(value);
+          if (parsed === 'N/A') return 'N/A';
+          return `${typeof parsed === 'number' ? parsed.toFixed(2) : parsed} kg`;
+        };
+
+        return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold">Shipment Details</h2>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowShipmentDetailsDialog(false)}
+                >
+                  <XCircle className="h-5 w-5" />
+                </Button>
+              </div>
+
+              <div className="space-y-6">
+                {/* Customer Information */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Package className="h-5 w-5" />
+                      Customer Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Customer Name</Label>
+                      <p className="text-base">{selectedRequestForInvoice.customer_name || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Customer Phone</Label>
+                      <p className="text-base">{selectedRequestForInvoice.customer_phone || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Customer Email</Label>
+                      <p className="text-base">{selectedRequestForInvoice.customer_email || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Origin Place</Label>
+                      <p className="text-base">{selectedRequestForInvoice.origin_place || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Sender Delivery Option</Label>
+                      <p className="text-base">
+                        <Badge variant={
+                          (selectedRequestForInvoice.sender_delivery_option || 
+                           selectedRequestForInvoice.request_id?.sender_delivery_option || 
+                           selectedRequestForInvoice.booking?.sender_delivery_option) === 'pickup' 
+                            ? 'default' 
+                            : 'secondary'
+                        }>
+                          {(() => {
+                            const senderOption = selectedRequestForInvoice.sender_delivery_option || 
+                                                selectedRequestForInvoice.request_id?.sender_delivery_option || 
+                                                selectedRequestForInvoice.booking?.sender_delivery_option || 
+                                                'N/A';
+                            if (senderOption === 'pickup') return 'Pickup';
+                            if (senderOption === 'delivery') return 'Delivery';
+                            return senderOption;
+                          })()}
+                        </Badge>
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Receiver Information */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <MapPin className="h-5 w-5" />
+                      Receiver Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Receiver Name</Label>
+                      <p className="text-base">{selectedRequestForInvoice.receiver_name || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Receiver Phone</Label>
+                      <p className="text-base">{selectedRequestForInvoice.receiver_phone || selectedRequestForInvoice.verification?.receiver_phone || 'N/A'}</p>
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label className="text-sm font-semibold text-gray-600">Receiver Address</Label>
+                      <p className="text-base">{selectedRequestForInvoice.destination_place || selectedRequestForInvoice.verification?.receiver_address || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Receiver Delivery Option</Label>
+                      <p className="text-base">
+                        <Badge variant={
+                          (selectedRequestForInvoice.receiver_delivery_option || 
+                           selectedRequestForInvoice.request_id?.receiver_delivery_option || 
+                           selectedRequestForInvoice.booking?.receiver_delivery_option) === 'delivery' 
+                            ? 'default' 
+                            : 'secondary'
+                        }>
+                          {(() => {
+                            const receiverOption = selectedRequestForInvoice.receiver_delivery_option || 
+                                                  selectedRequestForInvoice.request_id?.receiver_delivery_option || 
+                                                  selectedRequestForInvoice.booking?.receiver_delivery_option || 
+                                                  'N/A';
+                            if (receiverOption === 'delivery') return 'Delivery';
+                            if (receiverOption === 'pickup') return 'Pickup';
+                            return receiverOption;
+                          })()}
+                        </Badge>
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Shipment Details */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Truck className="h-5 w-5" />
+                      Shipment Details
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Service Code</Label>
+                      <p className="text-base">{formatServiceCode(selectedRequestForInvoice.service_code || selectedRequestForInvoice.verification?.service_code || 'N/A')}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Shipment Type</Label>
+                      <p className="text-base">{selectedRequestForInvoice.shipment_type || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">AWB Number</Label>
+                      <p className="text-base">{selectedRequestForInvoice.tracking_code || selectedRequestForInvoice.awb_number || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Invoice Number</Label>
+                      <p className="text-base">{selectedRequestForInvoice.invoice_number || selectedRequestForInvoice.verification?.invoice_number || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Weight (kg)</Label>
+                      <p className="text-base">
+                        {formatWeight(selectedRequestForInvoice.verification?.actual_weight || 
+                         selectedRequestForInvoice.weight)}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Weight Type</Label>
+                      <p className="text-base">{selectedRequestForInvoice.verification?.weight_type || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Number of Boxes</Label>
+                      <p className="text-base">
+                        {(() => {
+                          const boxes = parseNumericValue(selectedRequestForInvoice.verification?.number_of_boxes);
+                          return boxes === 'N/A' ? 'N/A' : boxes.toString();
+                        })()}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Volumetric Weight (VM)</Label>
+                      <p className="text-base">
+                        {formatWeight(selectedRequestForInvoice.verification?.total_vm)}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Chargeable Weight</Label>
+                      <p className="text-base">
+                        {formatWeight(selectedRequestForInvoice.verification?.chargeable_weight)}
+                      </p>
+                    </div>
+                    {/* Insurance Information - Only for UAE TO PINAS service when insured is true */}
+                    {(() => {
+                      const serviceCode = selectedRequestForInvoice.service_code || 
+                                        selectedRequestForInvoice.verification?.service_code ||
+                                        selectedRequestForInvoice.request_id?.service_code ||
+                                        '';
+                      const normalizedService = normalizeServiceCode(serviceCode);
+                      const isUaeToPinas = normalizedService === 'UAE_TO_PINAS' || 
+                                          normalizedService.includes('UAE_TO_PINAS');
+                      const insured = selectedRequestForInvoice.insured || 
+                                     selectedRequestForInvoice.request_id?.insured ||
+                                     selectedRequestForInvoice.booking?.insured ||
+                                     false;
+                      const declaredAmount = selectedRequestForInvoice.declaredAmount || 
+                                            selectedRequestForInvoice.declared_amount ||
+                                            selectedRequestForInvoice.request_id?.declaredAmount ||
+                                            selectedRequestForInvoice.request_id?.declared_amount ||
+                                            selectedRequestForInvoice.booking?.declaredAmount ||
+                                            selectedRequestForInvoice.booking?.declared_amount ||
+                                            null;
+                      
+                      if (isUaeToPinas && insured === true && declaredAmount) {
+                        const amount = parseNumericValue(declaredAmount);
+                        return (
+                          <div>
+                            <Label className="text-sm font-semibold text-gray-600">Insurance</Label>
+                            <p className="text-base">
+                              {amount === 'N/A' ? 'N/A' : `${typeof amount === 'number' ? amount.toFixed(2) : amount} AED`}
+                            </p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Calculated Rate (AED/kg)</Label>
+                      <p className="text-base">
+                        {(() => {
+                          const rate = parseNumericValue(selectedRequestForInvoice.verification?.calculated_rate);
+                          if (rate === 'N/A') return 'N/A';
+                          return typeof rate === 'number' ? rate.toFixed(2) : rate.toString();
+                        })()}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Verification Details */}
+                {selectedRequestForInvoice.verification && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <CheckCircle className="h-5 w-5" />
+                        Verification Details
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-sm font-semibold text-gray-600">Agent Name</Label>
+                        <p className="text-base">{selectedRequestForInvoice.verification.agents_name || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <Label className="text-sm font-semibold text-gray-600">Shipment Classification</Label>
+                        <p className="text-base">{selectedRequestForInvoice.verification.shipment_classification || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <Label className="text-sm font-semibold text-gray-600">Cargo Service</Label>
+                        <p className="text-base">{selectedRequestForInvoice.verification.cargo_service || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <Label className="text-sm font-semibold text-gray-600">Rate Bracket</Label>
+                        <p className="text-base">{selectedRequestForInvoice.verification.rate_bracket || 'N/A'}</p>
+                      </div>
+                      {selectedRequestForInvoice.verification.listed_commodities && (
+                        <div className="md:col-span-2">
+                          <Label className="text-sm font-semibold text-gray-600">Listed Commodities</Label>
+                          <p className="text-base">{selectedRequestForInvoice.verification.listed_commodities}</p>
+                        </div>
+                      )}
+                      {selectedRequestForInvoice.verification.verification_notes && (
+                        <div className="md:col-span-2">
+                          <Label className="text-sm font-semibold text-gray-600">Verification Notes</Label>
+                          <p className="text-base">{selectedRequestForInvoice.verification.verification_notes}</p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Box Details */}
+                {selectedRequestForInvoice.verification?.boxes && Array.isArray(selectedRequestForInvoice.verification.boxes) && selectedRequestForInvoice.verification.boxes.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Package className="h-5 w-5" />
+                        Box Details
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        {selectedRequestForInvoice.verification.boxes.map((box: any, index: number) => (
+                          <div key={index} className="border rounded-lg p-4">
+                            <h4 className="font-semibold mb-3">Box {index + 1} {box.quantity > 1 && `(×${box.quantity})`}</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">Classification</Label>
+                                <p className="text-base">{box.classification || 'N/A'}</p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">Items</Label>
+                                <p className="text-base">{box.items || 'N/A'}</p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">Dimensions (L × W × H cm)</Label>
+                                <p className="text-base">
+                                  {(() => {
+                                    const length = parseNumericValue(box.length);
+                                    const width = parseNumericValue(box.width);
+                                    const height = parseNumericValue(box.height);
+                                    if (length === 'N/A' || width === 'N/A' || height === 'N/A') {
+                                      return 'N/A';
+                                    }
+                                    const l = typeof length === 'number' ? length.toFixed(2) : length;
+                                    const w = typeof width === 'number' ? width.toFixed(2) : width;
+                                    const h = typeof height === 'number' ? height.toFixed(2) : height;
+                                    return `${l} × ${w} × ${h}`;
+                                  })()}
+                                </p>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-600">Volumetric Weight (VM)</Label>
+                                <p className="text-base">
+                                  {formatWeight(box.vm)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Status Information */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileText className="h-5 w-5" />
+                      Status Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Request Status</Label>
+                      <Badge className={getDeliveryStatusBadgeColor(selectedRequestForInvoice.status)}>
+                        {selectedRequestForInvoice.status}
+                      </Badge>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Delivery Status</Label>
+                      <Badge className={getDeliveryStatusBadgeColor(selectedRequestForInvoice.delivery_status)}>
+                        {selectedRequestForInvoice.delivery_status}
+                      </Badge>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Created At</Label>
+                      <p className="text-base">
+                        {selectedRequestForInvoice.createdAt 
+                          ? new Date(selectedRequestForInvoice.createdAt).toLocaleString()
+                          : 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-600">Updated At</Label>
+                      <p className="text-base">
+                        {selectedRequestForInvoice.updatedAt 
+                          ? new Date(selectedRequestForInvoice.updatedAt).toLocaleString()
+                          : 'N/A'}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="mt-6 flex justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowShipmentDetailsDialog(false)}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* Booking Details Modal for Sales Users */}
+      {selectedBooking && (
+        <BookingReviewModal
+          booking={selectedBooking}
+          open={showBookingModal}
+          onClose={() => {
+            setShowBookingModal(false);
+            setSelectedBooking(null);
+          }}
+          onReviewComplete={() => {
+            // Refresh data if needed
+            fetchInvoiceRequests();
+          }}
+          currentUser={userProfile}
+          viewOnly={true}
+          onPrint={(booking) => {
+            setBookingToPrint(booking);
+            setShowPrintView(true);
+          }}
+        />
+      )}
+
+      {showPrintView && bookingToPrint && (
+        <div className="fixed inset-0 z-50 bg-white overflow-auto">
+          <div className="absolute top-4 right-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowPrintView(false);
+                setBookingToPrint(null);
+              }}
+            >
+              Close
+            </Button>
+          </div>
+          <BookingPrintView
+            booking={bookingToPrint}
+            onClose={() => {
+              setShowPrintView(false);
+              setBookingToPrint(null);
+            }}
+          />
+        </div>
+      )}
+
     </div>
   );
 }

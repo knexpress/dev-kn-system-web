@@ -6,12 +6,13 @@ import { useEffect } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { AuthForm } from '@/components/auth-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { placeholderImages } from '@/lib/placeholder-images.json';
+import placeholderImagesData from '@/lib/placeholder-images.json';
 import { Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
   const { userProfile, loading } = useAuth();
   const router = useRouter();
+  const placeholderImages = placeholderImagesData.placeholderImages || [];
   const loginImage = placeholderImages.find(p => p.id === 'login-background') || { imageUrl: 'https://picsum.photos/seed/1/1920/1080', imageHint: 'cargo ship port' };
 
   useEffect(() => {

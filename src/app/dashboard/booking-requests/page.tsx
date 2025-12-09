@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, memo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -31,8 +31,18 @@ import { apiCache } from '@/lib/api-cache';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { Eye, CheckCircle, XCircle, Image as ImageIcon, Printer } from 'lucide-react';
-import BookingReviewModal from '@/components/booking-review-modal';
-import BookingPrintView from '@/components/booking-print-view';
+import dynamic from 'next/dynamic';
+
+// Dynamically import heavy modal components to reduce initial bundle size
+const BookingReviewModal = dynamic(() => import('@/components/booking-review-modal'), {
+  loading: () => <div className="flex items-center justify-center p-8">Loading...</div>,
+  ssr: false
+});
+
+const BookingPrintView = dynamic(() => import('@/components/booking-print-view'), {
+  loading: () => <div className="flex items-center justify-center p-8">Loading...</div>,
+  ssr: false
+});
 
 export default function BookingRequestsPage() {
   const [bookings, setBookings] = useState<any[]>([]);
@@ -43,8 +53,29 @@ export default function BookingRequestsPage() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [showPrintView, setShowPrintView] = useState(false);
   const [bookingToPrint, setBookingToPrint] = useState<any>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50; // Show 50 items per page for better performance
   const { toast } = useToast();
   const { userProfile } = useAuth();
+
+  // Helper function to normalize review status
+  const normalizeReviewStatus = (status: any): string => {
+    if (!status || status === null || status === undefined || status === '') {
+      return 'not reviewed'; // Default to 'not reviewed' if status is missing
+    }
+    const normalized = String(status).toLowerCase().trim();
+    // Handle various formats
+    if (normalized === 'not reviewed' || normalized === 'not_reviewed' || normalized === 'pending' || normalized === 'notreviewed') {
+      return 'not reviewed';
+    }
+    if (normalized === 'reviewed' || normalized === 'approved') {
+      return 'reviewed';
+    }
+    if (normalized === 'rejected') {
+      return 'rejected';
+    }
+    return normalized; // Return as-is if it's something else
+  };
 
   useEffect(() => {
     fetchBookings();
@@ -77,7 +108,24 @@ export default function BookingRequestsPage() {
       }
 
       if (result.success) {
-        const bookingData = Array.isArray(result.data) ? result.data : [];
+        let bookingData = Array.isArray(result.data) ? result.data : [];
+        console.log(`📦 Fetched ${bookingData.length} bookings for status: ${filterStatus}`);
+        
+        // If no results and we're filtering by status, try fetching all and filtering on frontend
+        if (bookingData.length === 0 && filterStatus !== 'all') {
+          console.log('⚠️ No bookings from filtered API, fetching all bookings to filter on frontend...');
+          const allBookingsResult = await apiClient.getBookings(false);
+          if (allBookingsResult.success) {
+            bookingData = Array.isArray(allBookingsResult.data) ? allBookingsResult.data : [];
+            console.log(`📦 Fetched ${bookingData.length} total bookings, will filter on frontend`);
+          }
+        }
+        
+        console.log('📦 Sample booking review_status values:', bookingData.slice(0, 3).map(b => ({
+          id: b._id,
+          review_status: b.review_status,
+          normalized: normalizeReviewStatus(b.review_status)
+        })));
         setBookings(bookingData);
       } else {
         // Only show error if we don't have cached data
@@ -144,8 +192,9 @@ export default function BookingRequestsPage() {
     );
   };
 
-  // Helper: get a field by trying multiple aliases (case-insensitive, supports loose matching)
-  const getField = (obj: any, aliases: string[]): any => {
+  // Memoized helper: get a field by trying multiple aliases (case-insensitive, supports loose matching)
+  // Using useCallback to memoize the function
+  const getField = useCallback((obj: any, aliases: string[]): any => {
     if (!obj || typeof obj !== 'object') return undefined;
     
     // Try exact matches first (all variations)
@@ -177,10 +226,10 @@ export default function BookingRequestsPage() {
     }
     
     return undefined;
-  };
+  }, []);
 
-  // Helper: format any value into a safe, readable string for table cells
-  const formatValue = (value: any): string => {
+  // Memoized helper: format any value into a safe, readable string for table cells
+  const formatValue = useCallback((value: any): string => {
     if (value === undefined || value === null) return 'N/A';
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
       return String(value);
@@ -222,15 +271,33 @@ export default function BookingRequestsPage() {
     } catch {
       return String(value);
     }
-  };
+  }, []);
 
-  const filteredBookings = bookings.filter(booking => {
-    if (filterStatus === 'all') {
-      // When showing all, still exclude reviewed bookings by default
-      return booking.review_status !== 'reviewed';
-    }
-    return booking.review_status === filterStatus;
-  });
+  // Memoize filtered bookings to prevent unnecessary recalculations
+  const filteredBookings = useMemo(() => {
+    return bookings.filter(booking => {
+      const bookingStatus = normalizeReviewStatus(booking.review_status);
+      
+      if (filterStatus === 'all') {
+        // When showing all, still exclude reviewed bookings by default
+        return bookingStatus !== 'reviewed';
+      }
+      return bookingStatus === filterStatus;
+    });
+  }, [bookings, filterStatus]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredBookings.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedBookings = useMemo(() => {
+    return filteredBookings.slice(startIndex, endIndex);
+  }, [filteredBookings, startIndex, endIndex]);
+
+  // Reset to page 1 when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterStatus]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -276,7 +343,7 @@ export default function BookingRequestsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredBookings.map((booking) => (
+                  {paginatedBookings.map((booking) => (
                     <TableRow key={booking._id}>
                       <TableCell className="font-medium">
                       {formatValue(getField(booking, ['customer_name','customerName','name','full_name','sender_name','customer','sender']))}
@@ -348,6 +415,36 @@ export default function BookingRequestsPage() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+
+          {/* Pagination Controls */}
+          {!loading && filteredBookings.length > itemsPerPage && (
+            <div className="flex items-center justify-between mt-4">
+              <div className="text-sm text-muted-foreground">
+                Showing {startIndex + 1} to {Math.min(endIndex, filteredBookings.length)} of {filteredBookings.length} bookings
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </Button>
+                <span className="text-sm">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

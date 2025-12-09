@@ -353,16 +353,16 @@ export default function EmployeesPage() {
 
   if (!canManage) {
     return (
-      <Card>
-        <CardHeader>
+        <Card>
+            <CardHeader>
           <CardTitle>Access Denied</CardTitle>
-        </CardHeader>
+            </CardHeader>
         <CardContent>
           <p className="text-muted-foreground">
             You do not have permission to access this page. Only SuperAdmin and Manager roles can manage employees.
           </p>
-        </CardContent>
-      </Card>
+            </CardContent>
+        </Card>
     );
   }
 
@@ -683,5 +683,5 @@ export default function EmployeesPage() {
         </DialogContent>
       </Dialog>
     </div>
-  );
+    );
 }

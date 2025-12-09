@@ -1,6 +1,6 @@
 'use client';
 
-import ClientTable from "@/components/client-table";
+import dynamic from 'next/dynamic';
 import { apiClient } from "@/lib/api-client";
 import { useState, useEffect } from "react";
 import { Client } from "@/lib/types";
@@ -8,6 +8,12 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Users, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+// Dynamically import ClientTable to reduce initial bundle size
+const ClientTable = dynamic(() => import("@/components/client-table"), {
+    loading: () => <div className="flex items-center justify-center h-64">Loading clients...</div>,
+    ssr: false
+});
 
 export default function ClientsPage() {
     const [clients, setClients] = useState<Client[]>([]);

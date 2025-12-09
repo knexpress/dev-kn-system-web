@@ -1,9 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import ReviewRequestsTable from "@/components/review-jobs-table";
+import dynamic from 'next/dynamic';
 import { fetchRequests } from "@/lib/data";
 import { Request } from "@/lib/types";
+
+// Dynamically import ReviewRequestsTable to reduce initial bundle size
+const ReviewRequestsTable = dynamic(() => import("@/components/review-jobs-table"), {
+    loading: () => <div className="flex items-center justify-center p-8">Loading...</div>,
+    ssr: false
+});
 
 export default function ReviewRequestsPage() {
     const [pendingRequests, setPendingRequests] = useState<Request[]>([]);
