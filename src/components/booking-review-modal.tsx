@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
-import { CheckCircle, X, Loader2, Image as ImageIcon, XCircle, MapPin, ExternalLink } from 'lucide-react';
+import { CheckCircle, X, Loader2, Image as ImageIcon, XCircle, MapPin, ExternalLink, Printer } from 'lucide-react';
 
 interface BookingReviewModalProps {
   booking: any;
@@ -23,6 +23,7 @@ interface BookingReviewModalProps {
   onReviewComplete: () => void;
   currentUser: any;
   viewOnly?: boolean; // If true, hide approve/reject buttons and make it view-only
+  onPrint?: (booking: any) => void; // Optional print handler
 }
 
 export default function BookingReviewModal({
@@ -32,6 +33,7 @@ export default function BookingReviewModal({
   onReviewComplete,
   currentUser,
   viewOnly = false,
+  onPrint,
 }: BookingReviewModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
@@ -64,6 +66,48 @@ export default function BookingReviewModal({
     Array.isArray(booking.listedItems) ? booking.listedItems :
     []
   ).filter(Boolean);
+
+  // Helper function to normalize service code
+  const normalizeServiceCode = (code?: string | null) =>
+    (code || '')
+      .toString()
+      .toUpperCase()
+      .replace(/[\s-]+/g, '_');
+
+  // Helper function to check if service is UAE TO PINAS
+  const isUaeToPinasService = (code?: string | null) => {
+    const normalized = normalizeServiceCode(code);
+    return normalized === 'UAE_TO_PH' || 
+           normalized === 'UAE_TO_PINAS' ||
+           normalized.startsWith('UAE_TO_PH_') ||
+           normalized.startsWith('UAE_TO_PINAS_') ||
+           normalized.includes('UAE_TO_PINAS');
+  };
+
+  // Helper function to parse numeric values (for declaredAmount)
+  const parseNumericValue = (value: any): number | string => {
+    if (value === null || value === undefined || value === '') {
+      return 'N/A';
+    }
+    if (typeof value === 'number') {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const parsed = parseFloat(value);
+      return isNaN(parsed) ? 'N/A' : parsed;
+    }
+    if (value && typeof value === 'object') {
+      // Handle MongoDB Decimal128 format
+      if (value.$numberDecimal) {
+        return parseFloat(value.$numberDecimal);
+      }
+      if (typeof value.toString === 'function') {
+        const parsed = parseFloat(value.toString());
+        return isNaN(parsed) ? 'N/A' : parsed;
+      }
+    }
+    return 'N/A';
+  };
 
   // Helper function to extract coordinates from various possible locations
   const getCoordinates = (source: any, type: 'sender' | 'receiver') => {
@@ -275,10 +319,36 @@ export default function BookingReviewModal({
       <Dialog open={open} onOpenChange={onClose}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1">
             <DialogTitle>{viewOnly ? 'View Booking Request' : 'Review Booking Request'}</DialogTitle>
             <DialogDescription>
               Review booking details and images before approving
             </DialogDescription>
+            <p className="text-sm font-bold text-center mt-3 px-4 py-2 bg-primary/10 text-primary rounded-md">
+              Service: {formatValue(
+                booking.service || 
+                booking.service_code ||
+                booking.request_id?.service ||
+                booking.request_id?.service_code ||
+                'N/A'
+              ).toUpperCase()}
+            </p>
+              </div>
+              {onPrint && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-1"
+                  onClick={() => {
+                    onPrint(booking);
+                  }}
+                >
+                  <Printer className="h-4 w-4 mr-2" />
+                  Print
+                </Button>
+              )}
+            </div>
           </DialogHeader>
 
           <div className="space-y-6 mt-4">
@@ -416,6 +486,53 @@ export default function BookingReviewModal({
                     )}
                   </p>
                 </div>
+                {/* Insurance Information - Only for UAE TO PINAS service when insured is true */}
+                {(() => {
+                  const serviceCode = booking.service || 
+                                    booking.service_code ||
+                                    booking.request_id?.service ||
+                                    booking.request_id?.service_code ||
+                                    '';
+                  const isUaeToPinas = isUaeToPinasService(serviceCode);
+                  // Check insured in multiple locations: sender object, booking object, request_id
+                  const insured = sender.insured || 
+                                 booking.insured || 
+                                 booking.request_id?.insured ||
+                                 booking.request_id?.sender?.insured ||
+                                 false;
+                  // Check declaredAmount in multiple locations: sender object, booking object, request_id
+                  const declaredAmount = sender.declaredAmount || 
+                                       sender.declared_amount ||
+                                       booking.declaredAmount || 
+                                       booking.declared_amount ||
+                                       booking.request_id?.declaredAmount ||
+                                       booking.request_id?.declared_amount ||
+                                       booking.request_id?.sender?.declaredAmount ||
+                                       booking.request_id?.sender?.declared_amount ||
+                                       null;
+                  
+                  if (isUaeToPinas && insured === true && declaredAmount) {
+                    const amount = parseNumericValue(declaredAmount);
+                    return (
+                      <div>
+                        <Label className="text-sm font-semibold">Insurance</Label>
+                        <p className="text-sm mt-1">
+                          {amount === 'N/A' ? 'N/A' : `${typeof amount === 'number' ? amount.toFixed(2) : amount} AED`}
+                        </p>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+                {/* OTP Verification */}
+                {booking.otpVerification && (
+                  <div>
+                    <Label className="text-sm font-semibold">OTP Code</Label>
+                    <p className="text-sm mt-1">
+                      {formatValue(booking.otpVerification.otp || 'N/A')}
+                    </p>
+                  </div>
+                )}
               </div>
               {booking.notes && (
                 <div>
@@ -743,6 +860,15 @@ export default function BookingReviewModal({
           )}
           {viewOnly && (
             <div className="flex justify-end gap-4 pt-4">
+              {onPrint && (
+                <Button
+                  variant="outline"
+                  onClick={() => onPrint(booking)}
+                >
+                  <Printer className="h-4 w-4 mr-2" />
+                  Print
+                </Button>
+              )}
               <Button variant="outline" onClick={onClose}>
                 <X className="h-4 w-4 mr-2" />
                 Close

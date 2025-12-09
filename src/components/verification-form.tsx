@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { CheckCircle, FileCheck, Plus, Trash2, Package } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -35,6 +36,8 @@ interface VerificationFormProps {
 interface Box {
   id: string;
   items: string;
+  classification: 'FLOWMIC' | 'COMMERCIAL' | 'GENERAL' | '';
+  quantity: number; // Number of identical boxes
   length: string;
   width: string;
   height: string;
@@ -165,11 +168,15 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     ? request.verification.boxes.map((box: any, index: number) => ({
         id: `box-${index}`,
         items: box.items || '',
+        classification: (box.classification || '').toUpperCase() === 'COMMERCIAL' ? 'COMMERCIAL' : 
+                       (box.classification || '').toUpperCase() === 'FLOWMIC' ? 'FLOWMIC' : 
+                       (box.classification || '').toUpperCase() === 'GENERAL' ? 'GENERAL' : '',
+        quantity: box.quantity && typeof box.quantity === 'number' && box.quantity > 0 ? box.quantity : 1,
         length: box.length?.toString() || '',
         width: box.width?.toString() || '',
         height: box.height?.toString() || '',
       }))
-    : [{ id: 'box-0', items: '', length: '', width: '', height: '' }];
+    : [{ id: 'box-0', items: '', classification: '', quantity: 1, length: '', width: '', height: '' }];
 
   const [boxes, setBoxes] = useState<Box[]>(initialBoxes);
 
@@ -189,9 +196,12 @@ export default function VerificationForm({ request, onVerificationComplete, curr
   };
 
   // Calculate total VM for all boxes (must be defined before using it)
+  // VM is calculated per box, then multiplied by quantity
   const totalVM = useMemo(() => {
     return boxes.reduce((sum, box) => {
-      return sum + calculateVM(box.length, box.width, box.height);
+      const boxVM = calculateVM(box.length, box.width, box.height);
+      const quantity = box.quantity > 0 ? box.quantity : 1;
+      return sum + (boxVM * quantity);
     }, 0);
   }, [boxes]);
 
@@ -205,51 +215,123 @@ export default function VerificationForm({ request, onVerificationComplete, curr
       request.request_id?.booking ||
       request.booking_id?.service ? request.booking_id : null;
     
+    // Helper function to normalize and map service codes
+    const normalizeAndMapService = (serviceValue: string): string | null => {
+      if (!serviceValue) return null;
+      
+      const service = String(serviceValue).toLowerCase().trim();
+      
+      // PH to UAE variations
+      if (service === 'ph-to-uae' || service === 'ph_to_uae' || service === 'ph-to-pinas') {
+        return service.includes('express') ? 'PH_TO_UAE_EXPRESS' : 
+               service.includes('standard') ? 'PH_TO_UAE_STANDARD' : 'PH_TO_UAE';
+      }
+      
+      // UAE to PH variations (including "pinas")
+      if (service === 'uae-to-ph' || service === 'uae_to_ph' || 
+          service === 'uae-to-pinas' || service === 'uae_to_pinas' ||
+          service.includes('uae') && (service.includes('pinas') || service.includes('ph'))) {
+        if (service.includes('to') || service.includes('_to_')) {
+          return service.includes('express') ? 'UAE_TO_PH_EXPRESS' : 
+                 service.includes('standard') ? 'UAE_TO_PH_STANDARD' : 'UAE_TO_PH';
+        }
+      }
+      
+      // Try to match other variations with "to" keyword
+      if (service.includes('to') || service.includes('_to_')) {
+        // Check for PH to UAE
+        if ((service.includes('ph') || service.includes('pinas')) && service.includes('uae')) {
+          return service.includes('express') ? 'PH_TO_UAE_EXPRESS' : 
+                 service.includes('standard') ? 'PH_TO_UAE_STANDARD' : 'PH_TO_UAE';
+        }
+        // Check for UAE to PH/Pinas
+        if (service.includes('uae') && (service.includes('ph') || service.includes('pinas'))) {
+          return service.includes('express') ? 'UAE_TO_PH_EXPRESS' : 
+                 service.includes('standard') ? 'UAE_TO_PH_STANDARD' : 'UAE_TO_PH';
+        }
+      }
+      
+      return null;
+    };
+    
     // Check if booking has service field
     if (booking?.service) {
-      // Map booking service to service code format
-      const service = String(booking.service).toLowerCase().trim();
-      if (service === 'ph-to-uae' || service === 'ph_to_uae') {
-        return 'PH_TO_UAE';
-      } else if (service === 'uae-to-ph' || service === 'uae_to_ph') {
-        return 'UAE_TO_PH';
-      }
-      // Try to match other variations
-      if (service.includes('ph') && service.includes('uae')) {
-        if (service.includes('to') || service.includes('_to_')) {
-          return service.includes('express') ? 'PH_TO_UAE_EXPRESS' : 'PH_TO_UAE';
-        }
+      const mappedService = normalizeAndMapService(booking.service);
+      if (mappedService) {
+        console.log('✅ Mapped booking service:', booking.service, '→', mappedService);
+        return mappedService;
       }
     }
     
     // Also check if service is directly on request (from booking)
     if (request.service) {
-      const service = String(request.service).toLowerCase().trim();
-      if (service === 'ph-to-uae' || service === 'ph_to_uae') {
-        return 'PH_TO_UAE';
+      const mappedService = normalizeAndMapService(request.service);
+      if (mappedService) {
+        console.log('✅ Mapped request service:', request.service, '→', mappedService);
+        return mappedService;
+      }
+    }
+    
+    // Check nested request_id paths
+    if (request.request_id?.service) {
+      const mappedService = normalizeAndMapService(request.request_id.service);
+      if (mappedService) {
+        console.log('✅ Mapped request_id.service:', request.request_id.service, '→', mappedService);
+        return mappedService;
+      }
+    }
+    
+    // Check booking service in nested paths
+    if (request.request_id?.booking?.service) {
+      const mappedService = normalizeAndMapService(request.request_id.booking.service);
+      if (mappedService) {
+        console.log('✅ Mapped request_id.booking.service:', request.request_id.booking.service, '→', mappedService);
+        return mappedService;
       }
     }
     
     // Fallback to existing logic
-    return request.service_code || request.verification?.service_code || '';
+    const fallbackCode = request.service_code || 
+                         request.verification?.service_code || 
+                         request.request_id?.service_code || '';
+    if (fallbackCode) {
+      // Try to normalize the fallback code as well
+      const mappedFallback = normalizeAndMapService(fallbackCode);
+      if (mappedFallback) {
+        console.log('✅ Mapped fallback service_code:', fallbackCode, '→', mappedFallback);
+        return mappedFallback;
+      }
+    }
+    
+    return fallbackCode;
   };
+
+  // Get initial service code
+  const initialServiceCode = getServiceCodeFromBooking();
+  console.log('🔍 Initial service code from booking:', initialServiceCode, {
+    requestService: request.service,
+    requestServiceCode: request.service_code,
+    bookingService: request.booking?.service || request.booking_id?.service,
+    requestIdService: request.request_id?.service
+  });
 
   const [verificationData, setVerificationData] = useState({
     invoice_number: request.invoice_number || request.verification?.invoice_number || '',
     tracking_code: request.tracking_code || request.verification?.tracking_code || '',
-    service_code: getServiceCodeFromBooking(),
+    service_code: initialServiceCode,
     amount: request.amount?.toString() || request.verification?.amount?.toString() || '',
     actual_weight: request.weight?.toString() || request.verification?.actual_weight?.toString() || '',
     volume_cbm: request.volume_cbm?.toString() || request.verification?.volume_cbm?.toString() || '',
     receiver_address: request.receiver_address || request.verification?.receiver_address || '',
     receiver_phone: request.receiver_phone || request.verification?.receiver_phone || '',
     agents_name: request.verification?.agents_name || request.created_by_employee_id?.full_name || '',
-    shipment_classification: request.verification?.shipment_classification || '',
+    shipment_classification: '', // Will be auto-determined from box classifications
     weight_type: request.verification?.weight_type || '', // Will be auto-determined
     cargo_service: request.verification?.cargo_service || '',
     sender_details_complete: request.verification?.sender_details_complete || false,
     receiver_details_complete: request.verification?.receiver_details_complete || false,
-    number_of_boxes: request.verification?.number_of_boxes || initialBoxes.length.toString(),
+    number_of_boxes: request.verification?.number_of_boxes || 
+                      initialBoxes.reduce((sum, box) => sum + (box.quantity > 0 ? box.quantity : 1), 0).toString(),
     verification_notes: request.verification?.verification_notes || '',
   });
 
@@ -286,12 +368,77 @@ export default function VerificationForm({ request, onVerificationComplete, curr
   useEffect(() => {
     const bookingServiceCode = getServiceCodeFromBooking();
     if (bookingServiceCode && bookingServiceCode !== verificationData.service_code) {
+      console.log('🔄 Updating service code:', verificationData.service_code, '→', bookingServiceCode);
       setVerificationData(prev => ({
         ...prev,
         service_code: bookingServiceCode
       }));
     }
-  }, [request.booking_id, request.booking, request.service, request.request_id?.booking_id, request.request_id?.booking]);
+  }, [
+    request.booking_id, 
+    request.booking, 
+    request.service, 
+    request.service_code,
+    request.request_id?.booking_id, 
+    request.request_id?.booking,
+    request.request_id?.service,
+    request.request_id?.service_code
+  ]);
+
+  // Auto-determine shipment classification from box classifications
+  const autoDeterminedShipmentClassification = useMemo(() => {
+    const serviceCode = (verificationData.service_code || request.service_code || '').toUpperCase();
+    const isPhToUae = serviceCode.includes('PH_TO_UAE');
+
+    // PH → UAE: Always treated as GENERAL (no flowmic/commercial)
+    if (isPhToUae) {
+      return 'GENERAL';
+    }
+
+    if (boxes.length === 0) return '';
+    
+    // If any box is Commercial, the shipment is Commercial
+    const hasCommercial = boxes.some(box => box.classification === 'COMMERCIAL');
+    if (hasCommercial) {
+      return 'COMMERCIAL';
+    }
+    
+    // If any box is Flowmic, the shipment is Personal (Flowmic)
+    const hasFlowmic = boxes.some(box => box.classification === 'FLOWMIC');
+    if (hasFlowmic) {
+      return 'PERSONAL'; // Flowmic is treated as Personal
+    }
+    
+    // If no classification set yet, return empty
+    return '';
+  }, [boxes, verificationData.service_code, request.service_code]);
+
+  // Update verificationData when classification changes
+  useEffect(() => {
+    if (autoDeterminedShipmentClassification && 
+        autoDeterminedShipmentClassification !== verificationData.shipment_classification) {
+      setVerificationData(prev => ({
+        ...prev,
+        shipment_classification: autoDeterminedShipmentClassification
+      }));
+    }
+  }, [autoDeterminedShipmentClassification]);
+
+  // Calculate total number of boxes (sum of all quantities)
+  const totalNumberOfBoxes = useMemo(() => {
+    return boxes.reduce((sum, box) => {
+      const quantity = box.quantity > 0 ? box.quantity : 1;
+      return sum + quantity;
+    }, 0);
+  }, [boxes]);
+
+  // Update number_of_boxes when total changes
+  useEffect(() => {
+    setVerificationData(prev => ({
+      ...prev,
+      number_of_boxes: totalNumberOfBoxes.toString()
+    }));
+  }, [totalNumberOfBoxes]);
 
   // Determine route from service code (case-insensitive)
   const route = useMemo(() => {
@@ -319,6 +466,25 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     console.log('❌ Route determination: No route found for serviceCode', serviceCode);
     return '';
   }, [verificationData.service_code, request.service_code]);
+
+  const isPhToUaeRoute = route === 'PH_TO_UAE';
+
+  // PH → UAE: force box classification to GENERAL and set shipment classification
+  useEffect(() => {
+    if (!isPhToUaeRoute) return;
+
+    // Update boxes only if any is not GENERAL
+    setBoxes(prev => {
+      const needsUpdate = prev.some(box => box.classification !== 'GENERAL');
+      if (!needsUpdate) return prev;
+      return prev.map(box => ({ ...box, classification: 'GENERAL' }));
+    });
+
+    setVerificationData(prev => ({
+      ...prev,
+      shipment_classification: 'GENERAL',
+    }));
+  }, [isPhToUaeRoute]);
 
   // Auto-calculate amount per kg based on chargeable weight and route
   const { calculatedRate, rateBracket } = useMemo(() => {
@@ -411,13 +577,14 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     const newBox: Box = {
       id: `box-${Date.now()}`,
       items: '',
+      classification: '',
+      quantity: 1,
       length: '',
       width: '',
       height: '',
     };
-    const updatedBoxes = [...boxes, newBox];
-    setBoxes(updatedBoxes);
-    setVerificationData(prev => ({ ...prev, number_of_boxes: updatedBoxes.length.toString() }));
+    setBoxes([...boxes, newBox]);
+    // number_of_boxes will be auto-updated via useEffect
   };
 
   // Remove a box
@@ -431,9 +598,8 @@ export default function VerificationForm({ request, onVerificationComplete, curr
       return;
     }
     if (boxes.length > 1) {
-      const updatedBoxes = boxes.filter(box => box.id !== boxId);
-      setBoxes(updatedBoxes);
-      setVerificationData(prev => ({ ...prev, number_of_boxes: updatedBoxes.length.toString() }));
+      setBoxes(boxes.filter(box => box.id !== boxId));
+      // number_of_boxes will be auto-updated via useEffect
     } else {
       toast({
         variant: 'destructive',
@@ -444,7 +610,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
   };
 
   // Update box data
-  const updateBox = (boxId: string, field: keyof Box, value: string) => {
+  const updateBox = (boxId: string, field: keyof Box, value: string | number) => {
     if (areBoxesLocked) {
       toast({
         variant: 'destructive',
@@ -463,6 +629,8 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     // Check if all boxes have required fields
     const boxesValid = boxes.every(box => 
       box.items.trim() !== '' && 
+      (isPhToUaeRoute || box.classification !== '') && // Classification not required for PH→UAE (auto GENERAL)
+      box.quantity > 0 && // Quantity must be at least 1
       box.length.trim() !== '' && 
       box.width.trim() !== '' && 
       box.height.trim() !== '' &&
@@ -488,7 +656,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
       verificationData.agents_name &&
       boxesValid &&
       boxes.length > 0 &&
-      verificationData.shipment_classification &&
+      autoDeterminedShipmentClassification && // Auto-determined from box classifications
       determinedWeightType && // Auto-determined weight type
       verificationData.cargo_service &&
       verificationData.number_of_boxes &&
@@ -516,10 +684,12 @@ export default function VerificationForm({ request, onVerificationComplete, curr
       // Prepare box data for backend
       const boxesData = boxes.map(box => ({
         items: box.items,
+        classification: isPhToUaeRoute ? 'GENERAL' : box.classification, // Auto GENERAL for PH→UAE
+        quantity: box.quantity || 1, // Include quantity
         length: parseFloat(box.length) || 0,
         width: parseFloat(box.width) || 0,
         height: parseFloat(box.height) || 0,
-        vm: calculateVM(box.length, box.width, box.height),
+        vm: calculateVM(box.length, box.width, box.height), // VM per box (not multiplied by quantity)
       }));
 
       // Use calculated rate or the amount from verificationData (if manually overridden)
@@ -528,6 +698,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
       // First update verification details
       const updateResult = await apiClient.updateVerification(request._id, {
         ...verificationData,
+        shipment_classification: autoDeterminedShipmentClassification, // Use auto-determined classification
         amount: finalAmount, // Use auto-calculated amount
         boxes: boxesData,
         total_vm: totalVM,
@@ -537,7 +708,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
         weight_type: determinedWeightType, // Auto-determined weight type
         rate_bracket: rateBracket?.label || '', // Store the bracket label
         calculated_rate: calculatedRate, // Store the calculated rate
-        number_of_boxes: boxes.length,
+        number_of_boxes: totalNumberOfBoxes, // Use total number including quantities
         weight: chargeableWeight, // Store the chargeable weight (higher of actual or volumetric)
         // Keep listed_commodities for backward compatibility (concatenate all box items)
         listed_commodities: boxes.map((box, index) => `Box ${index + 1}: ${box.items}`).join('; '),
@@ -644,13 +815,13 @@ export default function VerificationForm({ request, onVerificationComplete, curr
               <div>
                 <Label htmlFor="service_code">Service Code *</Label>
                 <Select
-                  value={verificationData.service_code}
+                  value={verificationData.service_code || undefined}
                   onValueChange={(value) => setVerificationData({ ...verificationData, service_code: value })}
                   required
                   disabled
                 >
                   <SelectTrigger className="bg-muted cursor-not-allowed text-muted-foreground">
-                    <SelectValue placeholder="Select service code" />
+                    <SelectValue placeholder={verificationData.service_code || "Select service code"} />
                   </SelectTrigger>
                   <SelectContent className="max-h-[400px]">
                     {/* PH to UAE Options */}
@@ -852,6 +1023,55 @@ export default function VerificationForm({ request, onVerificationComplete, curr
             </div>
           </div>
 
+          {/* Delivery Options */}
+          <div className="border-l-4 border-amber-500 pl-4 space-y-4 bg-amber-50 p-4 rounded-lg">
+            <h3 className="font-semibold text-lg mb-4 text-amber-900">Delivery Options</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label className="text-sm font-semibold text-gray-700">Sender Delivery Option</Label>
+                <div className="mt-1 p-2 bg-white rounded border">
+                  <Badge variant={
+                    (request.sender_delivery_option || request.request_id?.sender_delivery_option || request.booking?.sender_delivery_option) === 'pickup' 
+                      ? 'default' 
+                      : 'secondary'
+                  } className="text-sm">
+                    {(() => {
+                      const senderOption = request.sender_delivery_option || 
+                                          request.request_id?.sender_delivery_option || 
+                                          request.booking?.sender_delivery_option || 
+                                          'N/A';
+                      if (senderOption === 'pickup') return 'Pickup';
+                      if (senderOption === 'delivery') return 'Delivery';
+                      return senderOption;
+                    })()}
+                  </Badge>
+                </div>
+              </div>
+              
+              <div>
+                <Label className="text-sm font-semibold text-gray-700">Receiver Delivery Option</Label>
+                <div className="mt-1 p-2 bg-white rounded border">
+                  <Badge variant={
+                    (request.receiver_delivery_option || request.request_id?.receiver_delivery_option || request.booking?.receiver_delivery_option) === 'delivery' 
+                      ? 'default' 
+                      : 'secondary'
+                  } className="text-sm">
+                    {(() => {
+                      const receiverOption = request.receiver_delivery_option || 
+                                            request.request_id?.receiver_delivery_option || 
+                                            request.booking?.receiver_delivery_option || 
+                                            'N/A';
+                      if (receiverOption === 'delivery') return 'Delivery';
+                      if (receiverOption === 'pickup') return 'Pickup';
+                      return receiverOption;
+                    })()}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Receiver Information Verification */}
           <div className="border-l-4 border-green-500 pl-4 space-y-4">
             <h3 className="font-semibold text-lg mb-4 text-green-900">Receiver Information Verification</h3>
@@ -925,6 +1145,11 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                       <CardTitle className="text-base flex items-center gap-2">
                         <Package className="h-4 w-4" />
                         Box {index + 1}
+                        {box.quantity > 1 && (
+                          <span className="text-sm font-normal text-blue-600 ml-1">
+                            (×{box.quantity})
+                          </span>
+                        )}
                         {areBoxesLocked && (
                           <span className="text-xs text-muted-foreground ml-2">(Locked)</span>
                         )}
@@ -943,19 +1168,67 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {/* Items Description */}
-                    <div>
-                      <Label htmlFor={`box-${box.id}-items`}>Items in Box {index + 1} *</Label>
-                      <Textarea
-                        id={`box-${box.id}-items`}
-                        placeholder="Enter items description..."
-                        value={box.items}
-                        onChange={(e) => updateBox(box.id, 'items', e.target.value)}
-                        rows={2}
-                        required
-                        disabled={areBoxesLocked}
-                        className={areBoxesLocked ? 'bg-muted cursor-not-allowed' : ''}
-                      />
+                    {/* Classification, Quantity, and Items Description */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <Label htmlFor={`box-${box.id}-classification`}>
+                          Classification {isPhToUaeRoute ? '(Auto: General for PH→UAE)' : '*'}
+                        </Label>
+                        {isPhToUaeRoute ? (
+                          <div className="p-2 bg-muted rounded border text-sm text-gray-600">
+                            General shipment (PH → UAE)
+                          </div>
+                        ) : (
+                          <Select
+                            value={box.classification}
+                            onValueChange={(value) => updateBox(box.id, 'classification', value)}
+                            required
+                            disabled={areBoxesLocked}
+                          >
+                            <SelectTrigger className={areBoxesLocked ? 'bg-muted cursor-not-allowed' : ''}>
+                              <SelectValue placeholder="Select classification" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="FLOWMIC">Flowmic</SelectItem>
+                              <SelectItem value="COMMERCIAL">Commercial</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                      <div>
+                        <Label htmlFor={`box-${box.id}-quantity`}>Quantity *</Label>
+                        <Input
+                          id={`box-${box.id}-quantity`}
+                          type="number"
+                          min="1"
+                          step="1"
+                          placeholder="1"
+                          value={box.quantity || 1}
+                          onChange={(e) => {
+                            const qty = parseInt(e.target.value) || 1;
+                            updateBox(box.id, 'quantity', Math.max(1, qty));
+                          }}
+                          required
+                          disabled={areBoxesLocked}
+                          className={areBoxesLocked ? 'bg-muted cursor-not-allowed' : ''}
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Number of identical boxes
+                        </p>
+                      </div>
+                      <div>
+                        <Label htmlFor={`box-${box.id}-items`}>Items in Box {index + 1} *</Label>
+                        <Textarea
+                          id={`box-${box.id}-items`}
+                          placeholder="Enter items description..."
+                          value={box.items}
+                          onChange={(e) => updateBox(box.id, 'items', e.target.value)}
+                          rows={2}
+                          required
+                          disabled={areBoxesLocked}
+                          className={areBoxesLocked ? 'bg-muted cursor-not-allowed' : ''}
+                        />
+                      </div>
                     </div>
 
                     {/* Dimensions */}
@@ -1012,13 +1285,21 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                      parseFloat(box.length) > 0 && parseFloat(box.width) > 0 && parseFloat(box.height) > 0 && (
                       <div className="bg-blue-50 p-3 rounded-md">
                         <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-blue-900">Volumetric Weight (VM):</span>
+                          <span className="text-sm font-medium text-blue-900">
+                            Volumetric Weight (VM) {box.quantity > 1 && `× ${box.quantity}:`}
+                          </span>
                           <span className="text-sm font-bold text-blue-700">
                             {calculateVM(box.length, box.width, box.height).toFixed(2)} kg
+                            {box.quantity > 1 && (
+                              <span className="ml-2">
+                                = {(calculateVM(box.length, box.width, box.height) * box.quantity).toFixed(2)} kg (total)
+                              </span>
+                            )}
                           </span>
                         </div>
                         <div className="text-xs text-blue-600 mt-1">
                           Formula: (L × W × H) / 5500 = ({box.length} × {box.width} × {box.height}) / 5500
+                          {box.quantity > 1 && ` × ${box.quantity} boxes`}
                         </div>
                       </div>
                     )}
@@ -1038,7 +1319,12 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                     </span>
                   </div>
                   <div className="text-sm text-green-600 mt-2">
-                    Sum of all box VM calculations
+                    Sum of all box VM calculations (including quantities)
+                    {totalNumberOfBoxes > boxes.length && (
+                      <span className="ml-2 font-medium">
+                        ({boxes.length} box type{boxes.length > 1 ? 's' : ''} × {totalNumberOfBoxes} total boxes)
+                      </span>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -1098,22 +1384,29 @@ export default function VerificationForm({ request, onVerificationComplete, curr
             </Card>
           )}
 
-          {/* Shipment Classification and Weight Type (Read-Only) */}
+          {/* Shipment Classification (Auto-Determined) and Weight Type (Read-Only) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="shipment_classification">Shipment Classification *</Label>
-              <Select
-                value={verificationData.shipment_classification}
-                onValueChange={(value) => setVerificationData({ ...verificationData, shipment_classification: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select classification" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="COMMERCIAL">Commercial</SelectItem>
-                  <SelectItem value="PERSONAL">Personal</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label htmlFor="shipment_classification">Shipment Classification * (Auto-Determined)</Label>
+              <div className="p-3 bg-muted rounded-md border-2">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className={`h-5 w-5 ${
+                    autoDeterminedShipmentClassification === 'COMMERCIAL' ? 'text-orange-600' : 'text-blue-600'
+                  }`} />
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold">
+                      {autoDeterminedShipmentClassification || 'Not Determined'}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {autoDeterminedShipmentClassification === 'COMMERCIAL' 
+                        ? 'At least one box is classified as Commercial'
+                        : autoDeterminedShipmentClassification === 'PERSONAL'
+                        ? 'All boxes are classified as Flowmic (Personal)'
+                        : 'Set classification for at least one box'}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
             
             <div>
@@ -1177,12 +1470,13 @@ export default function VerificationForm({ request, onVerificationComplete, curr
             </div>
             
             <div>
-              <Label htmlFor="number_of_boxes">Number of Boxes *</Label>
+              <Label htmlFor="number_of_boxes">Total Number of Boxes * (Auto-Calculated)</Label>
               <Input
                 id="number_of_boxes"
                 type="number"
                 value={verificationData.number_of_boxes}
-                onChange={(e) => setVerificationData({ ...verificationData, number_of_boxes: e.target.value })}
+                readOnly
+                className="bg-muted cursor-not-allowed"
                 required
               />
             </div>

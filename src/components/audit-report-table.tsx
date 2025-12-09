@@ -8,7 +8,6 @@ import { Button } from './ui/button';
 import { Download, Upload } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import * as XLSX from 'xlsx';
 
 type AuditData = Request & { invoice?: Invoice };
 
@@ -33,8 +32,11 @@ export default function AuditReportTable({ data: initialData }: AuditReportTable
         return nonLeviableTypes.includes(shipmentType.toUpperCase()) ? 'Non-Leviable' : 'Leviable';
     };
 
-    const handleExport = () => {
+    const handleExport = async () => {
         try {
+            // Dynamically import XLSX only when needed
+            const XLSX = await import('xlsx');
+            
             console.log("Exporting to Excel...");
             
             // Prepare data for export
@@ -84,13 +86,16 @@ export default function AuditReportTable({ data: initialData }: AuditReportTable
         fileInputRef.current?.click();
     };
 
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
 
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
             try {
+                // Dynamically import XLSX only when needed
+                const XLSX = await import('xlsx');
+                
                 const data = e.target?.result;
                 if (!data) {
                     throw new Error('No data read from file');
@@ -257,30 +262,30 @@ export default function AuditReportTable({ data: initialData }: AuditReportTable
                                 const leviableItem = isLeviable(item.shipmentType, (item as any).leviableItem);
                                 
                                 return (
-                                    <TableRow key={item.id}>
-                                        <TableCell className="font-mono">{item.awbNumber || 'N/A'}</TableCell>
-                                        <TableCell>{item.deliveryDate || 'N/A'}</TableCell>
+                            <TableRow key={item.id}>
+                                <TableCell className="font-mono">{item.awbNumber || 'N/A'}</TableCell>
+                                <TableCell>{item.deliveryDate || 'N/A'}</TableCell>
                                         <TableCell>{invoicingDate}</TableCell>
-                                        <TableCell>{item.clientName || 'N/A'}</TableCell>
-                                        <TableCell>{item.receiverName || 'N/A'}</TableCell>
-                                        <TableCell>{item.origin || 'N/A'}</TableCell>
-                                        <TableCell>{item.destination || 'N/A'}</TableCell>
-                                        <TableCell>
-                                            <Badge variant="outline">{item.shipmentType || 'N/A'}</Badge>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Badge variant="secondary">{item.serviceType || 'N/A'}</Badge>
-                                        </TableCell>
-                                        <TableCell>
+                                <TableCell>{item.clientName || 'N/A'}</TableCell>
+                                <TableCell>{item.receiverName || 'N/A'}</TableCell>
+                                <TableCell>{item.origin || 'N/A'}</TableCell>
+                                <TableCell>{item.destination || 'N/A'}</TableCell>
+                                <TableCell>
+                                    <Badge variant="outline">{item.shipmentType || 'N/A'}</Badge>
+                                </TableCell>
+                                <TableCell>
+                                    <Badge variant="secondary">{item.serviceType || 'N/A'}</Badge>
+                                </TableCell>
+                                <TableCell>
                                             <Badge className={
                                                 item.deliveryStatus === 'Completed' || item.deliveryStatus === 'DELIVERED' 
                                                     ? 'bg-green-500' 
                                                     : 'bg-gray-500'
                                             }>{item.deliveryStatus || 'N/A'}</Badge>
-                                        </TableCell>
-                                        <TableCell>{item.weight || 'N/A'}</TableCell>
+                                </TableCell>
+                                <TableCell>{item.weight || 'N/A'}</TableCell>
                                         <TableCell>{leviableItem}</TableCell>
-                                    </TableRow>
+                            </TableRow>
                                 );
                             })}
                         {tableData.filter((item) => {

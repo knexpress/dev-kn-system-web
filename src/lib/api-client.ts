@@ -102,6 +102,14 @@ class ApiClient {
       // Log request for debugging (only in development)
       if (process.env.NODE_ENV === 'development') {
         console.log(`[API] ${options.method || 'GET'} ${url}`);
+        if (options.body) {
+          try {
+            const bodyData = JSON.parse(options.body as string);
+            console.log('[API] Request Body:', bodyData);
+          } catch (e) {
+            console.log('[API] Request Body:', options.body);
+          }
+        }
       }
 
       const response = await fetch(url, {
@@ -110,11 +118,51 @@ class ApiClient {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
-        return { success: false, error: errorData.error || 'Request failed' };
+        // Get response text first to check if there's content
+        const responseText = await response.text();
+        let errorData: any = {};
+        
+        // Try to parse JSON if there's content
+        if (responseText && responseText.trim()) {
+          try {
+            errorData = JSON.parse(responseText);
+          } catch (e) {
+            // If JSON parsing fails, use the text as error message
+            errorData = { error: responseText || 'Request failed' };
+          }
+        } else {
+          // Empty response - use status text or default message
+          errorData = { 
+            error: response.statusText || `Request failed with status ${response.status}` 
+          };
+        }
+        
+        // Extract error message from various possible formats
+        const errorMessage = 
+          errorData.error || 
+          errorData.message || 
+          errorData.detail ||
+          (typeof errorData === 'string' ? errorData : null) ||
+          response.statusText ||
+          `Request failed with status ${response.status}`;
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[API] Error Response:', {
+            status: response.status,
+            statusText: response.statusText,
+            url: url,
+            errorData: errorData,
+            errorMessage: errorMessage
+          });
+        }
+        
+        return { success: false, error: errorMessage };
       }
 
       const data = await response.json();
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[API] Success Response:', data);
+      }
       
       // For auth endpoints, return the data directly wrapped in success
       if (endpoint.includes('/auth/')) {
@@ -189,6 +237,20 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ password: newPassword }),
     });
+  }
+
+  async resetUserPassword(userId: string, password?: string) {
+    // If password is provided, include it in the body; otherwise send empty object for default reset
+    const body = password && password.length > 0 ? { password } : {};
+    
+    console.log('[API] Reset Password - User ID:', userId);
+    console.log('[API] Reset Password - Body:', body);
+    
+    // Don't use cache for POST requests
+    return this.request(`/users/${userId}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }, false); // useCache = false
   }
 
   async deleteUser(id: string) {

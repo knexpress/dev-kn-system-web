@@ -14,6 +14,7 @@ interface InvoiceData {
     address: string;
     emirate: string;
     mobile: string;
+    trn?: string;
   };
   senderInfo: {
     name?: string;
@@ -30,7 +31,9 @@ interface InvoiceData {
   };
   charges: {
     shippingCharge: number;
+    pickupCharge?: number;
     deliveryCharge: number;
+    insuranceCharge?: number;
     subtotal?: number;
     taxRate?: number;
     taxAmount?: number;
@@ -77,6 +80,9 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
           <h2 className="text-3xl font-bold text-black mb-4">CASH ON DELIVERY (COD)</h2>
           <div className="space-y-1 text-sm">
             <p><span className="font-semibold">INVOICE #</span> {data.invoiceNumber}</p>
+            {data.receiverInfo.trn && (
+              <p><span className="font-semibold">TRN:</span> {data.receiverInfo.trn}</p>
+            )}
             <p><span className="font-semibold">AWB #</span> {data.awbNumber}</p>
             {data.batchNumber ? (
               <p><span className="font-semibold">Batch #</span> {data.batchNumber}</p>
@@ -149,9 +155,19 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
                 <td className="border border-gray-300 px-4 py-2 text-left">Shipping Charge</td>
                 <td className="border border-gray-300 px-4 py-2 text-right">{data.charges.shippingCharge.toFixed(2)}</td>
               </tr>
+              {data.charges.pickupCharge && data.charges.pickupCharge > 0 && (
+                <tr>
+                  <td className="border border-gray-300 px-4 py-2 text-left">Pickup Charge</td>
+                  <td className="border border-gray-300 px-4 py-2 text-right">{data.charges.pickupCharge.toFixed(2)}</td>
+                </tr>
+              )}
               <tr>
                 <td className="border border-gray-300 px-4 py-2 text-left">Delivery Charge</td>
                 <td className="border border-gray-300 px-4 py-2 text-right">{data.charges.deliveryCharge.toFixed(2)}</td>
+              </tr>
+              <tr>
+                <td className="border border-gray-300 px-4 py-2 text-left">Insurance Charge</td>
+                <td className="border border-gray-300 px-4 py-2 text-right">{(data.charges.insuranceCharge ?? 0).toFixed(2)}</td>
               </tr>
               <tr className="bg-gray-100">
                 <td className="border border-gray-300 px-4 py-2 text-left font-bold">Total Amount</td>
@@ -169,7 +185,7 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
             <div>
               <h4 className="font-semibold mb-2">PAYMENT QR CODE</h4>
               <p className="text-sm text-gray-600 mb-2">
-                This QR code is for the driver to scan when collecting payment
+                Scan this QR code to make payment for this invoice
               </p>
               <p className="text-xs text-gray-500 font-mono">
                 Code: {data.qrCode.code}
@@ -180,7 +196,7 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
             </div>
             <div className="text-center">
               <QRCode value={data.qrCode.url} size={200} className="mx-auto" />
-              <p className="text-xs text-gray-500 mt-2">For Driver Use</p>
+              <p className="text-xs text-gray-500 mt-2">Scan to Pay</p>
             </div>
           </div>
         </div>
