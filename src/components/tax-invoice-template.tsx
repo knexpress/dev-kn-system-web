@@ -181,7 +181,12 @@ export default function TaxInvoiceTemplate({ data }: TaxInvoiceTemplateProps) {
                 <td className="border border-gray-300 px-4 py-2 text-right">{data.charges.taxAmount.toFixed(2)}</td>
               </tr>
               <tr className="bg-gray-100">
-                <td className="border border-gray-300 px-4 py-2 text-left font-bold">Total Amount</td>
+                <td className="border border-gray-300 px-4 py-2 text-left font-bold">
+                  <div>Total Amount</div>
+                  {data.charges.taxAmount > 0 && (
+                    <div className="text-xs font-normal text-gray-500 mt-1">Inclusive of tax</div>
+                  )}
+                </td>
                 <td className="border border-gray-300 px-4 py-2 text-right font-bold">{data.charges.total.toFixed(2)} AED</td>
               </tr>
             </tbody>

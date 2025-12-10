@@ -1506,13 +1506,18 @@ export default function InvoiceRequestsPage() {
       });
     
     // Calculate tax:
-    // - If flowmic: 5% VAT on subtotal
+    // - If flowmic UAE to PH: 5% VAT included in subtotal (total = subtotal, VAT shown for display)
     // - Otherwise: Tax on delivery charge only (if present and PH to UAE)
     let taxAmount = 0;
     let taxRateForDelivery = 0;
     
-    if (isFlowmic && effectiveTaxRate > 0) {
-      // Flowmic: Apply 5% VAT on subtotal
+    if (isFlowmic && isUaeToPh && effectiveTaxRate > 0) {
+      // Flowmic UAE to PH: VAT is included in subtotal
+      // Calculate VAT amount for display (5% of subtotal), but total = subtotal (VAT already included)
+      taxAmount = (subtotal * effectiveTaxRate) / 100;
+      taxRateForDelivery = effectiveTaxRate; // Store the rate for display
+    } else if (isFlowmic && effectiveTaxRate > 0) {
+      // Flowmic (non-UAE to PH): Apply 5% VAT on subtotal (add to total)
       taxAmount = (subtotal * effectiveTaxRate) / 100;
       taxRateForDelivery = effectiveTaxRate; // Store the rate for display
     } else {
@@ -1521,18 +1526,25 @@ export default function InvoiceRequestsPage() {
       taxAmount = deliveryCharge > 0 && taxRateForDelivery > 0 ? (deliveryCharge * taxRateForDelivery) / 100 : 0;
     }
     
-    const total = subtotal + taxAmount;
+    // For flowmic UAE to PH: total = subtotal (VAT already included)
+    // For others: total = subtotal + taxAmount
+    const total = (isFlowmic && isUaeToPh) ? subtotal : (subtotal + taxAmount);
 
     const shouldShowDeliveryOnly = isTaxMode && isPhToUae && !isFlowmic; // Don't show delivery only for flowmic
     const displayShippingCharge = shouldShowDeliveryOnly ? 0 : shippingCharge;
     // For tax mode showing delivery only, insurance charge should still be included in subtotal
     const displaySubtotal = shouldShowDeliveryOnly ? (deliveryCharge + insuranceCharge) : subtotal;
-    // For flowmic, tax is already calculated on subtotal, so use it directly
+    // For flowmic UAE to PH, tax is included in subtotal (total = subtotal)
+    // For other flowmic, tax is calculated on subtotal (total = subtotal + tax)
     // For tax mode (non-flowmic), calculate tax on delivery charge only
     const displayTaxAmount = shouldShowDeliveryOnly 
       ? (deliveryCharge > 0 ? (deliveryCharge * taxRateForDelivery) / 100 : 0) 
       : taxAmount;
-    const displayTotal = shouldShowDeliveryOnly ? (deliveryCharge + insuranceCharge) + displayTaxAmount : total;
+    // For flowmic UAE to PH: displayTotal = displaySubtotal (VAT already included)
+    // For others: use the calculated total
+    const displayTotal = (isFlowmic && isUaeToPh) 
+      ? displaySubtotal 
+      : (shouldShowDeliveryOnly ? (deliveryCharge + insuranceCharge) + displayTaxAmount : total);
     
     return {
       invoiceNumber,

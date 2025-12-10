@@ -324,10 +324,10 @@ export default function InvoicePage() {
     // If database values are missing or zero, recalculate
     if (taxRate === 0 && taxAmount === 0) {
       if (isFlowmicOrPersonal && isUaeToPh) {
-        // Flowmic/Personal UAE_TO_PH: 5% VAT on subtotal
+        // Flowmic/Personal UAE_TO_PH: 5% VAT included in subtotal (total = subtotal, VAT shown for display)
         taxRate = 5;
         taxAmount = parseDecimal((subtotal * taxRate) / 100, 2);
-        total = parseDecimal(subtotal + taxAmount, 2);
+        total = parseDecimal(subtotal, 2); // Total = subtotal (VAT already included)
       } else if (deliveryCharge > 0 && isPhToUae) {
         // PH_TO_UAE: 5% VAT on delivery charge only
         taxRate = 5;
@@ -341,8 +341,14 @@ export default function InvoicePage() {
       }
     } else {
       // Database has tax values, use them but ensure total matches
-      if (total === 0 || Math.abs(total - (subtotal + taxAmount)) > 0.01) {
-        // Recalculate total if it doesn't match
+      // For flowmic UAE to PH: total should equal subtotal (VAT already included)
+      if (isFlowmicOrPersonal && isUaeToPh) {
+        // Recalculate VAT for display and set total = subtotal
+        taxRate = taxRate || 5;
+        taxAmount = parseDecimal((subtotal * taxRate) / 100, 2);
+        total = parseDecimal(subtotal, 2);
+      } else if (total === 0 || Math.abs(total - (subtotal + taxAmount)) > 0.01) {
+        // Recalculate total if it doesn't match (for non-flowmic UAE to PH)
         total = parseDecimal(subtotal + taxAmount, 2);
       }
     }
