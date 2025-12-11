@@ -277,11 +277,18 @@ export default function AuditReportTable({ data: initialData }: AuditReportTable
                                     <Badge variant="secondary">{item.serviceType || 'N/A'}</Badge>
                                 </TableCell>
                                 <TableCell>
-                                            <Badge className={
-                                                item.deliveryStatus === 'Completed' || item.deliveryStatus === 'DELIVERED' 
-                                                    ? 'bg-green-500' 
-                                                    : 'bg-gray-500'
-                                            }>{item.deliveryStatus || 'N/A'}</Badge>
+                                    {(() => {
+                                        const statusRaw = item.deliveryStatus || 'N/A';
+                                        const normalized = statusRaw.toString().trim().toUpperCase();
+                                        const isDelivered = normalized === 'COMPLETED' || normalized === 'DELIVERED';
+                                        const display = isDelivered ? 'DELIVERED' : statusRaw || 'N/A';
+                                        const badgeClass = isDelivered ? 'bg-green-500' : 'bg-gray-500';
+                                        return (
+                                            <Badge className={badgeClass}>
+                                                {display}
+                                            </Badge>
+                                        );
+                                    })()}
                                 </TableCell>
                                 <TableCell>{item.weight || 'N/A'}</TableCell>
                                         <TableCell>{leviableItem}</TableCell>

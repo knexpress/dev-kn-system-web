@@ -22,15 +22,19 @@ export default function CSVUpload({ onSuccess }: CSVUploadProps) {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      if (selectedFile.type === 'text/csv' || selectedFile.name.endsWith('.csv')) {
+      // Strict CSV validation - must have .csv extension
+      const isValidCSV = selectedFile.name.toLowerCase().endsWith('.csv');
+      if (isValidCSV) {
         setFile(selectedFile);
         setUploadResult(null);
       } else {
         toast({
           variant: 'destructive',
           title: 'Invalid File',
-          description: 'Please select a CSV file',
+          description: 'Please select a CSV file (.csv extension required)',
         });
+        // Reset file input
+        e.target.value = '';
       }
     }
   };
@@ -41,6 +45,16 @@ export default function CSVUpload({ onSuccess }: CSVUploadProps) {
         variant: 'destructive',
         title: 'No File Selected',
         description: 'Please select a CSV file to upload',
+      });
+      return;
+    }
+
+    // Double-check that file is CSV before uploading
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid File Type',
+        description: 'Only CSV files are allowed',
       });
       return;
     }
@@ -56,17 +70,29 @@ export default function CSVUpload({ onSuccess }: CSVUploadProps) {
         result = await apiClient.uploadCSV(file);
       }
 
-      if (result.success) {
+      // The API returns the response directly with success, summary, and errors fields
+      // Show result even if there are errors (partial success)
+      if (result.success !== false) {
         setUploadResult(result);
         if (activeTab === 'historical') {
-          toast({
-            title: 'Success',
-            description: `Successfully uploaded ${result.summary.shipments_created || result.summary.total_rows} historical shipments to EMPOST`,
-          });
+          const shipmentsCreated = result.summary?.shipments_created || 0;
+          const errors = result.summary?.errors || 0;
+          if (errors === 0) {
+            toast({
+              title: 'Success',
+              description: `Successfully uploaded ${shipmentsCreated} historical shipments to EMPOST`,
+            });
+          } else {
+            toast({
+              variant: 'default',
+              title: 'Upload Completed with Errors',
+              description: `Uploaded ${shipmentsCreated} shipments, but ${errors} errors occurred`,
+            });
+          }
         } else {
           toast({
             title: 'Success',
-            description: `Successfully created ${result.summary.invoices_created} invoices and ${result.summary.assignments_created} delivery assignments`,
+            description: `Successfully created ${result.summary?.invoices_created || 0} invoices and ${result.summary?.assignments_created || 0} delivery assignments`,
           });
         }
 
@@ -77,10 +103,12 @@ export default function CSVUpload({ onSuccess }: CSVUploadProps) {
           }, 1500);
         }
       } else {
+        // Complete failure
+        setUploadResult(result);
         toast({
           variant: 'destructive',
           title: 'Upload Failed',
-          description: result.error || 'Failed to process CSV file',
+          description: result.error || result.details || 'Failed to process CSV file',
         });
       }
     } catch (error) {
@@ -251,29 +279,30 @@ export default function CSVUpload({ onSuccess }: CSVUploadProps) {
           <TabsContent value="historical" className="space-y-4">
             <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
               <p className="text-sm text-blue-900 mb-2">
-                <strong>Historical Upload:</strong> Upload old data from January 1st to September 29th.
+                <strong>Historical Upload:</strong> Upload historical shipment data to EMPOST.
               </p>
               <p className="text-xs text-blue-700 mb-3">
-                This will create shipments in EMPOST database only. No delivery assignments or QR codes will be created.
-                All entries will be recorded in the audit report.
+                This will create shipments and invoices in EMPOST database only. No delivery assignments or QR codes will be created.
+                All entries will be recorded in the audit report. Only rows with dates within the historical range are processed.
               </p>
               <div className="mt-3 pt-3 border-t border-blue-200">
                 <p className="text-xs font-semibold text-blue-900 mb-2">Required CSV Columns:</p>
                 <div className="text-xs text-blue-700 grid grid-cols-2 gap-1">
-                  <span>• CustomerName</span>
-                  <span>• AWBNo</span>
-                  <span>• TransactionDate</span>
-                  <span>• OriginCountry</span>
-                  <span>• OriginCity</span>
-                  <span>• DestinationCountry</span>
-                  <span>• DestinationCity</span>
-                  <span>• ShipmentType</span>
-                  <span>• ShipmentStatus</span>
-                  <span>• Weight</span>
-                  <span>• Delivery Charge</span>
-                  <span>• Dispatcher</span>
-                  <span>• AdditionalInfo1</span>
-                  <span>• AdditionalInfo2</span>
+                  <span>• AWB NUMBER</span>
+                  <span>• SENDER NAME</span>
+                  <span>• RECEIVER NAME</span>
+                  <span>• ORIGIN</span>
+                  <span>• DESTINATION</span>
+                  <span>• COUNTRY OF DESTINATION</span>
+                  <span>• SHIPMENT TYPE</span>
+                  <span>• SERVICE TYPE</span>
+                  <span>• WEIGHT</span>
+                  <span>• DELIVERY CHARGE RATE BEFORE DISCOUNT</span>
+                  <span>• EPG LEVY AMOUNT</span>
+                  <span>• INVOICE NUMBER (Optional)</span>
+                  <span>• INVOICE DATE (Optional)</span>
+                  <span>• DELIVERY DATE (Optional)</span>
+                  <span>• DELIVERY STATUS (Optional)</span>
                 </div>
               </div>
             </div>
@@ -288,7 +317,10 @@ export default function CSVUpload({ onSuccess }: CSVUploadProps) {
                   disabled={uploading}
                 />
                 {file && (
-                  <p className="mt-1 text-sm text-gray-600">{file.name}</p>
+                  <div className="mt-1 text-sm text-gray-600">
+                    <p>Selected: <strong>{file.name}</strong></p>
+                    <p className="text-xs text-gray-500">Size: {(file.size / 1024).toFixed(2)} KB</p>
+                  </div>
                 )}
               </div>
               <Button
@@ -322,39 +354,63 @@ export default function CSVUpload({ onSuccess }: CSVUploadProps) {
             {uploadResult && activeTab === 'historical' && (
               <div className="mt-4 p-4 bg-gray-50 rounded-lg">
                 <div className="flex items-center gap-2 mb-3">
-                  {uploadResult.summary.errors === 0 ? (
+                  {uploadResult.success && uploadResult.summary?.errors === 0 ? (
                     <CheckCircle2 className="h-5 w-5 text-green-600" />
                   ) : (
                     <AlertCircle className="h-5 w-5 text-yellow-600" />
                   )}
-                  <h4 className="font-semibold">Upload Summary</h4>
+                  <h4 className="font-semibold">
+                    {uploadResult.success && uploadResult.summary?.errors === 0 
+                      ? '✅ Upload Successful!' 
+                      : '⚠️ Upload Completed with Errors'}
+                  </h4>
                 </div>
                 <div className="space-y-2 text-sm">
-                  <p><strong>Total Rows:</strong> {uploadResult.summary.total_rows}</p>
-                  <p><strong>Rows Processed:</strong> {uploadResult.summary.rows_processed || uploadResult.summary.total_rows}</p>
+                  <p><strong>📊 Total Rows:</strong> {uploadResult.summary?.total_rows || 0}</p>
+                  <p><strong>✅ Rows Processed:</strong> {uploadResult.summary?.rows_processed || 0}</p>
+                  {uploadResult.summary?.rows_filtered_by_date !== undefined && (
+                    <p className="text-blue-600">
+                      <strong>📅 Rows Filtered by Date:</strong> {uploadResult.summary.rows_filtered_by_date}
+                    </p>
+                  )}
                   <p className="text-green-600">
-                    <strong>Shipments Created in EMPOST:</strong> {uploadResult.summary.shipments_created || 0}
+                    <strong>📦 Shipments Created:</strong> {uploadResult.summary?.shipments_created || 0}
                   </p>
                   <p className="text-green-600">
-                    <strong>Audit Entries Created:</strong> {uploadResult.summary.audit_entries_created || 0}
+                    <strong>💰 Invoices Created:</strong> {uploadResult.summary?.invoices_created || 0}
                   </p>
-                  {uploadResult.summary.errors > 0 && (
+                  <p className="text-green-600">
+                    <strong>📝 Audit Entries Created:</strong> {uploadResult.summary?.audit_entries_created || 0}
+                  </p>
+                  {(uploadResult.summary?.errors || 0) > 0 && (
                     <p className="text-red-600">
-                      <strong>Errors:</strong> {uploadResult.summary.errors}
+                      <strong>❌ Errors:</strong> {uploadResult.summary.errors}
                     </p>
                   )}
                 </div>
 
                 {uploadResult.errors && uploadResult.errors.length > 0 && (
                   <div className="mt-4">
-                    <h5 className="font-semibold text-red-600 mb-2">Errors:</h5>
-                    <div className="max-h-40 overflow-y-auto space-y-1">
-                      {uploadResult.errors.map((error: any, index: number) => (
-                        <div key={index} className="text-xs p-2 bg-red-50 rounded">
-                          <p className="font-medium">Row {error.row}:</p>
-                          <p>{error.error}</p>
-                        </div>
-                      ))}
+                    <h5 className="font-semibold text-red-600 mb-2">Errors ({uploadResult.errors.length}):</h5>
+                    <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-md">
+                      <table className="w-full text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-gray-100">
+                            <th className="p-2 text-left border-b border-gray-300">Row</th>
+                            <th className="p-2 text-left border-b border-gray-300">AWB</th>
+                            <th className="p-2 text-left border-b border-gray-300">Error</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {uploadResult.errors.map((error: any, index: number) => (
+                            <tr key={index} className="border-b border-gray-200 hover:bg-red-50">
+                              <td className="p-2">{error.row}</td>
+                              <td className="p-2 font-mono">{error.awb || 'N/A'}</td>
+                              <td className="p-2 text-red-700">{error.error}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 )}

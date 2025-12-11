@@ -923,8 +923,15 @@ class ApiClient {
 
   // Historical CSV Upload (for old data Jan 1 - Sep 29)
   async uploadHistoricalCSV(file: File) {
+    // Validate file is CSV
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      return { success: false, error: 'Only CSV files are allowed' };
+    }
+
+    // Create FormData with ONLY the CSV file
     const formData = new FormData();
-    formData.append('csvFile', file);
+    // Use 'csvFile' as per API specification (both 'csvFile' and 'file' are accepted, but 'csvFile' is preferred)
+    formData.append('csvFile', file); // Only CSV file, no other data
     
     // Use fetch directly for file uploads to let browser set Content-Type with boundary
     const url = `${this.baseUrl}/csv-upload/historical`;
@@ -935,16 +942,18 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
     
+    // Note: Do NOT set Content-Type header - browser will set it with boundary for multipart/form-data
+    
     const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: formData,
+      body: formData, // Only contains the CSV file
     });
     
     const data = await response.json();
     
     if (!response.ok) {
-      return { success: false, error: data.error || 'Historical upload failed' };
+      return { success: false, error: data.error || data.details || 'Historical upload failed' };
     }
     
     return data;

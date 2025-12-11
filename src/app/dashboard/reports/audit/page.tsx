@@ -41,39 +41,54 @@ export default function AuditReportPage() {
                         const formattedData = reportsArray.map((report: any) => {
                             const reportData = report.report_data || {};
                             const cargoDetails = reportData.cargo_details || {};
-                            
-                            // Check if this is a historical upload entry
-                            if (reportData.upload_type === 'historical') {
-                                // Format origin and destination for historical data
-                                const origin = reportData.origin_country 
-                                    ? `${reportData.origin_country}${reportData.origin_city ? ` - ${reportData.origin_city}` : ''}`
-                                    : 'N/A';
-                                const destination = reportData.destination_country
-                                    ? `${reportData.destination_country}${reportData.destination_city ? ` - ${reportData.destination_city}` : ''}`
-                                    : 'N/A';
-                                
-                                // Determine leviable status from additional_info2
+                            const uploadType = reportData.upload_type || report.upload_type;
+
+                            // Helper to build origin/destination strings from country + city
+                            const formatLocation = (country?: string, city?: string) => {
+                                if (!country && !city) return 'N/A';
+                                if (country && city) return `${country} - ${city}`;
+                                return country || city || 'N/A';
+                            };
+
+                            // Historical / automated CSV uploads (including automated_script)
+                            if (
+                                uploadType === 'historical' ||
+                                uploadType === 'automated_script' ||
+                                uploadType === 'automated' ||
+                                reportData.origin_country || reportData.destination_country
+                            ) {
+                                // Prefer explicit origin/destination fields from backend; fall back to country/city formatting
+                                const origin = reportData.origin || formatLocation(reportData.origin_country, reportData.origin_city);
+                                const destination = reportData.destination || formatLocation(reportData.destination_country, reportData.destination_city);
+
                                 const isLeviableValue = reportData.additional_info2 === 'LEVIABLE' ? 'Leviable' 
                                     : reportData.additional_info2 === 'NON-LEVIABLE' ? 'Non-Leviable'
                                     : reportData.additional_info2 || 'N/A';
-                                
+
+                                // Clean weight string if padded spaces
+                                const weightValue = typeof reportData.weight === 'string'
+                                    ? reportData.weight.trim()
+                                    : reportData.weight;
+
                                 return {
                                     id: report._id,
                                     awbNumber: reportData.awb_number || 'N/A',
-                                    deliveryDate: 'N/A', // Not available in historical data
-                                    invoicingDate: reportData.transaction_date || 'N/A',
-                                    clientName: reportData.customer_name || 'N/A',
-                                    receiverName: 'N/A', // Not available in historical data
-                                    origin: origin,
-                                    destination: destination,
+                                    deliveryDate: reportData.delivery_date || 'N/A',
+                                    // Invoicing Date = transaction_date per requirement
+                                    invoicingDate: reportData.transaction_date || reportData.invoice_date || 'N/A',
+                                    // Customer = customer_name per requirement
+                                    clientName: reportData.customer_name || reportData.sender_name || 'N/A',
+                                    receiverName: reportData.receiver_name || 'N/A',
+                                    origin,
+                                    destination,
                                     shipmentType: reportData.shipment_type || 'N/A',
-                                    serviceType: 'N/A', // Not available in historical data
-                                    deliveryStatus: reportData.shipment_status || 'N/A',
-                                    weight: reportData.weight || 'N/A',
+                                    serviceType: reportData.service_type || 'N/A',
+                                    deliveryStatus: reportData.shipment_status || reportData.delivery_status || 'N/A',
+                                    weight: weightValue || 'N/A',
                                     leviableItem: isLeviableValue,
-                                    invoice: undefined, // Historical uploads don't have invoices
+                                    invoice: undefined, // historical / automated uploads don't carry invoice objects
                                     generatedBy: report.generated_by_employee_name || 'System',
-                                    uploadType: 'historical'
+                                    uploadType: uploadType || 'historical'
                                 };
                             }
                             
