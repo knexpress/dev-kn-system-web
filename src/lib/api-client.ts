@@ -1005,6 +1005,12 @@ class ApiClient {
     return this.request(`/bookings/${id}`, {}, useCache, 60000); // Cache for 60 seconds
   }
 
+  // Get booking with full details including all identityDocuments images
+  // This endpoint should return complete booking data with all nested images
+  async getBookingForReview(id: string, useCache: boolean = false) {
+    return this.request(`/bookings/${id}/review`, {}, useCache, 0); // No cache for review data
+  }
+
   async getBookingsByStatus(reviewStatus: string, useCache: boolean = true) {
     return this.request(`/bookings/status/${reviewStatus}`, {}, useCache, 30000); // Cache for 30 seconds
   }

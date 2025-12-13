@@ -106,14 +106,70 @@ export default function RejectedRequestsPage() {
     }
   };
 
-  const handleViewDetails = (booking: any) => {
-    setSelectedBooking(booking);
-    setShowDetailsModal(true);
+  const handleViewDetails = async (booking: any) => {
+    try {
+      setLoading(true);
+      // Fetch full booking details with all images from database
+      const result = await apiClient.getBookingForReview(booking._id);
+      if (result.success && result.data) {
+        setSelectedBooking(result.data);
+        setShowDetailsModal(true);
+      } else {
+        // Fallback to using the booking from list if API fails
+        toast({
+          variant: 'destructive',
+          title: 'Warning',
+          description: result.error || 'Failed to load full booking details. Showing cached data.',
+        });
+        setSelectedBooking(booking);
+        setShowDetailsModal(true);
+      }
+    } catch (error) {
+      console.error('Error fetching booking details:', error);
+      // Fallback to using the booking from list
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to load full booking details. Showing cached data.',
+      });
+      setSelectedBooking(booking);
+      setShowDetailsModal(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handlePrint = (booking: any) => {
-    setBookingToPrint(booking);
-    setShowPrintView(true);
+  const handlePrint = async (booking: any) => {
+    try {
+      setLoading(true);
+      // Fetch full booking details with all images from database
+      const result = await apiClient.getBookingForReview(booking._id);
+      if (result.success && result.data) {
+        setBookingToPrint(result.data);
+        setShowPrintView(true);
+      } else {
+        // Fallback to using the booking from list if API fails
+        toast({
+          variant: 'destructive',
+          title: 'Warning',
+          description: result.error || 'Failed to load full booking details. Showing cached data.',
+        });
+        setBookingToPrint(booking);
+        setShowPrintView(true);
+      }
+    } catch (error) {
+      console.error('Error fetching booking details:', error);
+      // Fallback to using the booking from list
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to load full booking details. Showing cached data.',
+      });
+      setBookingToPrint(booking);
+      setShowPrintView(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getStatusBadge = (status: string) => {

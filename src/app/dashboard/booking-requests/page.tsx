@@ -53,6 +53,7 @@ export default function BookingRequestsPage() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [showPrintView, setShowPrintView] = useState(false);
   const [bookingToPrint, setBookingToPrint] = useState<any>(null);
+  const [loadingBookingDetails, setLoadingBookingDetails] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 50; // Show 50 items per page for better performance
   const { toast } = useToast();
@@ -154,14 +155,70 @@ export default function BookingRequestsPage() {
     }
   };
 
-  const handleReview = (booking: any) => {
-    setSelectedBooking(booking);
-    setShowReviewModal(true);
+  const handleReview = async (booking: any) => {
+    try {
+      setLoadingBookingDetails(true);
+      // Fetch full booking details with all images from database
+      const result = await apiClient.getBookingForReview(booking._id);
+      if (result.success && result.data) {
+        setSelectedBooking(result.data);
+        setShowReviewModal(true);
+      } else {
+        // Fallback to using the booking from list if API fails
+        toast({
+          variant: 'destructive',
+          title: 'Warning',
+          description: result.error || 'Failed to load full booking details. Showing cached data.',
+        });
+        setSelectedBooking(booking);
+        setShowReviewModal(true);
+      }
+    } catch (error) {
+      console.error('Error fetching booking details:', error);
+      // Fallback to using the booking from list
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to load full booking details. Showing cached data.',
+      });
+      setSelectedBooking(booking);
+      setShowReviewModal(true);
+    } finally {
+      setLoadingBookingDetails(false);
+    }
   };
 
-  const handleView = (booking: any) => {
-    setSelectedBooking(booking);
-    setShowViewModal(true);
+  const handleView = async (booking: any) => {
+    try {
+      setLoadingBookingDetails(true);
+      // Fetch full booking details with all images from database
+      const result = await apiClient.getBookingForReview(booking._id);
+      if (result.success && result.data) {
+        setSelectedBooking(result.data);
+        setShowViewModal(true);
+      } else {
+        // Fallback to using the booking from list if API fails
+        toast({
+          variant: 'destructive',
+          title: 'Warning',
+          description: result.error || 'Failed to load full booking details. Showing cached data.',
+        });
+        setSelectedBooking(booking);
+        setShowViewModal(true);
+      }
+    } catch (error) {
+      console.error('Error fetching booking details:', error);
+      // Fallback to using the booking from list
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to load full booking details. Showing cached data.',
+      });
+      setSelectedBooking(booking);
+      setShowViewModal(true);
+    } finally {
+      setLoadingBookingDetails(false);
+    }
   };
 
   const handleReviewComplete = () => {
@@ -172,9 +229,37 @@ export default function BookingRequestsPage() {
     fetchBookings(false); // Don't use cache, get fresh data
   };
 
-  const handlePrint = (booking: any) => {
-    setBookingToPrint(booking);
-    setShowPrintView(true);
+  const handlePrint = async (booking: any) => {
+    try {
+      setLoadingBookingDetails(true);
+      // Fetch full booking details with all images from database
+      const result = await apiClient.getBookingForReview(booking._id);
+      if (result.success && result.data) {
+        setBookingToPrint(result.data);
+        setShowPrintView(true);
+      } else {
+        // Fallback to using the booking from list if API fails
+        toast({
+          variant: 'destructive',
+          title: 'Warning',
+          description: result.error || 'Failed to load full booking details. Showing cached data.',
+        });
+        setBookingToPrint(booking);
+        setShowPrintView(true);
+      }
+    } catch (error) {
+      console.error('Error fetching booking details:', error);
+      // Fallback to using the booking from list
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to load full booking details. Showing cached data.',
+      });
+      setBookingToPrint(booking);
+      setShowPrintView(true);
+    } finally {
+      setLoadingBookingDetails(false);
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -388,14 +473,16 @@ export default function BookingRequestsPage() {
                             variant="outline"
                             size="sm"
                             onClick={() => handleView(booking)}
+                            disabled={loadingBookingDetails}
                           >
                             <Eye className="h-4 w-4 mr-2" />
-                            View
+                            {loadingBookingDetails ? 'Loading...' : 'View'}
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handlePrint(booking)}
+                            disabled={loadingBookingDetails}
                           >
                             <Printer className="h-4 w-4 mr-2" />
                             Print
@@ -404,10 +491,10 @@ export default function BookingRequestsPage() {
                             variant="outline"
                             size="sm"
                             onClick={() => handleReview(booking)}
-                            disabled={booking.review_status === 'reviewed'}
+                            disabled={booking.review_status === 'reviewed' || loadingBookingDetails}
                           >
                             <CheckCircle className="h-4 w-4 mr-2" />
-                            Review
+                            {loadingBookingDetails ? 'Loading...' : 'Review'}
                           </Button>
                         </div>
                       </TableCell>

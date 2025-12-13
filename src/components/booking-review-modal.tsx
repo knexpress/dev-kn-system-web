@@ -272,47 +272,62 @@ export default function BookingReviewModal({
     setViewingImageTitle(title);
   };
 
+  // Check images in order: identityDocuments (primary source) -> top-level -> collections (fallback)
   const idFrontImage = getImageSrc(
-    booking.id_front_image 
-    || booking.idFrontImage 
-    || booking.identityDocuments?.eidFrontImage 
+    booking.identityDocuments?.eidFrontImage
     || booking.collections?.identityDocuments?.eidFrontImage
+    || booking.id_front_image 
+    || booking.idFrontImage
   );
   const idBackImage = getImageSrc(
-    booking.id_back_image 
-    || booking.idBackImage 
-    || booking.identityDocuments?.eidBackImage 
+    booking.identityDocuments?.eidBackImage
     || booking.collections?.identityDocuments?.eidBackImage
+    || booking.id_back_image 
+    || booking.idBackImage
   );
   const philippinesIdFront = getImageSrc(
-    booking.philippinesIdFront 
-    || booking.philippines_id_front
-    || booking.identityDocuments?.philippinesIdFront
+    booking.identityDocuments?.philippinesIdFront
     || booking.collections?.identityDocuments?.philippinesIdFront
+    || booking.philippinesIdFront 
+    || booking.philippines_id_front
   );
   const philippinesIdBack = getImageSrc(
-    booking.philippinesIdBack 
-    || booking.philippines_id_back
-    || booking.identityDocuments?.philippinesIdBack
+    booking.identityDocuments?.philippinesIdBack
     || booking.collections?.identityDocuments?.philippinesIdBack
+    || booking.philippinesIdBack 
+    || booking.philippines_id_back
   );
   const faceScanImage = getImageSrc(
     booking.face_scan_image 
     || booking.faceScanImage
   );
 
-  const baseCustomerImages: string[] = (
-    Array.isArray(booking.customerImages) ? booking.customerImages :
-    Array.isArray(booking.identityDocuments?.customerImages) ? booking.identityDocuments.customerImages :
-    Array.isArray(booking.collections?.identityDocuments?.customerImages) ? booking.collections.identityDocuments.customerImages :
-    []
-  ).filter(Boolean);
+  // Collect customer images from all possible locations, prioritizing identityDocuments (primary source)
+  const allCustomerImages: string[] = [];
+  
+  // First, add from identityDocuments (primary source based on actual data structure)
+  if (Array.isArray(booking.identityDocuments?.customerImages)) {
+    allCustomerImages.push(...booking.identityDocuments.customerImages);
+  }
+  
+  // Then add from collections
+  if (Array.isArray(booking.collections?.identityDocuments?.customerImages)) {
+    allCustomerImages.push(...booking.collections.identityDocuments.customerImages);
+  }
+  
+  // Then add from top-level customerImages
+  if (Array.isArray(booking.customerImages)) {
+    allCustomerImages.push(...booking.customerImages);
+  }
   
   // Add singular customerImage if it exists and is not already in the array
-  const singularCustomerImage = booking.customerImage || booking.identityDocuments?.customerImage;
-  const customerImages: string[] = singularCustomerImage && !baseCustomerImages.includes(singularCustomerImage)
-    ? [...baseCustomerImages, singularCustomerImage]
-    : baseCustomerImages;
+  // Prioritize identityDocuments.customerImage (where the actual data is)
+  const singularCustomerImage = booking.identityDocuments?.customerImage 
+    || booking.collections?.identityDocuments?.customerImage
+    || booking.customerImage;
+  const customerImages: string[] = singularCustomerImage && !allCustomerImages.includes(singularCustomerImage)
+    ? [...allCustomerImages, singularCustomerImage]
+    : allCustomerImages.filter(Boolean);
 
   return (
     <>
