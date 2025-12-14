@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useEffect, useMemo, memo, useCallback } from 'react';
+import { useState, useEffect, useMemo, memo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Table,
   TableBody,
@@ -32,6 +34,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { Eye, CheckCircle, XCircle, Image as ImageIcon, Printer } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import { createPortal } from 'react-dom';
 
 // Dynamically import heavy modal components to reduce initial bundle size
 const BookingReviewModal = dynamic(() => import('@/components/booking-review-modal'), {
@@ -48,6 +51,10 @@ export default function BookingRequestsPage() {
   const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('not reviewed'); // Default to showing only unreviewed
+  const [awbSearch, setAwbSearch] = useState('');
+  const [showAwbSuggestions, setShowAwbSuggestions] = useState(false);
+  const awbInputRef = useRef<HTMLInputElement>(null);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -358,18 +365,59 @@ export default function BookingRequestsPage() {
     }
   }, []);
 
+  // Helper function to extract AWB number from booking
+  const getAwbNumber = useCallback((booking: any): string => {
+    return (
+      booking.tracking_code ||
+      booking.awb_number ||
+      booking.request_id?.tracking_code ||
+      booking.request_id?.awb_number ||
+      booking._id?.toString() || // Use booking ID as fallback
+      ''
+    ).toLowerCase().trim();
+  }, []);
+
+  // Get unique AWB numbers from bookings for autocomplete
+  const availableAwbNumbers = useMemo(() => {
+    return Array.from(
+      new Set(
+        bookings
+          .map(getAwbNumber)
+          .filter(awb => awb.length > 0)
+      )
+    ).sort();
+  }, [bookings, getAwbNumber]);
+
+  // Filter AWB suggestions based on search input
+  const awbSuggestions = useMemo(() => {
+    return awbSearch.trim().length > 0
+      ? availableAwbNumbers.filter(awb => 
+          awb.includes(awbSearch.toLowerCase().trim())
+        ).slice(0, 10) // Limit to 10 suggestions
+      : [];
+  }, [awbSearch, availableAwbNumbers]);
+
   // Memoize filtered bookings to prevent unnecessary recalculations
   const filteredBookings = useMemo(() => {
     return bookings.filter(booking => {
       const bookingStatus = normalizeReviewStatus(booking.review_status);
       
+      // Status filter
+      let statusMatch = false;
       if (filterStatus === 'all') {
         // When showing all, still exclude reviewed bookings by default
-        return bookingStatus !== 'reviewed';
+        statusMatch = bookingStatus !== 'reviewed';
+      } else {
+        statusMatch = bookingStatus === filterStatus;
       }
-      return bookingStatus === filterStatus;
+      
+      // AWB search filter
+      const awbMatch = !awbSearch.trim() || 
+        getAwbNumber(booking).includes(awbSearch.toLowerCase().trim());
+      
+      return statusMatch && awbMatch;
     });
-  }, [bookings, filterStatus]);
+  }, [bookings, filterStatus, awbSearch, getAwbNumber]);
 
   // Pagination calculations
   const totalPages = Math.ceil(filteredBookings.length / itemsPerPage);
@@ -391,18 +439,93 @@ export default function BookingRequestsPage() {
           <CardTitle>Booking Requests</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-between mb-4">
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="not reviewed">Not Reviewed</SelectItem>
-                <SelectItem value="all">All (Excluding Reviewed)</SelectItem>
-                <SelectItem value="reviewed">Reviewed (Archive)</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="space-y-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="relative">
+                <Label htmlFor="awb-search">Search by AWB Number</Label>
+                <Input
+                  ref={awbInputRef}
+                  id="awb-search"
+                  type="text"
+                  placeholder="Enter AWB number..."
+                  value={awbSearch}
+                  onChange={(e) => {
+                    setAwbSearch(e.target.value);
+                    setShowAwbSuggestions(true);
+                    // Update dropdown position
+                    if (awbInputRef.current) {
+                      const rect = awbInputRef.current.getBoundingClientRect();
+                      setDropdownPosition({
+                        top: rect.bottom + window.scrollY + 4,
+                        left: rect.left + window.scrollX,
+                        width: rect.width,
+                      });
+                    }
+                  }}
+                  onFocus={() => {
+                    setShowAwbSuggestions(true);
+                    // Update dropdown position
+                    if (awbInputRef.current) {
+                      const rect = awbInputRef.current.getBoundingClientRect();
+                      setDropdownPosition({
+                        top: rect.bottom + window.scrollY + 4,
+                        left: rect.left + window.scrollX,
+                        width: rect.width,
+                      });
+                    }
+                  }}
+                  onBlur={() => {
+                    // Delay hiding suggestions to allow click
+                    setTimeout(() => setShowAwbSuggestions(false), 200);
+                  }}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="status-filter">Review Status</Label>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger id="status-filter">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="not reviewed">Not Reviewed</SelectItem>
+                    <SelectItem value="all">All (Excluding Reviewed)</SelectItem>
+                    <SelectItem value="reviewed">Reviewed (Archive)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
+
+          {/* AWB Suggestions Dropdown Portal */}
+          {typeof window !== 'undefined' && showAwbSuggestions && awbSuggestions.length > 0 && createPortal(
+            <div
+              className="fixed z-[9999] max-h-60 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md"
+              style={{
+                top: `${dropdownPosition.top}px`,
+                left: `${dropdownPosition.left}px`,
+                width: `${dropdownPosition.width}px`,
+              }}
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              <div className="p-1 max-h-60 overflow-auto">
+                {awbSuggestions.map((awb, index) => (
+                  <div
+                    key={index}
+                    className="relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 px-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setAwbSearch(awb);
+                      setShowAwbSuggestions(false);
+                    }}
+                  >
+                    {awb}
+                  </div>
+                ))}
+              </div>
+            </div>,
+            document.body
+          )}
 
           {loading ? (
             <div className="flex items-center justify-center py-8">
@@ -417,6 +540,7 @@ export default function BookingRequestsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>AWB Number</TableHead>
                     <TableHead>Customer Name</TableHead>
                     <TableHead>Receiver Name</TableHead>
                     <TableHead>Origin</TableHead>
@@ -428,8 +552,23 @@ export default function BookingRequestsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paginatedBookings.map((booking) => (
+                  {paginatedBookings.map((booking) => {
+                    const awbNumber = 
+                      booking.tracking_code ||
+                      booking.awb_number ||
+                      booking.request_id?.tracking_code ||
+                      booking.request_id?.awb_number ||
+                      booking._id?.toString() ||
+                      'N/A';
+                    
+                    return (
                     <TableRow key={booking._id}>
+                      <TableCell className="font-mono text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-muted-foreground">#</span>
+                          <span className="font-semibold">{awbNumber}</span>
+                        </div>
+                      </TableCell>
                       <TableCell className="font-medium">
                       {formatValue(getField(booking, ['customer_name','customerName','name','full_name','sender_name','customer','sender']))}
                       </TableCell>
@@ -499,7 +638,8 @@ export default function BookingRequestsPage() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

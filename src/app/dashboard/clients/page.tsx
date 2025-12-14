@@ -82,7 +82,7 @@ export default function ClientsPage() {
 
     useEffect(() => {
         loadClients();
-    }, [toast]);
+    }, []); // Load clients on component mount
 
     if (loading) {
         return (

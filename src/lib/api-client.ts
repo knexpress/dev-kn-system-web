@@ -359,8 +359,20 @@ class ApiClient {
   }
 
   // Activity last-updated (for per-tab new indicators)
+  // This endpoint is optional - gracefully handles 404 if not implemented
   async getActivityLastUpdated() {
-    return this.request('/activity/last-updated', {}, false); // no cache
+    const result = await this.request('/activity/last-updated', {}, false); // no cache
+    // If endpoint returns 404, treat it as optional and return success: false
+    // This prevents console errors for missing optional endpoints
+    if (!result.success && result.error && (
+      result.error.includes('404') || 
+      result.error.includes('Not Found') ||
+      result.error.includes('not found')
+    )) {
+      // Silently handle 404 - this endpoint is optional
+      return { success: false, error: undefined, data: undefined };
+    }
+    return result;
   }
 
   async createTicket(ticketData: any) {

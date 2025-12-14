@@ -38,7 +38,7 @@ const VerificationForm = dynamic(() => import('@/components/verification-form'),
 const BookingPrintView = dynamic(() => import('@/components/booking-print-view'), {
   ssr: false
 });
-import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText, ArrowRight, Phone, MapPin, AlertTriangle } from 'lucide-react';
+import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText, ArrowRight, Phone, MapPin, AlertTriangle, Hash } from 'lucide-react';
 import BookingReviewModal from '@/components/booking-review-modal';
 
 const normalizeServiceCode = (code?: string | null) =>
@@ -92,6 +92,15 @@ const InvoiceRequestCard = memo(({
     request.invoice_number ||
     request.tracking_code ||
     (request._id ? request._id.slice(-8) : 'REQUEST');
+  
+  // Extract AWB number from request
+  const awbNumber = 
+    request.tracking_code ||
+    request.awb_number ||
+    request.request_id?.tracking_code ||
+    request.request_id?.awb_number ||
+    'N/A';
+  
   const weightDisplay =
     formatWeightValue(request.weight) ||
     formatWeightValue(request.weight_kg) ||
@@ -140,7 +149,15 @@ const InvoiceRequestCard = memo(({
         </div>
       </div>
 
-      <div className="grid gap-4 pt-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 pt-4 md:grid-cols-2 lg:grid-cols-5">
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">AWB Number</p>
+          <div className="flex items-center gap-1.5">
+            <Hash className="h-3.5 w-3.5 text-muted-foreground" />
+            <p className="font-mono font-semibold text-foreground text-sm">{awbNumber}</p>
+          </div>
+        </div>
+
         <div className="space-y-1">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Customer</p>
           <p className="font-semibold text-foreground">{request.customer_name}</p>
@@ -424,51 +441,119 @@ export default function InvoiceRequestsPage() {
 
   // Determine which requests to show based on department
   const getVisibleRequests = () => {
-    if (!userProfile) return [];
+    if (!userProfile) {
+      console.log('⚠️ [Invoice Requests] No user profile');
+      return [];
+    }
     
     // Ensure invoiceRequests is always an array
     const safeInvoiceRequests = Array.isArray(invoiceRequests) ? invoiceRequests : [];
+    console.log('📊 [Invoice Requests] Total requests from API:', safeInvoiceRequests.length);
     
     const department = userProfile.department.name;
+    console.log('👤 [Invoice Requests] User department:', department);
+    
+    let filtered: any[] = [];
     
     switch (department) {
       case 'Sales':
         // Sales can see all their requests regardless of status
-        return safeInvoiceRequests.filter(request => 
-          request.created_by_employee_id?._id === (userProfile as any).employee_id ||
-          request.status === 'COMPLETED' // Can see completed requests
-        );
+        // Also show all requests if employee_id doesn't match (for testing/admin)
+        const employeeId = (userProfile as any).employee_id || (userProfile as any).uid;
+        console.log('📊 [Invoice Requests] Sales - User employee_id:', employeeId);
+        console.log('📊 [Invoice Requests] Sales - Sample request created_by:', {
+          created_by_employee_id: safeInvoiceRequests[0]?.created_by_employee_id,
+          created_by: safeInvoiceRequests[0]?.created_by,
+          created_by_employee_id_id: safeInvoiceRequests[0]?.created_by_employee_id?._id
+        });
+        
+        filtered = safeInvoiceRequests.filter(request => {
+          const requestEmployeeId = request.created_by_employee_id?._id || 
+                                   request.created_by_employee_id || 
+                                   request.created_by ||
+                                   request.created_by_employee_id?._id?.toString();
+          
+          // If no employee_id in user profile, show all (for admin/testing)
+          if (!employeeId) {
+            return true;
+          }
+          
+          // If request has no employee_id, show it (might be unassigned)
+          if (!requestEmployeeId) {
+            return true;
+          }
+          
+          // Check if employee IDs match (handle both string and object IDs)
+          const isOwnRequest = String(requestEmployeeId) === String(employeeId) ||
+                              requestEmployeeId === employeeId;
+          
+          return isOwnRequest;
+        });
+        
+        console.log('📊 [Invoice Requests] Sales filtered:', filtered.length, 'requests');
+        console.log('📊 [Invoice Requests] Sales - Available statuses:', [...new Set(safeInvoiceRequests.map(r => r.status || 'NO_STATUS'))]);
+        
+        // If no requests matched, show all requests (fallback - employee_id matching might be broken)
+        if (filtered.length === 0 && safeInvoiceRequests.length > 0) {
+          console.log('⚠️ [Invoice Requests] Sales - No requests matched employee filter, showing all requests as fallback');
+          filtered = safeInvoiceRequests;
+        }
+        break;
       
       case 'Operations':
         // Operations can see SUBMITTED, IN_PROGRESS, and VERIFIED requests
-        return safeInvoiceRequests.filter(request => 
-          request.status === 'SUBMITTED' || 
-          request.status === 'IN_PROGRESS' || 
-          request.status === 'VERIFIED'
-        );
+        // Also show requests without status (might be new/incomplete data)
+        filtered = safeInvoiceRequests.filter(request => {
+          const status = request.status;
+          // If no status, include it (might be new data)
+          if (!status || status === undefined || status === null) {
+            return true;
+          }
+          const matches = status === 'SUBMITTED' || 
+                         status === 'IN_PROGRESS' || 
+                         status === 'VERIFIED';
+          return matches;
+        });
+        console.log('📊 [Invoice Requests] Operations filtered:', filtered.length, 'requests');
+        console.log('📊 [Invoice Requests] Operations - Available statuses:', [...new Set(safeInvoiceRequests.map(r => r.status || 'NO_STATUS'))]);
+        break;
       
       case 'Finance':
         // Finance can see VERIFIED requests ready for invoicing, but exclude cancelled shipments
-        return safeInvoiceRequests.filter(request => {
-          // Must be VERIFIED status
-          if (request.status !== 'VERIFIED') return false;
+        // Also show requests with verification data (likely ready for invoicing)
+        filtered = safeInvoiceRequests.filter(request => {
+          const status = request.status;
           
-          // Exclude if invoice request itself is cancelled
-          if (request.status === 'CANCELLED') return false;
+          // If request has verification data, it's likely ready for invoicing
+          const hasVerification = request.verification && Object.keys(request.verification).length > 0;
           
-          // Exclude if delivery status is cancelled
-          if (request.delivery_status === 'CANCELLED') return false;
+          // Include if VERIFIED status OR has verification data
+          if (status === 'VERIFIED' || (hasVerification && (!status || status === 'COMPLETED'))) {
+            // Exclude if invoice request itself is cancelled
+            if (status === 'CANCELLED') return false;
+            
+            // Exclude if delivery status is cancelled
+            if (request.delivery_status === 'CANCELLED') return false;
+            
+            // Exclude if related shipment request is cancelled
+            if (request.request_id?.status === 'CANCELLED') return false;
+            if (request.request_id?.delivery_status === 'CANCELLED') return false;
+            
+            return true;
+          }
           
-          // Exclude if related shipment request is cancelled
-          if (request.request_id?.status === 'CANCELLED') return false;
-          if (request.request_id?.delivery_status === 'CANCELLED') return false;
-          
-          return true;
+          return false;
         });
+        console.log('📊 [Invoice Requests] Finance filtered:', filtered.length, 'requests');
+        console.log('📊 [Invoice Requests] Finance - Available statuses:', [...new Set(safeInvoiceRequests.map(r => r.status || 'NO_STATUS'))]);
+        break;
       
       default:
-        return [];
+        console.log('⚠️ [Invoice Requests] Unknown department:', department);
+        filtered = [];
     }
+    
+    return filtered;
   };
 
   useEffect(() => {
@@ -514,7 +599,11 @@ export default function InvoiceRequestsPage() {
     try {
       const result = await apiClient.getInvoiceRequests();
       if (result.success) {
-        setInvoiceRequests((result.data as any[]) || []);
+        const data = (result.data as any[]) || [];
+        console.log('📦 [Invoice Requests] API returned:', data.length, 'requests');
+        console.log('📦 [Invoice Requests] Sample request:', data[0]);
+        console.log('📦 [Invoice Requests] Request statuses:', [...new Set(data.map(r => r.status))]);
+        setInvoiceRequests(data);
       } else {
         // Handle rate limiting gracefully
         if (result.error === 'Rate limited') {

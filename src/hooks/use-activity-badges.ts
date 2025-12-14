@@ -54,10 +54,23 @@ export function useActivityBadges() {
     let timer: NodeJS.Timeout;
 
     const fetchData = async () => {
-      const res = await apiClient.getActivityLastUpdated();
-      if (!isMounted) return;
-      if (res.success && res.data && typeof res.data === 'object') {
-        setLastUpdated(res.data as ActivityMap);
+      try {
+        const res = await apiClient.getActivityLastUpdated();
+        if (!isMounted) return;
+        if (res.success && res.data && typeof res.data === 'object') {
+          setLastUpdated(res.data as ActivityMap);
+        }
+        // Silently ignore 404 errors - endpoint might not be implemented yet
+        // This is optional functionality for activity badges
+      } catch (error: any) {
+        // Silently handle errors (404, network issues, etc.)
+        // This endpoint is optional and shouldn't break the app if missing
+        if (isMounted && error?.message && !error.message.includes('404')) {
+          // Only log non-404 errors in development
+          if (process.env.NODE_ENV === 'development') {
+            console.debug('Activity last-updated endpoint not available:', error.message);
+          }
+        }
       }
     };
 

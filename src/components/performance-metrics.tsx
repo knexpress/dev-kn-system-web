@@ -94,16 +94,28 @@ export default function PerformanceMetrics({ department }: PerformanceMetricsPro
         setMetrics(performanceMetrics);
         setOverallScore(calculateOverallScore(performanceMetrics));
       } else {
-        // For other departments, use API endpoint
+        // For other departments (Sales, Operations, Finance, etc.), use API endpoint
+        console.log(`📊 [Performance Metrics] Fetching metrics for department: ${department}`);
         const response = await apiClient.getDepartmentPerformance(department);
+        console.log(`📊 [Performance Metrics] API response for ${department}:`, response);
+        
         if (response.success && response.data) {
           const performanceMetrics = getDepartmentPerformanceMetrics(department, response.data);
+          console.log(`📊 [Performance Metrics] Processed metrics for ${department}:`, performanceMetrics);
           setMetrics(performanceMetrics);
           setOverallScore(calculateOverallScore(performanceMetrics));
+        } else {
+          console.warn(`⚠️ [Performance Metrics] API returned error for ${department}:`, response.error);
+          // Set empty metrics if API fails
+          setMetrics([]);
+          setOverallScore(0);
         }
       }
     } catch (error) {
-      console.error('Error fetching performance data:', error);
+      console.error(`❌ [Performance Metrics] Error fetching performance data for ${department}:`, error);
+      // Set empty metrics on error
+      setMetrics([]);
+      setOverallScore(0);
     } finally {
       setLoading(false);
     }
