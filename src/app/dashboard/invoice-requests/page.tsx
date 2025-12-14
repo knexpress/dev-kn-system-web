@@ -491,17 +491,17 @@ export default function InvoiceRequestsPage() {
           
           // Include if VERIFIED status OR has verification data
           if (status === 'VERIFIED' || (hasVerification && (!status || status === 'COMPLETED'))) {
-            // Exclude if invoice request itself is cancelled
+          // Exclude if invoice request itself is cancelled
             if (status === 'CANCELLED') return false;
-            
-            // Exclude if delivery status is cancelled
-            if (request.delivery_status === 'CANCELLED') return false;
-            
-            // Exclude if related shipment request is cancelled
-            if (request.request_id?.status === 'CANCELLED') return false;
-            if (request.request_id?.delivery_status === 'CANCELLED') return false;
-            
-            return true;
+          
+          // Exclude if delivery status is cancelled
+          if (request.delivery_status === 'CANCELLED') return false;
+          
+          // Exclude if related shipment request is cancelled
+          if (request.request_id?.status === 'CANCELLED') return false;
+          if (request.request_id?.delivery_status === 'CANCELLED') return false;
+          
+          return true;
           }
           
           return false;
@@ -1125,7 +1125,7 @@ export default function InvoiceRequestsPage() {
         if (fixedInsuranceType === 'mobile') {
           insuranceChargeValue = 300;
         } else if (fixedInsuranceType === 'laptop') {
-          insuranceChargeValue = 400;
+          insuranceChargeValue = 450;
         } else {
           const manual = parseFloat(insuranceManualAmount);
           if (!insuranceManualAmount.trim() || isNaN(manual) || manual <= 0) {
@@ -1213,6 +1213,56 @@ export default function InvoiceRequestsPage() {
       
       console.log('Client created successfully with ID:', clientId);
       
+      // Extract shipment classification for tax calculation
+      const getShipmentClassification = (request: any): string | undefined => {
+        // First, try to get from verification.shipment_classification
+        const verificationClassification = 
+          request.verification?.shipment_classification ||
+          request.request_id?.verification?.shipment_classification;
+        
+        if (verificationClassification) {
+          return verificationClassification.toUpperCase();
+        }
+        
+        // If not found, check boxes for classification
+        const boxes = request.verification?.boxes || request.request_id?.verification?.boxes || [];
+        if (Array.isArray(boxes) && boxes.length > 0) {
+          // Check if any box is FLOWMIC or COMMERCIAL
+          const hasFlowmic = boxes.some((box: any) => {
+            const classification = (box.classification || '').toUpperCase();
+            return classification === 'FLOWMIC' || classification === 'PERSONAL';
+          });
+          const hasCommercial = boxes.some((box: any) => {
+            const classification = (box.classification || '').toUpperCase();
+            return classification === 'COMMERCIAL';
+          });
+          
+          if (hasCommercial) return 'COMMERCIAL';
+          if (hasFlowmic) return 'FLOWMIC';
+        }
+        
+        // Check top-level shipment classification
+        const topLevelClassification = 
+          request.shipment?.classification ||
+          request.request_id?.shipment?.classification ||
+          request.classification;
+        
+        if (topLevelClassification) {
+          return topLevelClassification.toUpperCase();
+        }
+        
+        // For PH_TO_UAE, default to GENERAL
+        if (isPhToUaeSelected) {
+          return 'GENERAL';
+        }
+        
+        return undefined;
+      };
+      
+      const shipmentClassification = getShipmentClassification(selectedRequestForInvoice);
+      console.log('📦 Extracted shipment classification:', shipmentClassification);
+      console.log('🚚 Service code (already extracted):', serviceCode);
+      
       const invoiceResult = await apiClient.createInvoiceUnified({
         request_id: (selectedRequestForInvoice as any)._id,
         client_id: clientId,
@@ -1224,6 +1274,8 @@ export default function InvoiceRequestsPage() {
           total: item.total
         })),
         tax_rate: taxRateForRequest,
+        service_code: serviceCode, // Send service code for backend route detection and tax calculation
+        shipment_classification: shipmentClassification, // Send classification for backend tax calculation
         has_delivery: needsDeliveryCharge, // Pass delivery flag based on receiver_delivery_option
         delivery_base_amount: isPhToUaeSelected && hasDelivery ? (parseFloat(deliveryBaseAmount) || 20) : undefined, // Base delivery amount for PH_TO_UAE
         customer_trn: customerTRN || undefined,
@@ -1819,7 +1871,7 @@ export default function InvoiceRequestsPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Invoice Requests ({filteredRequests.length})</CardTitle>
+          <CardTitle>Invoice Requests ({filteredRequests.length})</CardTitle>
             {userProfile?.department?.name === 'Sales' && (
               <AwbSearchDialog />
             )}
@@ -2032,7 +2084,7 @@ export default function InvoiceRequestsPage() {
                           className={`border rounded px-3 py-2 text-sm ${fixedInsuranceType === 'laptop' ? 'border-green-600 text-green-700 font-semibold' : 'border-gray-300 text-gray-700'}`}
                           onClick={() => setFixedInsuranceType('laptop')}
                         >
-                          Laptop (400 AED)
+                          Laptop (450 AED)
                         </button>
                         <button
                           type="button"
@@ -2062,7 +2114,7 @@ export default function InvoiceRequestsPage() {
                   )}
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
-                  Choose 1% of declared value or a fixed amount (mobile 300, laptop 400, or custom).
+                  Choose 1% of declared value or a fixed amount (mobile 300, laptop 450, or custom).
                 </p>
               </div>
             )}

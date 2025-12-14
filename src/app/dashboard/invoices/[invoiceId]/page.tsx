@@ -316,13 +316,25 @@ export default function InvoicePage() {
       return topClass === 'PERSONAL' || topClass === 'FLOWMIC';
     })();
     
-    // Use database values if available, otherwise recalculate
+    // Prioritize database values for tax_amount and total_amount
+    // Only recalculate if database values are missing or invalid
     let taxRate = parseDecimal(invoice.tax_rate || 0, 2);
     let taxAmount = parseDecimal(invoice.tax_amount || 0, 2);
     let total = parseDecimal(invoice.total_amount || 0, 2);
     
-    // If database values are missing or zero, recalculate
-    if (taxRate === 0 && taxAmount === 0) {
+    // Check if database has valid tax_amount and total_amount
+    const hasValidTaxAmount = taxAmount > 0 || (taxAmount === 0 && taxRate === 0);
+    const hasValidTotal = total > 0;
+    
+    // Only recalculate if database values are missing or invalid
+    if (!hasValidTaxAmount || !hasValidTotal) {
+      console.log('⚠️ Database tax/total values missing or invalid, recalculating...', {
+        taxAmount,
+        total,
+        hasValidTaxAmount,
+        hasValidTotal
+      });
+      
       if (isFlowmicOrPersonal && isUaeToPh) {
         // Flowmic/Personal UAE_TO_PH: 5% VAT included in subtotal (total = subtotal, VAT shown for display)
         taxRate = 5;
@@ -335,22 +347,17 @@ export default function InvoicePage() {
         total = parseDecimal(subtotal + taxAmount, 2);
       } else {
         // No tax
-        taxRate = 0;
+        taxRate = taxRate || 0;
         taxAmount = 0;
         total = subtotal;
       }
     } else {
-      // Database has tax values, use them but ensure total matches
-      // For flowmic UAE to PH: total should equal subtotal (VAT already included)
-      if (isFlowmicOrPersonal && isUaeToPh) {
-        // Recalculate VAT for display and set total = subtotal
-        taxRate = taxRate || 5;
-        taxAmount = parseDecimal((subtotal * taxRate) / 100, 2);
-        total = parseDecimal(subtotal, 2);
-      } else if (total === 0 || Math.abs(total - (subtotal + taxAmount)) > 0.01) {
-        // Recalculate total if it doesn't match (for non-flowmic UAE to PH)
-        total = parseDecimal(subtotal + taxAmount, 2);
-      }
+      // Database has valid values - use them directly
+      console.log('✅ Using database tax/total values:', {
+        taxRate,
+        taxAmount,
+        total
+      });
     }
 
     // Get AWB number - check direct field first, then request_id

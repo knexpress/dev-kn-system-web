@@ -23,7 +23,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { CheckCircle, FileCheck, Plus, Trash2, Package } from 'lucide-react';
+import { CheckCircle, FileCheck, Package } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -33,15 +33,6 @@ interface VerificationFormProps {
   currentUser: any;
 }
 
-interface Box {
-  id: string;
-  items: string;
-  classification: 'FLOWMIC' | 'COMMERCIAL' | 'GENERAL' | '';
-  quantity: number; // Number of identical boxes
-  length: string;
-  width: string;
-  height: string;
-}
 
 // Weight bracket configuration
 interface WeightBracket {
@@ -163,47 +154,6 @@ export default function VerificationForm({ request, onVerificationComplete, curr
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
 
-  // Initialize boxes from request data or create one empty box
-  const initialBoxes = request.verification?.boxes && Array.isArray(request.verification.boxes) && request.verification.boxes.length > 0
-    ? request.verification.boxes.map((box: any, index: number) => ({
-        id: `box-${index}`,
-        items: box.items || '',
-        classification: (box.classification || '').toUpperCase() === 'COMMERCIAL' ? 'COMMERCIAL' : 
-                       (box.classification || '').toUpperCase() === 'FLOWMIC' ? 'FLOWMIC' : 
-                       (box.classification || '').toUpperCase() === 'GENERAL' ? 'GENERAL' : '',
-        quantity: box.quantity && typeof box.quantity === 'number' && box.quantity > 0 ? box.quantity : 1,
-        length: box.length?.toString() || '',
-        width: box.width?.toString() || '',
-        height: box.height?.toString() || '',
-      }))
-    : [{ id: 'box-0', items: '', classification: '', quantity: 1, length: '', width: '', height: '' }];
-
-  const [boxes, setBoxes] = useState<Box[]>(initialBoxes);
-
-  // Check if verification is already completed (boxes should be locked)
-  const isVerificationCompleted = request.verification?.verified_at || request.status === 'VERIFIED' || request.status === 'COMPLETED';
-  const areBoxesLocked = isVerificationCompleted && initialBoxes.length > 0 && initialBoxes[0].length !== '';
-
-  // Calculate VM for a single box: (L x W x H) / 5500
-  const calculateVM = (length: string, width: string, height: string): number => {
-    const l = parseFloat(length) || 0;
-    const w = parseFloat(width) || 0;
-    const h = parseFloat(height) || 0;
-    if (l > 0 && w > 0 && h > 0) {
-      return (l * w * h) / 5500;
-    }
-    return 0;
-  };
-
-  // Calculate total VM for all boxes (must be defined before using it)
-  // VM is calculated per box, then multiplied by quantity
-  const totalVM = useMemo(() => {
-    return boxes.reduce((sum, box) => {
-      const boxVM = calculateVM(box.length, box.width, box.height);
-      const quantity = box.quantity > 0 ? box.quantity : 1;
-      return sum + (boxVM * quantity);
-    }, 0);
-  }, [boxes]);
 
   // Get service code from booking if available, otherwise use request data
   const getServiceCodeFromBooking = () => {
@@ -315,23 +265,27 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     requestIdService: request.request_id?.service
   });
 
+  // Determine initial route for classification default
+  const initialServiceCodeForRoute = initialServiceCode || request.service_code || request.verification?.service_code || '';
+  const isInitialPhToUae = initialServiceCodeForRoute.toUpperCase().includes('PH_TO_UAE');
+
   const [verificationData, setVerificationData] = useState({
     invoice_number: request.invoice_number || request.verification?.invoice_number || '',
     tracking_code: request.tracking_code || request.verification?.tracking_code || '',
     service_code: initialServiceCode,
     amount: request.amount?.toString() || request.verification?.amount?.toString() || '',
     actual_weight: request.weight?.toString() || request.verification?.actual_weight?.toString() || '',
+    volumetric_weight: request.verification?.volumetric_weight?.toString() || '',
     volume_cbm: request.volume_cbm?.toString() || request.verification?.volume_cbm?.toString() || '',
     receiver_address: request.receiver_address || request.verification?.receiver_address || '',
     receiver_phone: request.receiver_phone || request.verification?.receiver_phone || '',
     agents_name: request.verification?.agents_name || request.created_by_employee_id?.full_name || '',
-    shipment_classification: '', // Will be auto-determined from box classifications
+    shipment_classification: request.verification?.shipment_classification || (isInitialPhToUae ? 'GENERAL' : ''), // Default to GENERAL for PH→UAE
     weight_type: request.verification?.weight_type || '', // Will be auto-determined
     cargo_service: request.verification?.cargo_service || '',
     sender_details_complete: request.verification?.sender_details_complete || false,
     receiver_details_complete: request.verification?.receiver_details_complete || false,
-    number_of_boxes: request.verification?.number_of_boxes || 
-                      initialBoxes.reduce((sum, box) => sum + (box.quantity > 0 ? box.quantity : 1), 0).toString(),
+    number_of_boxes: request.verification?.number_of_boxes || '',
     verification_notes: request.verification?.verification_notes || '',
   });
 
@@ -340,29 +294,32 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     return parseFloat(verificationData.actual_weight) || 0;
   }, [verificationData.actual_weight]);
 
-  // Auto-determine weight type and chargeable weight (using totalVM directly)
-  const { chargeableWeight, determinedWeightType, volumetricWeight } = useMemo(() => {
-    const volWeight = totalVM;
-    const actWeight = parseFloat(verificationData.actual_weight) || 0;
+  // Calculate volumetric weight from input
+  const volumetricWeight = useMemo(() => {
+    return parseFloat(verificationData.volumetric_weight) || 0;
+  }, [verificationData.volumetric_weight]);
+
+  // Auto-determine weight type and chargeable weight (comparing actual vs volumetric)
+  const { chargeableWeight, determinedWeightType } = useMemo(() => {
+    const volWeight = volumetricWeight;
+    const actWeight = actualWeight;
     
     if (actWeight === 0 && volWeight === 0) {
-      return { chargeableWeight: 0, determinedWeightType: '', volumetricWeight: 0 };
+      return { chargeableWeight: 0, determinedWeightType: '' };
     }
     
     if (actWeight >= volWeight) {
       return { 
         chargeableWeight: actWeight, 
-        determinedWeightType: 'ACTUAL',
-        volumetricWeight: volWeight
+        determinedWeightType: 'ACTUAL'
       };
     } else {
       return { 
         chargeableWeight: volWeight, 
-        determinedWeightType: 'VOLUMETRIC',
-        volumetricWeight: volWeight
+        determinedWeightType: 'VOLUMETRIC'
       };
     }
-  }, [totalVM, verificationData.actual_weight]);
+  }, [actualWeight, volumetricWeight]);
 
   // Update service code when booking data is available
   useEffect(() => {
@@ -384,61 +341,6 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     request.request_id?.service,
     request.request_id?.service_code
   ]);
-
-  // Auto-determine shipment classification from box classifications
-  const autoDeterminedShipmentClassification = useMemo(() => {
-    const serviceCode = (verificationData.service_code || request.service_code || '').toUpperCase();
-    const isPhToUae = serviceCode.includes('PH_TO_UAE');
-
-    // PH → UAE: Always treated as GENERAL (no flowmic/commercial)
-    if (isPhToUae) {
-      return 'GENERAL';
-    }
-
-    if (boxes.length === 0) return '';
-    
-    // If any box is Commercial, the shipment is Commercial
-    const hasCommercial = boxes.some(box => box.classification === 'COMMERCIAL');
-    if (hasCommercial) {
-      return 'COMMERCIAL';
-    }
-    
-    // If any box is Flowmic, the shipment is Personal (Flowmic)
-    const hasFlowmic = boxes.some(box => box.classification === 'FLOWMIC');
-    if (hasFlowmic) {
-      return 'PERSONAL'; // Flowmic is treated as Personal
-    }
-    
-    // If no classification set yet, return empty
-    return '';
-  }, [boxes, verificationData.service_code, request.service_code]);
-
-  // Update verificationData when classification changes
-  useEffect(() => {
-    if (autoDeterminedShipmentClassification && 
-        autoDeterminedShipmentClassification !== verificationData.shipment_classification) {
-      setVerificationData(prev => ({
-        ...prev,
-        shipment_classification: autoDeterminedShipmentClassification
-      }));
-    }
-  }, [autoDeterminedShipmentClassification]);
-
-  // Calculate total number of boxes (sum of all quantities)
-  const totalNumberOfBoxes = useMemo(() => {
-    return boxes.reduce((sum, box) => {
-      const quantity = box.quantity > 0 ? box.quantity : 1;
-      return sum + quantity;
-    }, 0);
-  }, [boxes]);
-
-  // Update number_of_boxes when total changes
-  useEffect(() => {
-    setVerificationData(prev => ({
-      ...prev,
-      number_of_boxes: totalNumberOfBoxes.toString()
-    }));
-  }, [totalNumberOfBoxes]);
 
   // Determine route from service code (case-insensitive)
   const route = useMemo(() => {
@@ -469,22 +371,16 @@ export default function VerificationForm({ request, onVerificationComplete, curr
 
   const isPhToUaeRoute = route === 'PH_TO_UAE';
 
-  // PH → UAE: force box classification to GENERAL and set shipment classification
+  // Auto-set classification to GENERAL for PH→UAE routes
   useEffect(() => {
-    if (!isPhToUaeRoute) return;
+    if (route === 'PH_TO_UAE' && verificationData.shipment_classification !== 'GENERAL') {
+      setVerificationData(prev => ({
+        ...prev,
+        shipment_classification: 'GENERAL'
+      }));
+    }
+  }, [route, verificationData.shipment_classification]);
 
-    // Update boxes only if any is not GENERAL
-    setBoxes(prev => {
-      const needsUpdate = prev.some(box => box.classification !== 'GENERAL');
-      if (!needsUpdate) return prev;
-      return prev.map(box => ({ ...box, classification: 'GENERAL' }));
-    });
-
-    setVerificationData(prev => ({
-      ...prev,
-      shipment_classification: 'GENERAL',
-    }));
-  }, [isPhToUaeRoute]);
 
   // Auto-calculate amount per kg based on chargeable weight and route
   const { calculatedRate, rateBracket } = useMemo(() => {
@@ -564,85 +460,15 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     }
   }, [determinedWeightType]);
 
-  // Add a new box
-  const addBox = () => {
-    if (areBoxesLocked) {
-      toast({
-        variant: 'destructive',
-        title: 'Boxes Locked',
-        description: 'Cannot add boxes after verification is completed',
-      });
-      return;
-    }
-    const newBox: Box = {
-      id: `box-${Date.now()}`,
-      items: '',
-      classification: '',
-      quantity: 1,
-      length: '',
-      width: '',
-      height: '',
-    };
-    setBoxes([...boxes, newBox]);
-    // number_of_boxes will be auto-updated via useEffect
-  };
-
-  // Remove a box
-  const removeBox = (boxId: string) => {
-    if (areBoxesLocked) {
-      toast({
-        variant: 'destructive',
-        title: 'Boxes Locked',
-        description: 'Cannot remove boxes after verification is completed',
-      });
-      return;
-    }
-    if (boxes.length > 1) {
-      setBoxes(boxes.filter(box => box.id !== boxId));
-      // number_of_boxes will be auto-updated via useEffect
-    } else {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'At least one box is required',
-      });
-    }
-  };
-
-  // Update box data
-  const updateBox = (boxId: string, field: keyof Box, value: string | number) => {
-    if (areBoxesLocked) {
-      toast({
-        variant: 'destructive',
-        title: 'Boxes Locked',
-        description: 'Cannot modify boxes after verification is completed',
-      });
-      return;
-    }
-    setBoxes(boxes.map(box => 
-      box.id === boxId ? { ...box, [field]: value } : box
-    ));
-  };
 
   // Validation function to check if all required fields are completed
   const isVerificationComplete = () => {
-    // Check if all boxes have required fields
-    const boxesValid = boxes.every(box => 
-      box.items.trim() !== '' && 
-      (isPhToUaeRoute || box.classification !== '') && // Classification not required for PH→UAE (auto GENERAL)
-      box.quantity > 0 && // Quantity must be at least 1
-      box.length.trim() !== '' && 
-      box.width.trim() !== '' && 
-      box.height.trim() !== '' &&
-      parseFloat(box.length) > 0 &&
-      parseFloat(box.width) > 0 &&
-      parseFloat(box.height) > 0
-    );
-
     // Check if actual weight is provided
     const hasActualWeight = actualWeight > 0;
-    // Check if volumetric weight is calculated (at least one box with valid dimensions)
+    // Check if volumetric weight is provided
     const hasVolumetricWeight = volumetricWeight > 0;
+    // Check if classification is set (GENERAL for PH→UAE, or FLOWMIC/COMMERCIAL for UAE→PH)
+    const hasClassification = verificationData.shipment_classification !== '';
 
     return (
       verificationData.invoice_number &&
@@ -654,9 +480,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
       verificationData.receiver_address &&
       verificationData.receiver_phone &&
       verificationData.agents_name &&
-      boxesValid &&
-      boxes.length > 0 &&
-      autoDeterminedShipmentClassification && // Auto-determined from box classifications
+      hasClassification &&
       determinedWeightType && // Auto-determined weight type
       verificationData.cargo_service &&
       verificationData.number_of_boxes &&
@@ -681,37 +505,25 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     }
 
     try {
-      // Prepare box data for backend
-      const boxesData = boxes.map(box => ({
-        items: box.items,
-        classification: isPhToUaeRoute ? 'GENERAL' : box.classification, // Auto GENERAL for PH→UAE
-        quantity: box.quantity || 1, // Include quantity
-        length: parseFloat(box.length) || 0,
-        width: parseFloat(box.width) || 0,
-        height: parseFloat(box.height) || 0,
-        vm: calculateVM(box.length, box.width, box.height), // VM per box (not multiplied by quantity)
-      }));
-
       // Use calculated rate or the amount from verificationData (if manually overridden)
       const finalAmount = calculatedRate > 0 ? calculatedRate.toString() : verificationData.amount;
 
       // First update verification details
       const updateResult = await apiClient.updateVerification(request._id, {
         ...verificationData,
-        shipment_classification: autoDeterminedShipmentClassification, // Use auto-determined classification
+        shipment_classification: verificationData.shipment_classification, // Use selected classification
         amount: finalAmount, // Use auto-calculated amount
-        boxes: boxesData,
-        total_vm: totalVM,
+        boxes: [], // Box list is disregarded for now
+        total_vm: volumetricWeight, // Use volumetric weight input
         actual_weight: actualWeight,
         volumetric_weight: volumetricWeight,
         chargeable_weight: chargeableWeight,
         weight_type: determinedWeightType, // Auto-determined weight type
         rate_bracket: rateBracket?.label || '', // Store the bracket label
         calculated_rate: calculatedRate, // Store the calculated rate
-        number_of_boxes: totalNumberOfBoxes, // Use total number including quantities
+        number_of_boxes: parseInt(verificationData.number_of_boxes) || 1,
         weight: chargeableWeight, // Store the chargeable weight (higher of actual or volumetric)
-        // Keep listed_commodities for backward compatibility (concatenate all box items)
-        listed_commodities: boxes.map((box, index) => `Box ${index + 1}: ${box.items}`).join('; '),
+        listed_commodities: '', // Empty for now since boxes are disregarded
       });
 
       if (updateResult.success) {
@@ -787,7 +599,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
           <div className="border-l-4 border-purple-500 pl-4 space-y-4">
             <h3 className="font-semibold text-lg mb-4 text-purple-900">Invoice & Tracking Information</h3>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="invoice_number">Invoice Number *</Label>
                 <Input
@@ -811,7 +623,9 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                 />
                 <p className="text-xs text-muted-foreground mt-1">Matches AWB and cannot be edited here</p>
               </div>
-              
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="service_code">Service Code *</Label>
                 <Select
@@ -904,7 +718,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                 )}
                 {route && chargeableWeight === 0 && (
                   <p className="text-xs text-amber-600 mt-1">
-                    Enter Actual Weight and box dimensions to calculate rate bracket
+                    Enter Actual Weight and Volumetric Weight to calculate rate bracket
                   </p>
                 )}
                 {!route && (
@@ -918,6 +732,36 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                     Note: Rate is automatically calculated based on chargeable weight (actual or volumetric, whichever is higher) according to weight brackets.
                   </p>
                 )}
+              </div>
+              
+              <div>
+                <Label htmlFor="shipment_classification">
+                  Classification * {isPhToUaeRoute ? '(Auto: General for PH→UAE)' : '(UAE→Pinas: Flowmic/Commercial)'}
+                </Label>
+                {isPhToUaeRoute ? (
+                  <div className="p-2 bg-muted rounded border text-sm text-gray-600">
+                    General shipment (PH → UAE)
+                  </div>
+                ) : (
+                  <Select
+                    value={verificationData.shipment_classification}
+                    onValueChange={(value) => setVerificationData({ ...verificationData, shipment_classification: value })}
+                    required
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select classification" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FLOWMIC">Flowmic</SelectItem>
+                      <SelectItem value="COMMERCIAL">Commercial</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  {isPhToUaeRoute 
+                    ? 'PH → UAE shipments default to General classification'
+                    : 'Select Flowmic (Personal) or Commercial for UAE → Pinas shipments'}
+                </p>
               </div>
             </div>
             
@@ -969,10 +813,10 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                   {calculatedRate === 0 && route && chargeableWeight === 0 && (
                     <div className="text-xs space-y-1">
                       <p className="text-amber-600 font-medium">
-                        ⚠️ Enter Actual Weight and box dimensions to calculate rate
+                        ⚠️ Enter Actual Weight and Volumetric Weight to calculate rate
                       </p>
                       <p className="text-muted-foreground">
-                        Current: Actual Weight = {actualWeight.toFixed(2)} kg, Volumetric Weight = {totalVM.toFixed(2)} kg
+                        Current: Actual Weight = {actualWeight.toFixed(2)} kg, Volumetric Weight = {volumetricWeight.toFixed(2)} kg
                       </p>
                     </div>
                   )}
@@ -1006,6 +850,23 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                   onChange={(e) => setVerificationData({ ...verificationData, actual_weight: e.target.value })}
                   required
                 />
+              </div>
+              
+              <div>
+                <Label htmlFor="volumetric_weight">Volumetric Weight (kg) *</Label>
+                <Input
+                  id="volumetric_weight"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={verificationData.volumetric_weight}
+                  onChange={(e) => setVerificationData({ ...verificationData, volumetric_weight: e.target.value })}
+                  required
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Enter the calculated volumetric weight
+                </p>
               </div>
               
               <div>
@@ -1113,223 +974,6 @@ export default function VerificationForm({ request, onVerificationComplete, curr
             </div>
           </div>
 
-          {/* Box List */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label className="text-lg font-semibold">Box List *</Label>
-              {!areBoxesLocked && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addBox}
-                  className="flex items-center gap-2"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add Box
-                </Button>
-              )}
-              {areBoxesLocked && (
-                <div className="text-xs text-muted-foreground flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <span>Boxes locked - Verification completed</span>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-4">
-              {boxes.map((box, index) => (
-                <Card key={box.id} className="border-2">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <Package className="h-4 w-4" />
-                        Box {index + 1}
-                        {box.quantity > 1 && (
-                          <span className="text-sm font-normal text-blue-600 ml-1">
-                            (×{box.quantity})
-                          </span>
-                        )}
-                        {areBoxesLocked && (
-                          <span className="text-xs text-muted-foreground ml-2">(Locked)</span>
-                        )}
-                      </CardTitle>
-                      {!areBoxesLocked && boxes.length > 1 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeBox(box.id)}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {/* Classification, Quantity, and Items Description */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <Label htmlFor={`box-${box.id}-classification`}>
-                          Classification {isPhToUaeRoute ? '(Auto: General for PH→UAE)' : '*'}
-                        </Label>
-                        {isPhToUaeRoute ? (
-                          <div className="p-2 bg-muted rounded border text-sm text-gray-600">
-                            General shipment (PH → UAE)
-                          </div>
-                        ) : (
-                          <Select
-                            value={box.classification}
-                            onValueChange={(value) => updateBox(box.id, 'classification', value)}
-                            required
-                            disabled={areBoxesLocked}
-                          >
-                            <SelectTrigger className={areBoxesLocked ? 'bg-muted cursor-not-allowed' : ''}>
-                              <SelectValue placeholder="Select classification" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="FLOWMIC">Flowmic</SelectItem>
-                              <SelectItem value="COMMERCIAL">Commercial</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        )}
-                      </div>
-                      <div>
-                        <Label htmlFor={`box-${box.id}-quantity`}>Quantity *</Label>
-                        <Input
-                          id={`box-${box.id}-quantity`}
-                          type="number"
-                          min="1"
-                          step="1"
-                          placeholder="1"
-                          value={box.quantity || 1}
-                          onChange={(e) => {
-                            const qty = parseInt(e.target.value) || 1;
-                            updateBox(box.id, 'quantity', Math.max(1, qty));
-                          }}
-                          required
-                          disabled={areBoxesLocked}
-                          className={areBoxesLocked ? 'bg-muted cursor-not-allowed' : ''}
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Number of identical boxes
-                        </p>
-                      </div>
-                      <div>
-                        <Label htmlFor={`box-${box.id}-items`}>Items in Box {index + 1} *</Label>
-                        <Textarea
-                          id={`box-${box.id}-items`}
-                          placeholder="Enter items description..."
-                          value={box.items}
-                          onChange={(e) => updateBox(box.id, 'items', e.target.value)}
-                          rows={2}
-                          required
-                          disabled={areBoxesLocked}
-                          className={areBoxesLocked ? 'bg-muted cursor-not-allowed' : ''}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Dimensions */}
-                    <div className="grid grid-cols-3 gap-4">
-                      <div>
-                        <Label htmlFor={`box-${box.id}-length`}>Length (cm) *</Label>
-                        <Input
-                          id={`box-${box.id}-length`}
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          placeholder="0.00"
-                          value={box.length}
-                          onChange={(e) => updateBox(box.id, 'length', e.target.value)}
-                          required
-                          disabled={areBoxesLocked}
-                          className={areBoxesLocked ? 'bg-muted cursor-not-allowed' : ''}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor={`box-${box.id}-width`}>Width (cm) *</Label>
-                        <Input
-                          id={`box-${box.id}-width`}
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          placeholder="0.00"
-                          value={box.width}
-                          onChange={(e) => updateBox(box.id, 'width', e.target.value)}
-                          required
-                          disabled={areBoxesLocked}
-                          className={areBoxesLocked ? 'bg-muted cursor-not-allowed' : ''}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor={`box-${box.id}-height`}>Height (cm) *</Label>
-                        <Input
-                          id={`box-${box.id}-height`}
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          placeholder="0.00"
-                          value={box.height}
-                          onChange={(e) => updateBox(box.id, 'height', e.target.value)}
-                          required
-                          disabled={areBoxesLocked}
-                          className={areBoxesLocked ? 'bg-muted cursor-not-allowed' : ''}
-                        />
-                      </div>
-                    </div>
-
-                    {/* VM Calculation Display */}
-                    {box.length && box.width && box.height && 
-                     parseFloat(box.length) > 0 && parseFloat(box.width) > 0 && parseFloat(box.height) > 0 && (
-                      <div className="bg-blue-50 p-3 rounded-md">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-blue-900">
-                            Volumetric Weight (VM) {box.quantity > 1 && `× ${box.quantity}:`}
-                          </span>
-                          <span className="text-sm font-bold text-blue-700">
-                            {calculateVM(box.length, box.width, box.height).toFixed(2)} kg
-                            {box.quantity > 1 && (
-                              <span className="ml-2">
-                                = {(calculateVM(box.length, box.width, box.height) * box.quantity).toFixed(2)} kg (total)
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                        <div className="text-xs text-blue-600 mt-1">
-                          Formula: (L × W × H) / 5500 = ({box.length} × {box.width} × {box.height}) / 5500
-                          {box.quantity > 1 && ` × ${box.quantity} boxes`}
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            {/* Total VM Display */}
-            {totalVM > 0 && (
-              <Card className="bg-green-50 border-green-200">
-                <CardContent className="pt-6">
-                  <div className="flex items-center justify-between">
-                    <span className="text-lg font-semibold text-green-900">Total Volumetric Weight (VM):</span>
-                    <span className="text-2xl font-bold text-green-700">
-                      {totalVM.toFixed(2)} kg
-                    </span>
-                  </div>
-                  <div className="text-sm text-green-600 mt-2">
-                    Sum of all box VM calculations (including quantities)
-                    {totalNumberOfBoxes > boxes.length && (
-                      <span className="ml-2 font-medium">
-                        ({boxes.length} box type{boxes.length > 1 ? 's' : ''} × {totalNumberOfBoxes} total boxes)
-                      </span>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
 
           {/* Weight Comparison and Auto-Determination */}
           {actualWeight > 0 && volumetricWeight > 0 && (
@@ -1384,30 +1028,8 @@ export default function VerificationForm({ request, onVerificationComplete, curr
             </Card>
           )}
 
-          {/* Shipment Classification (Auto-Determined) and Weight Type (Read-Only) */}
+          {/* Weight Type (Read-Only) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="shipment_classification">Shipment Classification * (Auto-Determined)</Label>
-              <div className="p-3 bg-muted rounded-md border-2">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className={`h-5 w-5 ${
-                    autoDeterminedShipmentClassification === 'COMMERCIAL' ? 'text-orange-600' : 'text-blue-600'
-                  }`} />
-                  <div className="flex-1">
-                    <div className="text-sm font-semibold">
-                      {autoDeterminedShipmentClassification || 'Not Determined'}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {autoDeterminedShipmentClassification === 'COMMERCIAL' 
-                        ? 'At least one box is classified as Commercial'
-                        : autoDeterminedShipmentClassification === 'PERSONAL'
-                        ? 'All boxes are classified as Flowmic (Personal)'
-                        : 'Set classification for at least one box'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
             
             <div>
               <Label htmlFor="weight_type">Weight Type * (Auto-Determined - Cannot be changed)</Label>
@@ -1440,7 +1062,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                 </div>
                 {actualWeight === 0 || volumetricWeight === 0 ? (
                   <p className="text-xs text-muted-foreground">
-                    Enter Actual Weight and box dimensions to auto-determine weight type
+                    Enter Actual Weight and Volumetric Weight to auto-determine weight type
                   </p>
                 ) : (
                   <p className="text-xs text-amber-600 font-medium">
@@ -1470,15 +1092,20 @@ export default function VerificationForm({ request, onVerificationComplete, curr
             </div>
             
             <div>
-              <Label htmlFor="number_of_boxes">Total Number of Boxes * (Auto-Calculated)</Label>
+              <Label htmlFor="number_of_boxes">Total Number of Boxes *</Label>
               <Input
                 id="number_of_boxes"
                 type="number"
+                min="1"
+                step="1"
                 value={verificationData.number_of_boxes}
-                readOnly
-                className="bg-muted cursor-not-allowed"
+                onChange={(e) => setVerificationData({ ...verificationData, number_of_boxes: e.target.value })}
+                placeholder="Enter number of boxes"
                 required
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Enter the total number of boxes manually
+              </p>
             </div>
           </div>
 
