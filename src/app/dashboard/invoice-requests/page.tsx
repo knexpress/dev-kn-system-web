@@ -40,6 +40,7 @@ const BookingPrintView = dynamic(() => import('@/components/booking-print-view')
 });
 import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText, ArrowRight, Phone, MapPin, AlertTriangle, Hash } from 'lucide-react';
 import BookingReviewModal from '@/components/booking-review-modal';
+import AwbSearchDialog from '@/components/awb-search-dialog';
 
 const normalizeServiceCode = (code?: string | null) =>
   (code || '')
@@ -457,47 +458,8 @@ export default function InvoiceRequestsPage() {
     
     switch (department) {
       case 'Sales':
-        // Sales can see all their requests regardless of status
-        // Also show all requests if employee_id doesn't match (for testing/admin)
-        const employeeId = (userProfile as any).employee_id || (userProfile as any).uid;
-        console.log('📊 [Invoice Requests] Sales - User employee_id:', employeeId);
-        console.log('📊 [Invoice Requests] Sales - Sample request created_by:', {
-          created_by_employee_id: safeInvoiceRequests[0]?.created_by_employee_id,
-          created_by: safeInvoiceRequests[0]?.created_by,
-          created_by_employee_id_id: safeInvoiceRequests[0]?.created_by_employee_id?._id
-        });
-        
-        filtered = safeInvoiceRequests.filter(request => {
-          const requestEmployeeId = request.created_by_employee_id?._id || 
-                                   request.created_by_employee_id || 
-                                   request.created_by ||
-                                   request.created_by_employee_id?._id?.toString();
-          
-          // If no employee_id in user profile, show all (for admin/testing)
-          if (!employeeId) {
-            return true;
-          }
-          
-          // If request has no employee_id, show it (might be unassigned)
-          if (!requestEmployeeId) {
-            return true;
-          }
-          
-          // Check if employee IDs match (handle both string and object IDs)
-          const isOwnRequest = String(requestEmployeeId) === String(employeeId) ||
-                              requestEmployeeId === employeeId;
-          
-          return isOwnRequest;
-        });
-        
-        console.log('📊 [Invoice Requests] Sales filtered:', filtered.length, 'requests');
-        console.log('📊 [Invoice Requests] Sales - Available statuses:', [...new Set(safeInvoiceRequests.map(r => r.status || 'NO_STATUS'))]);
-        
-        // If no requests matched, show all requests (fallback - employee_id matching might be broken)
-        if (filtered.length === 0 && safeInvoiceRequests.length > 0) {
-          console.log('⚠️ [Invoice Requests] Sales - No requests matched employee filter, showing all requests as fallback');
-          filtered = safeInvoiceRequests;
-        }
+        // Sales can see all invoice requests without filtering
+        filtered = safeInvoiceRequests;
         break;
       
       case 'Operations':
@@ -1856,7 +1818,12 @@ export default function InvoiceRequestsPage() {
       {/* Invoice Requests Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Invoice Requests ({filteredRequests.length})</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Invoice Requests ({filteredRequests.length})</CardTitle>
+            {userProfile?.department?.name === 'Sales' && (
+              <AwbSearchDialog />
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (

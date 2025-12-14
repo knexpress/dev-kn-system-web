@@ -6,6 +6,7 @@ import PerformanceMetrics from '@/components/performance-metrics';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarChart3, TrendingUp, Users, Activity } from 'lucide-react';
 import Link from 'next/link';
+import AwbSearchDialog from '@/components/awb-search-dialog';
 
 export default function Dashboard() {
   const { userProfile, department } = useAuth();
@@ -22,15 +23,24 @@ export default function Dashboard() {
       {/* Welcome Section with Gradient */}
       <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-primary/10 via-primary/5 to-background p-8 border border-primary/20">
         <div className="relative z-10">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground mb-2">
-            Welcome back, <span className="text-gradient">{userProfile?.full_name?.split(' ')[0] || 'User'}</span>!
-          </h1>
-          <p className="text-base text-muted-foreground">
-            {department.name === 'Management' 
-              ? 'Company-wide performance overview and strategic insights.'
-              : `Performance overview for the ${department.name} department.`
-            }
-          </p>
+          <div className="flex items-start justify-between mb-2">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-foreground mb-2">
+                Welcome back, <span className="text-gradient">{userProfile?.full_name?.split(' ')[0] || 'User'}</span>!
+              </h1>
+              <p className="text-base text-muted-foreground">
+                {department.name === 'Management' 
+                  ? 'Company-wide performance overview and strategic insights.'
+                  : `Performance overview for the ${department.name} department.`
+                }
+              </p>
+            </div>
+            {department.name === 'Sales' && (
+              <div className="ml-4">
+                <AwbSearchDialog />
+              </div>
+            )}
+          </div>
         </div>
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
       </div>

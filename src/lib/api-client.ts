@@ -375,6 +375,14 @@ class ApiClient {
     return result;
   }
 
+  // Search AWB number by customer first name and last name
+  async searchAwbByName(firstName: string, lastName: string) {
+    return this.request('/bookings/search-awb-by-name', {
+      method: 'POST',
+      body: JSON.stringify({ firstName, lastName }),
+    }, false); // Don't cache search results
+  }
+
   async createTicket(ticketData: any) {
     return this.request('/tickets', {
       method: 'POST',
