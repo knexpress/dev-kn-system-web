@@ -374,10 +374,10 @@ export default function VerificationForm({ request, onVerificationComplete, curr
   // Auto-set classification to GENERAL for PH→UAE routes
   useEffect(() => {
     if (route === 'PH_TO_UAE' && verificationData.shipment_classification !== 'GENERAL') {
-      setVerificationData(prev => ({
-        ...prev,
+    setVerificationData(prev => ({
+      ...prev,
         shipment_classification: 'GENERAL'
-      }));
+    }));
     }
   }, [route, verificationData.shipment_classification]);
 
@@ -623,8 +623,8 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                 />
                 <p className="text-xs text-muted-foreground mt-1">Matches AWB and cannot be edited here</p>
               </div>
-            </div>
-            
+              </div>
+              
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="service_code">Service Code *</Label>

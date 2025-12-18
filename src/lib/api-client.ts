@@ -1049,6 +1049,40 @@ class ApiClient {
     });
   }
 
+  // Get bookings with verified invoices (for cargo status tracking)
+  async getBookingsWithVerifiedInvoices(useCache: boolean = true) {
+    return this.request('/bookings/verified-invoices', {}, useCache, 30000);
+  }
+
+  // Update booking shipment status
+  async updateBookingShipmentStatus(id: string, statusData: { shipment_status: string; updated_by?: string; notes?: string }) {
+    return this.request(`/bookings/${id}/shipment-status`, {
+      method: 'PUT',
+      body: JSON.stringify(statusData),
+    });
+  }
+
+  // Batch update shipment status for multiple bookings
+  async batchUpdateShipmentStatus(bookingIds: string[], statusData: { shipment_status: string; batch_no?: string; updated_by?: string; notes?: string }) {
+    return this.request('/bookings/batch/shipment-status', {
+      method: 'PUT',
+      body: JSON.stringify({ booking_ids: bookingIds, ...statusData }),
+    });
+  }
+
+  // Create batch and assign to bookings
+  async createBatch(batchData: { batch_no: string; booking_ids: string[]; created_by?: string; notes?: string }) {
+    return this.request('/bookings/batch/create', {
+      method: 'POST',
+      body: JSON.stringify(batchData),
+    });
+  }
+
+  // Get bookings by batch number
+  async getBookingsByBatch(batchNo: string, useCache: boolean = true) {
+    return this.request(`/bookings/batch/${batchNo}`, {}, useCache, 30000);
+  }
+
   // Health check
   async healthCheck() {
     return this.request('/health');
