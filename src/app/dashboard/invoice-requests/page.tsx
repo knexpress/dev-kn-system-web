@@ -38,7 +38,7 @@ const VerificationForm = dynamic(() => import('@/components/verification-form'),
 const BookingPrintView = dynamic(() => import('@/components/booking-print-view'), {
   ssr: false
 });
-import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText, ArrowRight, Phone, MapPin, AlertTriangle, Hash } from 'lucide-react';
+import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText, ArrowRight, Phone, MapPin, AlertTriangle, Hash, Download } from 'lucide-react';
 import BookingReviewModal from '@/components/booking-review-modal';
 
 const normalizeServiceCode = (code?: string | null) =>
@@ -217,7 +217,6 @@ const InvoiceRequestCard = memo(({
             <Badge variant="outline">
               {request.shipment_type === 'DOCUMENT' ? 'Document' : 'Non-Document'}
             </Badge>
-            {request.is_leviable && <Badge variant="secondary">Taxable</Badge>}
           </div>
           <p className="text-sm text-muted-foreground">
             Weight:{' '}
@@ -1163,6 +1162,128 @@ export default function InvoiceRequestsPage() {
       .replace(/\s+/g, ' ');
   };
 
+  const handleExportToExcel = async () => {
+    try {
+      // Dynamically import XLSX only when needed
+      const XLSX = await import('xlsx');
+      
+      console.log("Exporting invoice requests to Excel...");
+      
+      // Prepare data for export
+      const dataToExport = filteredRequests.map((request) => {
+        // Extract invoice number
+        let invoiceNumber = 
+          request.invoice_number ||
+          request.tracking_code ||
+          (request._id ? request._id.slice(-8) : '');
+        
+        // Format invoice number with INV- prefix
+        let formattedInvoiceNumber = 'N/A';
+        if (invoiceNumber && invoiceNumber !== 'N/A') {
+          if (invoiceNumber.startsWith('INV-')) {
+            formattedInvoiceNumber = invoiceNumber;
+          } else {
+            // Extract numeric part or use last 6 characters
+            const numericPart = invoiceNumber.replace(/\D/g, '').slice(-6) || invoiceNumber.slice(-6);
+            formattedInvoiceNumber = `INV-${numericPart.padStart(6, '0')}`;
+          }
+        }
+        
+        // Format created date
+        const createdDate = formatDateLabel(request.createdAt);
+        
+        // Extract AWB number
+        const awbNumber = 
+          request.tracking_code ||
+          request.awb_number ||
+          request.request_id?.tracking_code ||
+          request.request_id?.awb_number ||
+          'N/A';
+        
+        // Extract customer name
+        const customer = request.customer_name || 'N/A';
+        
+        // Extract sender phone number
+        const senderPhone = 
+          request.customer_phone ||
+          request.sender_phone ||
+          'N/A';
+        
+        // Extract receiver name
+        const receiver = request.receiver_name || 'N/A';
+        
+        // Extract receiver phone number
+        const receiverPhone = 
+          request.receiver_phone ||
+          request.verification?.receiver_phone ||
+          'N/A';
+        
+        // Extract route (origin to destination)
+        const routeFrom = request.origin_place || 'Not set';
+        const routeTo = request.destination_place || 'Not set';
+        const route = `${routeFrom} → ${routeTo}`;
+        
+        // Extract shipment type
+        const shipmentType = request.shipment_type === 'DOCUMENT' ? 'Document' : 'Non-Document';
+        
+        // Extract weight
+        const weight = formatWeightValue(request.weight) ||
+                     formatWeightValue(request.weight_kg) ||
+                     formatWeightValue(request.verification?.actual_weight) ||
+                     'N/A';
+        
+        // Extract boxes
+        const boxes = 
+          request.verification?.number_of_boxes ||
+          request.number_of_boxes ||
+          request.verification?.boxes?.length ||
+          'N/A';
+        
+        return {
+          'Invoice Number': formattedInvoiceNumber,
+          'Created Date': createdDate,
+          'Status': request.status || 'N/A',
+          'Delivery Status': request.delivery_status || 'PENDING',
+          'AWB Number': awbNumber,
+          'Customer': customer,
+          'Sender Phone': senderPhone,
+          'Receiver': receiver,
+          'Receiver Phone': receiverPhone,
+          'Route': route,
+          'Shipment': shipmentType,
+          'Non-Document': shipmentType === 'Non-Document' ? 'Yes' : 'No',
+          'Weight': weight !== 'N/A' ? `${weight} kg` : 'N/A',
+          'Boxes': boxes,
+        };
+      });
+      
+      // Create worksheet
+      const ws = XLSX.utils.json_to_sheet(dataToExport);
+      
+      // Create workbook
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Invoice Requests');
+      
+      // Generate filename with timestamp
+      const filename = `invoice-requests-${new Date().toISOString().split('T')[0]}.xlsx`;
+      
+      // Export file
+      XLSX.writeFile(wb, filename);
+      
+      toast({
+        title: "Export Successful",
+        description: `${dataToExport.length} invoice requests have been exported to ${filename}`,
+      });
+    } catch (error) {
+      console.error("Failed to export Excel file:", error);
+      toast({
+        variant: "destructive",
+        title: "Export Failed",
+        description: "There was an error exporting the Excel file.",
+      });
+    }
+  };
+
   const renderActionControls = (request: any) => {
     const departmentName = userProfile.department.name;
 
@@ -2060,7 +2181,20 @@ export default function InvoiceRequestsPage() {
       {/* Invoice Requests Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Invoice Requests ({filteredRequests.length})</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Invoice Requests ({filteredRequests.length})</CardTitle>
+            {filteredRequests.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportToExcel}
+                className="gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Download Excel
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
