@@ -51,6 +51,7 @@ const SHIPMENT_STATUSES = [
 
 interface Booking {
   _id: string;
+  awb?: string;
   tracking_code?: string;
   awb_number?: string;
   customer_name?: string;
@@ -116,12 +117,25 @@ export default function ReviewRequestsPage() {
 
   // Helper function to extract AWB number from booking
   const getAwbNumber = useCallback((booking: Booking): string => {
-    return (
+    const awb = (
+      booking.awb ||
       booking.tracking_code ||
       booking.awb_number ||
-      booking._id?.toString() ||
+      (booking as any).request_id?.awb ||
+      (booking as any).request_id?.tracking_code ||
+      (booking as any).request_id?.awb_number ||
+      (booking as any).booking?.awb ||
+      (booking as any).booking?.tracking_code ||
+      (booking as any).booking?.awb_number ||
       ''
-    ).toLowerCase().trim();
+    ).trim();
+    
+    // Don't return _id as AWB - only return if it's actually an AWB format
+    if (awb && awb !== booking._id?.toString() && (awb.length > 10 || /^[A-Z0-9]+$/i.test(awb))) {
+      return awb;
+    }
+    
+    return '';
   }, []);
 
   // Get unique AWB numbers from bookings for autocomplete
@@ -139,7 +153,7 @@ export default function ReviewRequestsPage() {
   const awbSuggestions = useMemo(() => {
     return awbSearch.trim().length > 0
       ? availableAwbNumbers.filter(awb => 
-          awb.includes(awbSearch.toLowerCase().trim())
+          awb.toLowerCase().includes(awbSearch.toLowerCase().trim())
         ).slice(0, 10)
       : [];
   }, [awbSearch, availableAwbNumbers]);
@@ -151,7 +165,7 @@ export default function ReviewRequestsPage() {
     }
     const searchLower = awbSearch.toLowerCase().trim();
     return bookings.filter(booking => 
-      getAwbNumber(booking).includes(searchLower)
+      getAwbNumber(booking).toLowerCase().includes(searchLower)
     );
   }, [bookings, awbSearch, getAwbNumber]);
 

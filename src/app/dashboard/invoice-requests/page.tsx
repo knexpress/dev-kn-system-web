@@ -40,7 +40,6 @@ const BookingPrintView = dynamic(() => import('@/components/booking-print-view')
 });
 import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText, ArrowRight, Phone, MapPin, AlertTriangle, Hash } from 'lucide-react';
 import BookingReviewModal from '@/components/booking-review-modal';
-import AwbSearchDialog from '@/components/awb-search-dialog';
 
 const normalizeServiceCode = (code?: string | null) =>
   (code || '')
@@ -115,10 +114,17 @@ const InvoiceRequestCard = memo(({
     request.verification?.boxes?.length;
   const actions = renderActionControls(request);
 
+  // Check if invoice is generated
+  const hasInvoice = !!(request.invoice_id || request.invoice_number);
+  
   return (
     <div
       key={request._id}
-      className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm transition hover:border-primary/40"
+      className={`rounded-2xl border p-4 shadow-sm transition ${
+        hasInvoice 
+          ? 'border-green-500/50 bg-green-50/30 hover:border-green-500/70' 
+          : 'border-border/60 bg-card hover:border-primary/40'
+      }`}
     >
       <div className="flex flex-col gap-3 border-b border-dashed pb-4 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-wrap items-center gap-3">
@@ -270,8 +276,17 @@ export default function InvoiceRequestsPage() {
   const [loading, setLoading] = useState(true);
   const [awbSearch, setAwbSearch] = useState('');
   const [showAwbSuggestions, setShowAwbSuggestions] = useState(false);
+  const [searchingBookings, setSearchingBookings] = useState(false);
+  const [foundBookings, setFoundBookings] = useState<any[]>([]);
+  const [awbSuggestions, setAwbSuggestions] = useState<string[]>([]);
   const awbInputRef = useRef<HTMLInputElement>(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
+  
+  // Name search state (single field for intelligent search)
+  const [nameSearch, setNameSearch] = useState('');
+  const [searchingByName, setSearchingByName] = useState(false);
+  const [nameSearchResults, setNameSearchResults] = useState<any[]>([]);
+  const [nameSearchAwbs, setNameSearchAwbs] = useState<string[]>([]);
   const [showInvoicePreview, setShowInvoicePreview] = useState(false);
   const [selectedRequestForInvoice, setSelectedRequestForInvoice] = useState(null);
   const [showTaxInputDialog, setShowTaxInputDialog] = useState(false);
@@ -556,9 +571,24 @@ export default function InvoiceRequestsPage() {
     };
   }, [showAwbSuggestions]);
 
-  const fetchInvoiceRequests = async () => {
+  const fetchInvoiceRequests = async (useCache: boolean = true) => {
     try {
-      const result = await apiClient.getInvoiceRequests();
+      // Request only essential fields for invoice-requests page for better performance
+      const essentialFields = [
+        '_id', 'status', 'delivery_status', 'createdAt', 'updatedAt',
+        'tracking_code', 'awb_number', 'awb',
+        'invoice_id', 'invoice_number',
+        'customer_name', 'customer_phone', 'customer_email',
+        'receiver_name', 'receiver_company', 'receiver_phone', 'receiver_address',
+        'origin_place', 'destination_place', 'service_code',
+        'weight', 'weight_kg', 'number_of_boxes',
+        'verification.actual_weight', 'verification.number_of_boxes', 'verification.chargeable_weight',
+        'verification.shipment_classification', 'verification.insured', 'verification.declared_value',
+        'verification.volumetric_weight',
+        'has_delivery', 'is_leviable', 'request_id'
+      ];
+      // Fetch all invoice requests across all pages to show complete list
+      const result = await apiClient.getAllInvoiceRequests(undefined, useCache, essentialFields);
       if (result.success) {
         const data = (result.data as any[]) || [];
         console.log('📦 [Invoice Requests] API returned:', data.length, 'requests');
@@ -604,7 +634,8 @@ export default function InvoiceRequestsPage() {
           title: 'Success',
           description: 'Status updated successfully',
         });
-        fetchInvoiceRequests();
+        apiClient.invalidateCache('/invoice-requests');
+        fetchInvoiceRequests(false); // Skip cache after status update
       } else {
         toast({
           variant: 'destructive',
@@ -629,7 +660,8 @@ export default function InvoiceRequestsPage() {
           title: 'Success',
           description: 'Delivery status updated successfully',
         });
-        fetchInvoiceRequests();
+        apiClient.invalidateCache('/invoice-requests');
+        fetchInvoiceRequests(false); // Skip cache after status update
       } else {
         toast({
           variant: 'destructive',
@@ -654,7 +686,8 @@ export default function InvoiceRequestsPage() {
           title: 'Success',
           description: 'Weight updated successfully',
         });
-        fetchInvoiceRequests();
+        apiClient.invalidateCache('/invoice-requests');
+        fetchInvoiceRequests(false); // Skip cache after verification complete
       } else {
         toast({
           variant: 'destructive',
@@ -681,7 +714,8 @@ export default function InvoiceRequestsPage() {
           title: 'Success',
           description: 'Invoice request cancelled and deleted successfully',
         });
-        fetchInvoiceRequests();
+        apiClient.invalidateCache('/invoice-requests');
+        fetchInvoiceRequests(false); // Skip cache after verification complete
       } else {
         toast({
           variant: 'destructive',
@@ -743,37 +777,175 @@ export default function InvoiceRequestsPage() {
   
   // Helper function to extract AWB number from request
   const getAwbNumber = (request: any): string => {
-    return (
+    const awb = (
+      request.awb ||
       request.tracking_code ||
       request.awb_number ||
+      request.request_id?.awb ||
       request.request_id?.tracking_code ||
       request.request_id?.awb_number ||
+      request.booking?.awb ||
+      request.booking?.tracking_code ||
+      request.booking?.awb_number ||
       ''
-    ).toLowerCase().trim();
+    ).trim();
+    
+    // Don't return _id as AWB - only return if it's actually an AWB format
+    if (awb && awb !== request._id?.toString() && (awb.length > 10 || /^[A-Z0-9]+$/i.test(awb))) {
+      return awb;
+    }
+    
+    return '';
   };
   
-  // Get unique AWB numbers from visible requests for autocomplete
-  const availableAwbNumbers = Array.from(
-    new Set(
-      safeVisibleRequests
-        .map(getAwbNumber)
-        .filter(awb => awb.length > 0)
-    )
-  ).sort();
-  
-  // Filter AWB suggestions based on search input
-  const awbSuggestions = awbSearch.trim().length > 0
-    ? availableAwbNumbers.filter(awb => 
-        awb.includes(awbSearch.toLowerCase().trim())
-      ).slice(0, 10) // Limit to 10 suggestions
-    : [];
-  
+  // Search bookings by AWB when user types
+  useEffect(() => {
+    const searchBookings = async () => {
+      if (!awbSearch.trim()) {
+        setFoundBookings([]);
+        setAwbSuggestions([]);
+        return;
+      }
+
+      // Debounce search
+      const timeoutId = setTimeout(async () => {
+        try {
+          setSearchingBookings(true);
+          const result = await apiClient.searchBookingsByAwb(awbSearch.trim());
+          if (result.success && result.data) {
+            const bookings = Array.isArray(result.data) ? result.data : [];
+            setFoundBookings(bookings);
+            
+            // Extract AWB numbers for suggestions
+            const awbNumbers = bookings
+              .map((booking: any) => 
+                booking.awb || 
+                booking.tracking_code || 
+                booking.awb_number || 
+                ''
+              )
+              .filter((awb: string) => awb && awb.toLowerCase().includes(awbSearch.toLowerCase().trim()))
+              .slice(0, 10);
+            setAwbSuggestions(awbNumbers);
+          } else {
+            setFoundBookings([]);
+            setAwbSuggestions([]);
+          }
+        } catch (error) {
+          console.error('Error searching bookings by AWB:', error);
+          setFoundBookings([]);
+          setAwbSuggestions([]);
+        } finally {
+          setSearchingBookings(false);
+        }
+      }, 300); // 300ms debounce
+
+      return () => clearTimeout(timeoutId);
+    };
+
+    searchBookings();
+  }, [awbSearch]);
+
+  // Intelligent name search - automatically filters as user types
+  useEffect(() => {
+    const searchByName = async () => {
+      if (!nameSearch.trim() || nameSearch.trim().length < 2) {
+        setNameSearchResults([]);
+        setNameSearchAwbs([]);
+        return;
+      }
+
+      try {
+        setSearchingByName(true);
+        
+        // Intelligently split name: first word = firstName, rest = lastName
+        const nameParts = nameSearch.trim().split(/\s+/);
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || nameParts[0] || ''; // If only one word, use it for both
+        
+        const result = await apiClient.searchAwbByName(
+          firstName,
+          lastName
+        );
+
+        if (result.success && result.data) {
+          const bookings = Array.isArray(result.data) ? result.data : [];
+          setNameSearchResults(bookings);
+          
+          // Extract AWB numbers from search results
+          const awbs = bookings
+            .map((booking: any) => {
+              return (
+                booking.awb ||
+                booking.tracking_code ||
+                booking.awb_number ||
+                booking.request_id?.awb ||
+                booking.request_id?.tracking_code ||
+                booking.request_id?.awb_number ||
+                null
+              );
+            })
+            .filter((awb: string | null) => awb && awb.trim() !== '');
+          
+          setNameSearchAwbs(awbs as string[]);
+        } else {
+          setNameSearchResults([]);
+          setNameSearchAwbs([]);
+        }
+      } catch (error) {
+        console.error('Error searching by name:', error);
+        setNameSearchResults([]);
+        setNameSearchAwbs([]);
+      } finally {
+        setSearchingByName(false);
+      }
+    };
+
+    // Debounce the search (300ms for faster response)
+    const timer = setTimeout(() => {
+      searchByName();
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [nameSearch]);
+
   const filteredRequests = safeVisibleRequests.filter(request => {
-    // AWB search filter
-    const awbMatch = !awbSearch.trim() || 
-      getAwbNumber(request).includes(awbSearch.toLowerCase().trim());
+    // If AWB search is active, filter by found bookings
+    if (awbSearch.trim() && foundBookings.length > 0) {
+      const requestAwb = getAwbNumber(request).toLowerCase().trim();
+      const matchesAwb = foundBookings.some((booking: any) => {
+        const bookingAwb = (
+          booking.awb || 
+          booking.tracking_code || 
+          booking.awb_number || 
+          ''
+        ).toLowerCase().trim();
+        return bookingAwb === requestAwb;
+      });
+      
+      // If name search is also active, check both
+      if (nameSearch.trim()) {
+        const requestAwbForName = getAwbNumber(request).toLowerCase();
+        const matchesName = nameSearchAwbs.length > 0 && nameSearchAwbs.some(awb => 
+          requestAwbForName === awb.toLowerCase()
+        );
+        return matchesAwb && matchesName;
+      }
+      
+      return matchesAwb;
+    }
     
-    return awbMatch;
+    // Fallback to frontend filtering if no backend results
+    const awbMatch = !awbSearch.trim() || 
+      getAwbNumber(request).toLowerCase().includes(awbSearch.toLowerCase().trim());
+    
+    // Name search filter - check if request AWB is in the name search results
+    const nameMatch = !nameSearch.trim() || 
+      (nameSearchAwbs.length > 0 && nameSearchAwbs.some(awb => 
+        getAwbNumber(request).toLowerCase() === awb.toLowerCase()
+      ));
+    
+    return awbMatch && nameMatch;
   });
 
   // Department-specific actions
@@ -792,7 +964,8 @@ export default function InvoiceRequestsPage() {
           title: 'Success',
           description: 'Request updated successfully',
         });
-        fetchInvoiceRequests();
+        apiClient.invalidateCache('/invoice-requests');
+        fetchInvoiceRequests(false); // Skip cache after verification complete
       }
     } catch (error) {
       toast({
@@ -1417,7 +1590,7 @@ export default function InvoiceRequestsPage() {
             setBatchNumber('');
             setPickupCharge('');
             setDeliveryCharge('');
-            fetchInvoiceRequests();
+            fetchInvoiceRequests(false); // Skip cache to get fresh data after invoice generation
             // Redirect to invoice page
             router.push(`/dashboard/invoices/${invoiceId}`);
           } else {
@@ -1431,7 +1604,7 @@ export default function InvoiceRequestsPage() {
             setBatchNumber('');
             setPickupCharge('');
             setDeliveryCharge('');
-            fetchInvoiceRequests();
+            fetchInvoiceRequests(false); // Skip cache to get fresh data after invoice generation
           }
         }
       } else {
@@ -1797,6 +1970,12 @@ export default function InvoiceRequestsPage() {
                     });
                   }
                 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    setShowAwbSuggestions(false);
+                  }
+                }}
                 onFocus={() => {
                   setShowAwbSuggestions(true);
                   // Update dropdown position
@@ -1815,12 +1994,35 @@ export default function InvoiceRequestsPage() {
                 }}
               />
             </div>
+            <div className="relative">
+              <Label htmlFor="name-search">Search by Customer Name</Label>
+              <Input
+                id="name-search"
+                type="text"
+                placeholder="Enter customer name (e.g., John Doe or John)..."
+                value={nameSearch}
+                onChange={(e) => setNameSearch(e.target.value)}
+              />
+              {searchingByName && (
+                <p className="text-xs text-muted-foreground mt-1">Searching...</p>
+              )}
+              {!searchingByName && nameSearch.trim().length >= 2 && nameSearchAwbs.length > 0 && (
+                <p className="text-xs text-green-600 mt-1">
+                  Found {nameSearchAwbs.length} AWB{nameSearchAwbs.length !== 1 ? 's' : ''}
+                </p>
+              )}
+              {!searchingByName && nameSearch.trim().length >= 2 && nameSearchAwbs.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  No bookings found for this name
+                </p>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
 
       {/* AWB Suggestions Dropdown Portal */}
-      {typeof window !== 'undefined' && showAwbSuggestions && awbSuggestions.length > 0 && createPortal(
+      {typeof window !== 'undefined' && showAwbSuggestions && (awbSuggestions.length > 0 || searchingBookings) && createPortal(
         <div
           className="fixed z-[9999] max-h-60 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md"
           style={{
@@ -1831,19 +2033,25 @@ export default function InvoiceRequestsPage() {
           onMouseDown={(e) => e.preventDefault()}
         >
           <div className="p-1 max-h-60 overflow-auto">
-            {awbSuggestions.map((awb, index) => (
-              <div
-                key={index}
-                className="relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 px-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  setAwbSearch(awb);
-                  setShowAwbSuggestions(false);
-                }}
-              >
-                {awb}
-              </div>
-            ))}
+            {searchingBookings ? (
+              <div className="px-2 py-1.5 text-sm text-muted-foreground">Searching bookings...</div>
+            ) : awbSuggestions.length === 0 && awbSearch.trim() ? (
+              <div className="px-2 py-1.5 text-sm text-muted-foreground">No bookings found</div>
+            ) : (
+              awbSuggestions.map((awb, index) => (
+                <div
+                  key={index}
+                  className="relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 px-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setAwbSearch(awb);
+                    setShowAwbSuggestions(false);
+                  }}
+                >
+                  {awb}
+                </div>
+              ))
+            )}
           </div>
         </div>,
         document.body
@@ -1852,12 +2060,7 @@ export default function InvoiceRequestsPage() {
       {/* Invoice Requests Table */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
           <CardTitle>Invoice Requests ({filteredRequests.length})</CardTitle>
-            {userProfile?.department?.name === 'Sales' && (
-              <AwbSearchDialog />
-            )}
-          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -2578,7 +2781,8 @@ export default function InvoiceRequestsPage() {
           }}
           onReviewComplete={() => {
             // Refresh data if needed
-            fetchInvoiceRequests();
+            apiClient.invalidateCache('/invoice-requests');
+        fetchInvoiceRequests(false); // Skip cache after verification complete
           }}
           currentUser={userProfile}
           viewOnly={true}

@@ -383,6 +383,14 @@ class ApiClient {
     }, false); // Don't cache search results
   }
 
+  // Search bookings by AWB number
+  async searchBookingsByAwb(awb: string, useCache: boolean = false) {
+    if (!awb || !awb.trim()) {
+      return { success: false, error: 'AWB number is required' };
+    }
+    return this.request(`/bookings/search-awb?awb=${encodeURIComponent(awb.trim())}`, {}, useCache, 10000); // Cache for 10 seconds
+  }
+
   async createTicket(ticketData: any) {
     return this.request('/tickets', {
       method: 'POST',
@@ -456,8 +464,102 @@ class ApiClient {
   }
 
   // Invoice Requests
-  async getInvoiceRequests() {
-    return this.request('/invoice-requests');
+  async getInvoiceRequests(page?: number, limit?: number, filters?: { status?: string; search?: string }, useCache: boolean = true, fields?: string[]) {
+    // If pagination parameters are provided, use paginated endpoint
+    if (page !== undefined && limit !== undefined) {
+      const queryParams = new URLSearchParams();
+      queryParams.append('page', page.toString());
+      queryParams.append('limit', limit.toString());
+      if (filters?.status && filters.status !== 'all') {
+        queryParams.append('status', filters.status);
+      }
+      if (filters?.search) {
+        queryParams.append('search', filters.search);
+      }
+      // Request only minimal fields for faster loading (if fields parameter provided)
+      if (fields && fields.length > 0) {
+        queryParams.append('fields', fields.join(','));
+      }
+      
+      const queryString = queryParams.toString();
+      const endpoint = `/invoice-requests?${queryString}`;
+      return this.request(endpoint, {}, useCache, 10000); // Cache for 10 seconds
+    }
+    
+    // Backward compatibility: return all requests without pagination
+    return this.request('/invoice-requests', {}, useCache, 10000); // Cache for 10 seconds
+  }
+
+  // Fetch all invoice requests across all pages (for invoice-requests page)
+  async getAllInvoiceRequests(filters?: { status?: string; search?: string }, useCache: boolean = true, fields?: string[]) {
+    const allRequests: any[] = [];
+    let currentPage = 1;
+    let totalPages = 1;
+    const limit = 50; // Fetch 50 per page for better performance
+    
+    do {
+      const queryParams = new URLSearchParams();
+      queryParams.append('page', currentPage.toString());
+      queryParams.append('limit', limit.toString());
+      
+      if (filters?.status && filters.status !== 'all') {
+        queryParams.append('status', filters.status);
+      }
+      if (filters?.search) {
+        queryParams.append('search', filters.search);
+      }
+      // Request only minimal fields for faster loading (if fields parameter provided)
+      if (fields && fields.length > 0) {
+        queryParams.append('fields', fields.join(','));
+      }
+      
+      const queryString = queryParams.toString();
+      const endpoint = `/invoice-requests?${queryString}`;
+      
+      const result = await this.request(endpoint, {}, useCache && currentPage === 1, 10000);
+      
+      if (result.success) {
+        // Check if response has pagination at root level
+        const pagination = (result as any).pagination;
+        const data = result.data;
+        
+        if (pagination && Array.isArray(data)) {
+          // Paginated response: { success: true, data: [...], pagination: {...} }
+          allRequests.push(...data);
+          totalPages = pagination.pages || 1;
+          currentPage++;
+        } else if (data && typeof data === 'object' && (data as any).pagination) {
+          // Paginated response: { success: true, data: { data: [...], pagination: {...} } }
+          const responseData = data as any;
+          if (Array.isArray(responseData.data)) {
+            allRequests.push(...responseData.data);
+            totalPages = responseData.pagination?.pages || 1;
+            currentPage++;
+          } else {
+            break; // No more data
+          }
+        } else if (Array.isArray(data)) {
+          // Non-paginated response (backward compatibility)
+          allRequests.push(...data);
+          break; // No pagination, we got all data
+        } else {
+          break; // No data or unexpected format
+        }
+      } else {
+        // Error occurred, break the loop
+        console.error('Error fetching invoice requests page', currentPage, ':', result.error);
+        break;
+      }
+    } while (currentPage <= totalPages);
+    
+    return {
+      success: true,
+      data: allRequests,
+      pagination: {
+        total: allRequests.length,
+        pages: totalPages
+      }
+    };
   }
 
   async getInvoiceRequestsByStatus(status: string) {

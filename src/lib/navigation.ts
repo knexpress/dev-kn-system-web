@@ -80,7 +80,7 @@ const allLinks: NavLink[] = [
     href: '/dashboard/reports/audit',
     label: 'Audit Report',
     icon: FileSearch,
-    departments: ['Finance', 'Management', 'Auditor'],
+    departments: ['Finance', 'Auditor'], // Removed 'Management' - managers should not see audit reports
   },
   {
     href: '/dashboard/users',

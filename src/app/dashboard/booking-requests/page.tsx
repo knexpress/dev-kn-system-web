@@ -187,8 +187,8 @@ export default function BookingRequestsPage() {
         title: 'Error',
         description: 'Failed to load full booking details. Showing cached data.',
       });
-      setSelectedBooking(booking);
-      setShowReviewModal(true);
+    setSelectedBooking(booking);
+    setShowReviewModal(true);
     } finally {
       setLoadingBookingDetails(false);
     }
@@ -220,8 +220,8 @@ export default function BookingRequestsPage() {
         title: 'Error',
         description: 'Failed to load full booking details. Showing cached data.',
       });
-      setSelectedBooking(booking);
-      setShowViewModal(true);
+    setSelectedBooking(booking);
+    setShowViewModal(true);
     } finally {
       setLoadingBookingDetails(false);
     }
@@ -261,8 +261,8 @@ export default function BookingRequestsPage() {
         title: 'Error',
         description: 'Failed to load full booking details. Showing cached data.',
       });
-      setBookingToPrint(booking);
-      setShowPrintView(true);
+    setBookingToPrint(booking);
+    setShowPrintView(true);
     } finally {
       setLoadingBookingDetails(false);
     }
@@ -366,14 +366,37 @@ export default function BookingRequestsPage() {
 
   // Helper function to extract AWB number from booking
   const getAwbNumber = useCallback((booking: any): string => {
-    return (
-      booking.tracking_code ||
+    // Always check both awb and tracking_code fields
+    // tracking_code can contain AWB when awb field is empty
+    const awb = (
+      booking.awb ||
       booking.awb_number ||
-      booking.request_id?.tracking_code ||
+      booking.awbNumber ||
+      booking.request_id?.awb ||
       booking.request_id?.awb_number ||
-      booking._id?.toString() || // Use booking ID as fallback
+      booking.request_id?.awbNumber ||
+      booking.booking?.awb ||
+      booking.booking?.awb_number ||
+      booking.booking?.awbNumber ||
+      // If no awb found, use tracking_code as AWB
+      booking.tracking_code ||
+      booking.trackingCode ||
+      booking.tracking_number ||
+      booking.request_id?.tracking_code ||
+      booking.request_id?.trackingCode ||
+      booking.request_id?.tracking_number ||
+      booking.booking?.tracking_code ||
+      booking.booking?.trackingCode ||
+      booking.booking?.tracking_number ||
       ''
-    ).toLowerCase().trim();
+    ).trim();
+    
+    // Don't return _id as AWB - return if it's not empty and not the _id
+    if (awb && awb.trim() !== '' && awb !== booking._id?.toString()) {
+      return awb.trim();
+    }
+    
+    return '';
   }, []);
 
   // Get unique AWB numbers from bookings for autocomplete
@@ -466,17 +489,17 @@ export default function BookingRequestsPage() {
               
               <div>
                 <Label htmlFor="status-filter">Review Status</Label>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <Select value={filterStatus} onValueChange={setFilterStatus}>
                   <SelectTrigger id="status-filter">
-                    <SelectValue placeholder="Filter by status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="not reviewed">Not Reviewed</SelectItem>
-                    <SelectItem value="all">All (Excluding Reviewed)</SelectItem>
-                    <SelectItem value="reviewed">Reviewed (Archive)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="not reviewed">Not Reviewed</SelectItem>
+                <SelectItem value="all">All (Excluding Reviewed)</SelectItem>
+                <SelectItem value="reviewed">Reviewed (Archive)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
             </div>
           </div>
 
@@ -536,20 +559,77 @@ export default function BookingRequestsPage() {
                 </TableHeader>
                 <TableBody>
                   {paginatedBookings.map((booking) => {
-                    const awbNumber = 
-                      booking.tracking_code ||
-                      booking.awb_number ||
-                      booking.request_id?.tracking_code ||
-                      booking.request_id?.awb_number ||
-                      booking._id?.toString() ||
-                      'N/A';
+                    // Extract AWB from various possible locations
+                    // Always check awb first, then tracking_code as fallback (tracking_code can contain AWB when awb is empty)
+                    let awbNumber: string = '';
+                    
+                    // Helper to check if value is valid (not empty, not null, not _id)
+                    const isValidAwb = (val: any): boolean => {
+                      if (!val) return false;
+                      const str = String(val).trim();
+                      return str !== '' && str !== booking._id?.toString() && str !== 'null' && str !== 'undefined';
+                    };
+                    
+                    // Try awb fields first, then tracking_code as fallback (tracking_code can contain AWB)
+                    const possibleFields = [
+                      // First try awb variants
+                      booking.awb,
+                      booking.awb_number,
+                      booking.awbNumber,
+                      booking.request_id?.awb,
+                      booking.request_id?.awb_number,
+                      booking.request_id?.awbNumber,
+                      booking.booking?.awb,
+                      booking.booking?.awb_number,
+                      booking.booking?.awbNumber,
+                      // If no awb found, use tracking_code as AWB (tracking_code can contain AWB when awb is empty)
+                      booking.tracking_code,
+                      booking.trackingCode,
+                      booking.tracking_number,
+                      booking.request_id?.tracking_code,
+                      booking.request_id?.trackingCode,
+                      booking.request_id?.tracking_number,
+                      booking.booking?.tracking_code,
+                      booking.booking?.trackingCode,
+                      booking.booking?.tracking_number,
+                    ];
+                    
+                    // Find first valid AWB value
+                    for (const field of possibleFields) {
+                      if (isValidAwb(field)) {
+                        awbNumber = String(field).trim();
+                        break;
+                      }
+                    }
+                    
+                    // Debug log for first booking when showing N/A (only in development)
+                    if (!awbNumber && paginatedBookings.indexOf(booking) === 0 && process.env.NODE_ENV === 'development') {
+                      console.log('🔍 [AWB Debug] No AWB found for booking:', {
+                        _id: booking._id,
+                        review_status: booking.review_status,
+                        filterStatus,
+                        availableFields: {
+                          tracking_code: booking.tracking_code,
+                          trackingCode: booking.trackingCode,
+                          awb: booking.awb,
+                          awb_number: booking.awb_number,
+                          awbNumber: booking.awbNumber,
+                          request_id_type: typeof booking.request_id,
+                          request_id_keys: booking.request_id ? Object.keys(booking.request_id) : null,
+                          booking_keys: booking.booking ? Object.keys(booking.booking) : null
+                        }
+                      });
+                    }
+                    
+                    // Don't show _id as AWB - show if it's not empty and not the _id
+                    const displayAwb = awbNumber || 'N/A';
                     
                     return (
                     <TableRow key={booking._id}>
                       <TableCell className="font-mono text-xs">
                         <div className="flex items-center gap-1.5">
                           <span className="text-muted-foreground">#</span>
-                          <span className="font-semibold">{awbNumber}</span>
+                          <span className="font-semibold">{displayAwb}</span>
                         </div>
                       </TableCell>
                       <TableCell className="font-medium">

@@ -6,7 +6,6 @@ import PerformanceMetrics from '@/components/performance-metrics';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarChart3, TrendingUp, Users, Activity } from 'lucide-react';
 import Link from 'next/link';
-import AwbSearchDialog from '@/components/awb-search-dialog';
 
 export default function Dashboard() {
   const { userProfile, department } = useAuth();
@@ -35,11 +34,6 @@ export default function Dashboard() {
                 }
               </p>
             </div>
-            {department.name === 'Sales' && (
-              <div className="ml-4">
-                <AwbSearchDialog />
-              </div>
-            )}
           </div>
         </div>
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
