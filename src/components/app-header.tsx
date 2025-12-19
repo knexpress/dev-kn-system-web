@@ -1,7 +1,6 @@
 'use client';
 
 import { SidebarTrigger } from '@/components/ui/sidebar';
-import { UserNav } from './user-nav';
 import { usePathname } from 'next/navigation';
 import { getNavigationLinks } from '@/lib/navigation';
 import { useAuth } from '@/hooks/use-auth';
@@ -20,9 +19,6 @@ export default function AppHeader() {
         <div className="h-2 w-2 rounded-full bg-primary shadow-lg shadow-primary/50 animate-pulse" />
         <div className="h-6 w-px bg-border/50" />
         <h1 className="text-lg font-bold tracking-tight text-foreground">{pageTitle}</h1>
-      </div>
-      <div className="ml-auto flex items-center gap-3">
-        <UserNav />
       </div>
     </header>
   );

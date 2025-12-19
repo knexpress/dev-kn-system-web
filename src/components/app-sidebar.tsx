@@ -7,6 +7,7 @@ import { getNavigationLinks } from '@/lib/navigation';
 import {
   SidebarContent,
   SidebarHeader,
+  SidebarFooter,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
@@ -15,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Truck } from 'lucide-react';
 import { useActivityBadges } from '@/hooks/use-activity-badges';
+import { UserNav } from './user-nav';
 
 export default function AppSidebar() {
   const { department } = useAuth();
@@ -100,6 +102,16 @@ export default function AppSidebar() {
           })}
         </SidebarMenu>
       </SidebarContent>
+      <SidebarFooter className="border-t border-sidebar-border/50 px-3 py-3 flex flex-col gap-3">
+        <div className="flex items-center justify-center">
+          <UserNav />
+        </div>
+        <div className="flex items-center justify-center">
+          <span className="text-xs text-sidebar-foreground/60 font-medium">
+            Version 1.8.1
+          </span>
+        </div>
+      </SidebarFooter>
     </>
   );
 }
