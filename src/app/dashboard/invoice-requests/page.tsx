@@ -268,7 +268,6 @@ InvoiceRequestCard.displayName = 'InvoiceRequestCard';
 export default function InvoiceRequestsPage() {
   const [invoiceRequests, setInvoiceRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterDeliveryStatus, setFilterDeliveryStatus] = useState('all');
   const [awbSearch, setAwbSearch] = useState('');
   const [showAwbSuggestions, setShowAwbSuggestions] = useState(false);
   const awbInputRef = useRef<HTMLInputElement>(null);
@@ -770,13 +769,11 @@ export default function InvoiceRequestsPage() {
     : [];
   
   const filteredRequests = safeVisibleRequests.filter(request => {
-    const deliveryStatusMatch = filterDeliveryStatus === 'all' || request.delivery_status === filterDeliveryStatus;
-    
     // AWB search filter
     const awbMatch = !awbSearch.trim() || 
       getAwbNumber(request).includes(awbSearch.toLowerCase().trim());
     
-    return deliveryStatusMatch && awbMatch;
+    return awbMatch;
   });
 
   // Department-specific actions
@@ -1817,21 +1814,6 @@ export default function InvoiceRequestsPage() {
                   setTimeout(() => setShowAwbSuggestions(false), 200);
                 }}
               />
-            </div>
-            
-            <div>
-              <Label htmlFor="delivery-status-filter">Delivery Status</Label>
-              <Select value={filterDeliveryStatus} onValueChange={setFilterDeliveryStatus}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Filter by delivery status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Delivery Statuses</SelectItem>
-                  <SelectItem value="PENDING">Pending</SelectItem>
-                  <SelectItem value="DELIVERED">Delivered</SelectItem>
-                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </div>
         </CardContent>

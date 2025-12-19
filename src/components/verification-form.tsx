@@ -269,6 +269,33 @@ export default function VerificationForm({ request, onVerificationComplete, curr
   const initialServiceCodeForRoute = initialServiceCode || request.service_code || request.verification?.service_code || '';
   const isInitialPhToUae = initialServiceCodeForRoute.toUpperCase().includes('PH_TO_UAE');
 
+  // Get insured and declared_value from request/booking
+  const getInsuredValue = () => {
+    return request.insured || 
+           request.booking?.insured || 
+           request.request_id?.insured || 
+           request.request_id?.booking?.insured || 
+           false;
+  };
+
+  const getDeclaredValue = () => {
+    const declaredValue = request.declared_value || 
+                         request.declaredAmount ||
+                         request.booking?.declared_value || 
+                         request.booking?.declaredAmount ||
+                         request.request_id?.declared_value ||
+                         request.request_id?.declaredAmount ||
+                         request.request_id?.booking?.declared_value ||
+                         request.request_id?.booking?.declaredAmount ||
+                         0;
+    
+    // Handle MongoDB Decimal128 format
+    if (typeof declaredValue === 'object' && declaredValue.$numberDecimal) {
+      return parseFloat(declaredValue.$numberDecimal).toString();
+    }
+    return declaredValue ? declaredValue.toString() : '';
+  };
+
   const [verificationData, setVerificationData] = useState({
     invoice_number: request.invoice_number || request.verification?.invoice_number || '',
     tracking_code: request.tracking_code || request.verification?.tracking_code || '',
@@ -287,6 +314,8 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     receiver_details_complete: request.verification?.receiver_details_complete || false,
     number_of_boxes: request.verification?.number_of_boxes || '',
     verification_notes: request.verification?.verification_notes || '',
+    declared_value: request.verification?.declared_value?.toString() || getDeclaredValue() || '',
+    insured: getInsuredValue(),
   });
 
   // Calculate actual weight
@@ -469,6 +498,16 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     const hasVolumetricWeight = volumetricWeight > 0;
     // Check if classification is set (GENERAL for PH→UAE, or FLOWMIC/COMMERCIAL for UAE→PH)
     const hasClassification = verificationData.shipment_classification !== '';
+    
+    // Check if insurance fields are required
+    const isUaeToPinas = route === 'UAE_TO_PH' || 
+                        (verificationData.service_code || '').toUpperCase().includes('UAE_TO_PH') ||
+                        (verificationData.service_code || '').toUpperCase().includes('UAE_TO_PINAS');
+    const isInsured = verificationData.insured === true || verificationData.insured === 'true';
+    const hasDeclaredValue = verificationData.declared_value && parseFloat(verificationData.declared_value) > 0;
+    
+    // If UAE_TO_PINAS and insured, declared_value is required
+    const insuranceFieldsValid = !(isUaeToPinas && isInsured) || hasDeclaredValue;
 
     return (
       verificationData.invoice_number &&
@@ -485,7 +524,8 @@ export default function VerificationForm({ request, onVerificationComplete, curr
       verificationData.cargo_service &&
       verificationData.number_of_boxes &&
       verificationData.sender_details_complete &&
-      verificationData.receiver_details_complete
+      verificationData.receiver_details_complete &&
+      insuranceFieldsValid // Insurance fields validation
     );
   };
 
@@ -508,8 +548,14 @@ export default function VerificationForm({ request, onVerificationComplete, curr
       // Use calculated rate or the amount from verificationData (if manually overridden)
       const finalAmount = calculatedRate > 0 ? calculatedRate.toString() : verificationData.amount;
 
-      // First update verification details
-      const updateResult = await apiClient.updateVerification(request._id, {
+      // Check if insurance fields are required
+      const isUaeToPinas = route === 'UAE_TO_PH' || 
+                          (verificationData.service_code || '').toUpperCase().includes('UAE_TO_PH') ||
+                          (verificationData.service_code || '').toUpperCase().includes('UAE_TO_PINAS');
+      const isInsured = verificationData.insured === true || verificationData.insured === 'true';
+      
+      // Prepare update data
+      const updateData: any = {
         ...verificationData,
         shipment_classification: verificationData.shipment_classification, // Use selected classification
         amount: finalAmount, // Use auto-calculated amount
@@ -524,7 +570,16 @@ export default function VerificationForm({ request, onVerificationComplete, curr
         number_of_boxes: parseInt(verificationData.number_of_boxes) || 1,
         weight: chargeableWeight, // Store the chargeable weight (higher of actual or volumetric)
         listed_commodities: '', // Empty for now since boxes are disregarded
-      });
+      };
+
+      // Add insurance fields for UAE_TO_PINAS with insured = true
+      if (isUaeToPinas && isInsured && verificationData.declared_value) {
+        updateData.declared_value = parseFloat(verificationData.declared_value) || 0;
+        updateData.insured = true;
+      }
+
+      // First update verification details
+      const updateResult = await apiClient.updateVerification(request._id, updateData);
 
       if (updateResult.success) {
         // Then complete verification
@@ -973,6 +1028,60 @@ export default function VerificationForm({ request, onVerificationComplete, curr
               />
             </div>
           </div>
+
+          {/* Insurance Information - Only for UAE_TO_PINAS with insured = true */}
+          {(() => {
+            const isUaeToPinas = route === 'UAE_TO_PH' || 
+                                (verificationData.service_code || '').toUpperCase().includes('UAE_TO_PH') ||
+                                (verificationData.service_code || '').toUpperCase().includes('UAE_TO_PINAS');
+            const isInsured = verificationData.insured === true || verificationData.insured === 'true';
+            const hasDeclaredValue = verificationData.declared_value && parseFloat(verificationData.declared_value) > 0;
+            
+            if (isUaeToPinas && isInsured && hasDeclaredValue) {
+              return (
+                <div className="border-l-4 border-indigo-500 pl-4 space-y-4 bg-indigo-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-lg mb-4 text-indigo-900">Insurance Information</h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="insured_checkbox" className="text-sm font-semibold text-gray-700">Insured</Label>
+                      <div className="mt-1 p-2 bg-white rounded border">
+                        <Badge variant="default" className="bg-green-100 text-green-800">
+                          ✓ Insured
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        This shipment is insured
+                      </p>
+                    </div>
+                    
+                    <div>
+                      <Label htmlFor="declared_value">Declared Value (AED) *</Label>
+                      <Input
+                        id="declared_value"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={verificationData.declared_value}
+                        onChange={(e) => setVerificationData({ ...verificationData, declared_value: e.target.value })}
+                        required
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Enter the declared value for insurance calculation (1% of declared value)
+                      </p>
+                      {verificationData.declared_value && parseFloat(verificationData.declared_value) > 0 && (
+                        <p className="text-xs text-blue-600 font-medium mt-1">
+                          Insurance Charge: {(parseFloat(verificationData.declared_value) * 0.01).toFixed(2)} AED
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
 
 
           {/* Weight Comparison and Auto-Determination */}

@@ -87,12 +87,19 @@ export default function BookingRequestsPage() {
 
   useEffect(() => {
     fetchBookings();
-  }, [filterStatus]);
+  }, [filterStatus, awbSearch]);
 
   const fetchBookings = async (useCache: boolean = true) => {
     try {
-      // Check cache first for instant display
-      const cacheKey = filterStatus === 'all' ? '/bookings' : `/bookings/status/${filterStatus}`;
+      // Build cache key with filters
+      const filters = {
+        status: filterStatus === 'all' ? undefined : filterStatus,
+        awb: awbSearch.trim() || undefined
+      };
+      const cacheKey = filterStatus === 'all' 
+        ? `/bookings${filters.awb ? `?awb=${filters.awb}` : ''}` 
+        : `/bookings/status/${filterStatus}${filters.awb ? `?awb=${filters.awb}` : ''}`;
+      
       const cached = apiCache.get(cacheKey, {});
       
       if (cached && cached.success && cached.data && useCache) {
@@ -109,31 +116,17 @@ export default function BookingRequestsPage() {
 
       let result;
       
+      // Send filters to backend - backend will filter full database
+      // Use getAllBookings methods to fetch all pages
       if (filterStatus === 'all') {
-        result = await apiClient.getBookings(useCache);
+        result = await apiClient.getAllBookings(filters, useCache);
       } else {
-        result = await apiClient.getBookingsByStatus(filterStatus, useCache);
+        result = await apiClient.getAllBookingsByStatus(filterStatus, { awb: filters.awb }, useCache);
       }
 
       if (result.success) {
-        let bookingData = Array.isArray(result.data) ? result.data : [];
-        console.log(`📦 Fetched ${bookingData.length} bookings for status: ${filterStatus}`);
-        
-        // If no results and we're filtering by status, try fetching all and filtering on frontend
-        if (bookingData.length === 0 && filterStatus !== 'all') {
-          console.log('⚠️ No bookings from filtered API, fetching all bookings to filter on frontend...');
-          const allBookingsResult = await apiClient.getBookings(false);
-          if (allBookingsResult.success) {
-            bookingData = Array.isArray(allBookingsResult.data) ? allBookingsResult.data : [];
-            console.log(`📦 Fetched ${bookingData.length} total bookings, will filter on frontend`);
-          }
-        }
-        
-        console.log('📦 Sample booking review_status values:', bookingData.slice(0, 3).map(b => ({
-          id: b._id,
-          review_status: b.review_status,
-          normalized: normalizeReviewStatus(b.review_status)
-        })));
+        const bookingData = Array.isArray(result.data) ? result.data : [];
+        console.log(`📦 Fetched ${bookingData.length} bookings from backend (all pages, status: ${filterStatus}, awb: ${awbSearch || 'none'})`);
         setBookings(bookingData);
       } else {
         // Only show error if we don't have cached data
@@ -148,7 +141,13 @@ export default function BookingRequestsPage() {
     } catch (error) {
       console.error('Error fetching bookings:', error);
       // Only show error if we don't have cached data
-      const cacheKey = filterStatus === 'all' ? '/bookings' : `/bookings/status/${filterStatus}`;
+      const filters = {
+        status: filterStatus === 'all' ? undefined : filterStatus,
+        awb: awbSearch.trim() || undefined
+      };
+      const cacheKey = filterStatus === 'all' 
+        ? `/bookings${filters.awb ? `?awb=${filters.awb}` : ''}` 
+        : `/bookings/status/${filterStatus}${filters.awb ? `?awb=${filters.awb}` : ''}`;
       const cached = apiCache.get(cacheKey, {});
       if (!cached || !cached.success) {
         toast({
@@ -231,7 +230,7 @@ export default function BookingRequestsPage() {
   const handleReviewComplete = () => {
     setShowReviewModal(false);
     setSelectedBooking(null);
-    // Invalidate cache and fetch fresh data
+    // Invalidate all booking caches and fetch fresh data
     apiCache.invalidate('/bookings');
     fetchBookings(false); // Don't use cache, get fresh data
   };
@@ -397,27 +396,11 @@ export default function BookingRequestsPage() {
       : [];
   }, [awbSearch, availableAwbNumbers]);
 
-  // Memoize filtered bookings to prevent unnecessary recalculations
+  // Backend handles filtering, so use bookings directly (already filtered)
+  // Only apply pagination on frontend
   const filteredBookings = useMemo(() => {
-    return bookings.filter(booking => {
-      const bookingStatus = normalizeReviewStatus(booking.review_status);
-      
-      // Status filter
-      let statusMatch = false;
-      if (filterStatus === 'all') {
-        // When showing all, still exclude reviewed bookings by default
-        statusMatch = bookingStatus !== 'reviewed';
-      } else {
-        statusMatch = bookingStatus === filterStatus;
-      }
-      
-      // AWB search filter
-      const awbMatch = !awbSearch.trim() || 
-        getAwbNumber(booking).includes(awbSearch.toLowerCase().trim());
-      
-      return statusMatch && awbMatch;
-    });
-  }, [bookings, filterStatus, awbSearch, getAwbNumber]);
+    return bookings; // Backend already filtered by status and AWB
+  }, [bookings]);
 
   // Pagination calculations
   const totalPages = Math.ceil(filteredBookings.length / itemsPerPage);

@@ -1017,8 +1017,69 @@ class ApiClient {
   }
 
   // Bookings
-  async getBookings(useCache: boolean = true) {
-    return this.request('/bookings', {}, useCache, 30000); // Cache for 30 seconds
+  async getBookings(filters?: { status?: string; awb?: string }, useCache: boolean = true) {
+    // Build query string from filters
+    const queryParams = new URLSearchParams();
+    if (filters?.status) queryParams.append('status', filters.status);
+    if (filters?.awb) queryParams.append('awb', filters.awb);
+    
+    const queryString = queryParams.toString();
+    const endpoint = queryString ? `/bookings?${queryString}` : '/bookings';
+    return this.request(endpoint, {}, useCache, 30000); // Cache for 30 seconds
+  }
+
+  // Fetch all pages of bookings (handles backend pagination)
+  async getAllBookings(filters?: { status?: string; awb?: string }, useCache: boolean = true) {
+    const allBookings: any[] = [];
+    let currentPage = 1;
+    let totalPages = 1;
+    
+    do {
+      // Build query string from filters and page
+      const queryParams = new URLSearchParams();
+      if (filters?.status) queryParams.append('status', filters.status);
+      if (filters?.awb) queryParams.append('awb', filters.awb);
+      queryParams.append('page', currentPage.toString());
+      
+      const queryString = queryParams.toString();
+      const endpoint = `/bookings?${queryString}`;
+      
+      const result = await this.request(endpoint, {}, useCache && currentPage === 1, 30000);
+      
+      if (result.success) {
+        // Check if response has pagination at root level
+        const pagination = (result as any).pagination;
+        const data = result.data;
+        
+        if (pagination && Array.isArray(data)) {
+          // Paginated response: { success: true, data: [...], pagination: {...} }
+          allBookings.push(...data);
+          totalPages = pagination.pages || 1;
+          currentPage++;
+        } else if (data && typeof data === 'object' && (data as any).pagination) {
+          // Paginated response: { success: true, data: { data: [...], pagination: {...} } }
+          const responseData = data as any;
+          if (Array.isArray(responseData.data)) {
+            allBookings.push(...responseData.data);
+          }
+          totalPages = responseData.pagination?.pages || 1;
+          currentPage++;
+        } else if (Array.isArray(data)) {
+          // Non-paginated response (backward compatibility)
+          allBookings.push(...data);
+          break;
+        } else {
+          break; // Unknown format
+        }
+      } else {
+        break; // Stop on error
+      }
+    } while (currentPage <= totalPages);
+    
+    return {
+      success: true,
+      data: allBookings
+    };
   }
 
   async getBooking(id: string, useCache: boolean = true) {
@@ -1031,8 +1092,69 @@ class ApiClient {
     return this.request(`/bookings/${id}/review`, {}, useCache, 0); // No cache for review data
   }
 
-  async getBookingsByStatus(reviewStatus: string, useCache: boolean = true) {
-    return this.request(`/bookings/status/${reviewStatus}`, {}, useCache, 30000); // Cache for 30 seconds
+  async getBookingsByStatus(reviewStatus: string, filters?: { awb?: string }, useCache: boolean = true) {
+    // Build query string from filters
+    const queryParams = new URLSearchParams();
+    if (filters?.awb) queryParams.append('awb', filters.awb);
+    
+    const queryString = queryParams.toString();
+    const endpoint = queryString ? `/bookings/status/${reviewStatus}?${queryString}` : `/bookings/status/${reviewStatus}`;
+    return this.request(endpoint, {}, useCache, 30000); // Cache for 30 seconds
+  }
+
+  // Fetch all pages of bookings by status (handles backend pagination)
+  async getAllBookingsByStatus(reviewStatus: string, filters?: { awb?: string }, useCache: boolean = true) {
+    const allBookings: any[] = [];
+    let currentPage = 1;
+    let totalPages = 1;
+    
+    do {
+      // Build query string from filters and page
+      const queryParams = new URLSearchParams();
+      if (filters?.awb) queryParams.append('awb', filters.awb);
+      queryParams.append('page', currentPage.toString());
+      
+      const queryString = queryParams.toString();
+      const endpoint = queryString 
+        ? `/bookings/status/${reviewStatus}?${queryString}` 
+        : `/bookings/status/${reviewStatus}?page=${currentPage}`;
+      
+      const result = await this.request(endpoint, {}, useCache && currentPage === 1, 30000);
+      
+      if (result.success) {
+        // Check if response has pagination at root level
+        const pagination = (result as any).pagination;
+        const data = result.data;
+        
+        if (pagination && Array.isArray(data)) {
+          // Paginated response: { success: true, data: [...], pagination: {...} }
+          allBookings.push(...data);
+          totalPages = pagination.pages || 1;
+          currentPage++;
+        } else if (data && typeof data === 'object' && (data as any).pagination) {
+          // Paginated response: { success: true, data: { data: [...], pagination: {...} } }
+          const responseData = data as any;
+          if (Array.isArray(responseData.data)) {
+            allBookings.push(...responseData.data);
+          }
+          totalPages = responseData.pagination?.pages || 1;
+          currentPage++;
+        } else if (Array.isArray(data)) {
+          // Non-paginated response (backward compatibility)
+          allBookings.push(...data);
+          break;
+        } else {
+          break; // Unknown format
+        }
+      } else {
+        break; // Stop on error
+      }
+    } while (currentPage <= totalPages);
+    
+    return {
+      success: true,
+      data: allBookings
+    };
   }
 
   async reviewBooking(id: string, reviewData: { reviewed_by_employee_id: string }) {
