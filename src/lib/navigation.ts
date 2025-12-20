@@ -104,7 +104,7 @@ const allLinks: NavLink[] = [
     href: '/dashboard/rejected-requests',
     label: 'Rejected Requests',
     icon: XCircle,
-    departments: ['Operations'],
+    departments: ['Sales', 'Operations'],
   },
   {
     href: '/dashboard/chat',
