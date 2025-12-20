@@ -787,11 +787,15 @@ export default function InvoiceRequestsPage() {
       request.booking?.tracking_code ||
       request.booking?.awb_number ||
       ''
-    ).trim();
+    ).toString().trim();
     
     // Don't return _id as AWB - only return if it's actually an AWB format
-    if (awb && awb !== request._id?.toString() && (awb.length > 10 || /^[A-Z0-9]+$/i.test(awb))) {
-      return awb;
+    // Made less strict: allow shorter AWBs and be more lenient with format
+    if (awb && awb !== request._id?.toString()) {
+      // Allow if it looks like an AWB (alphanumeric, reasonable length)
+      if (awb.length >= 3 && /^[A-Z0-9\-_]+$/i.test(awb)) {
+        return awb;
+      }
     }
     
     return '';
@@ -887,6 +891,8 @@ export default function InvoiceRequestsPage() {
             .filter((awb: string | null) => awb && awb.trim() !== '');
           
           setNameSearchAwbs(awbs as string[]);
+          console.log('🔍 [Name Search] Found AWBs:', awbs);
+          console.log('🔍 [Name Search] Bookings:', bookings);
         } else {
           setNameSearchResults([]);
           setNameSearchAwbs([]);
@@ -940,9 +946,32 @@ export default function InvoiceRequestsPage() {
     
     // Name search filter - check if request AWB is in the name search results
     const nameMatch = !nameSearch.trim() || 
-      (nameSearchAwbs.length > 0 && nameSearchAwbs.some(awb => 
-        getAwbNumber(request).toLowerCase() === awb.toLowerCase()
-      ));
+      (nameSearchAwbs.length > 0 && nameSearchAwbs.some(awb => {
+        const requestAwb = getAwbNumber(request).toLowerCase().trim();
+        const searchAwb = awb.toLowerCase().trim();
+        
+        // Debug logging
+        if (nameSearch.trim() && requestAwb && searchAwb) {
+          console.log('🔍 [Name Filter] Comparing:', {
+            requestAwb,
+            searchAwb,
+            exactMatch: requestAwb === searchAwb,
+            requestId: request._id,
+            invoiceNumber: request.invoice_number
+          });
+        }
+        
+        // Try exact match first
+        if (requestAwb === searchAwb) return true;
+        // Try partial match (in case of formatting differences)
+        if (requestAwb && searchAwb && (requestAwb.includes(searchAwb) || searchAwb.includes(requestAwb))) {
+          return true;
+        }
+        return false;
+      })) ||
+      // Fallback: if AWBs found but no match, try matching by customer name
+      (nameSearch.trim() && nameSearchAwbs.length > 0 && !getAwbNumber(request) && 
+       request.customer_name && request.customer_name.toLowerCase().includes(nameSearch.toLowerCase().trim()));
     
     return awbMatch && nameMatch;
   });
@@ -2128,9 +2157,21 @@ export default function InvoiceRequestsPage() {
                 <p className="text-xs text-muted-foreground mt-1">Searching...</p>
               )}
               {!searchingByName && nameSearch.trim().length >= 2 && nameSearchAwbs.length > 0 && (
-                <p className="text-xs text-green-600 mt-1">
-                  Found {nameSearchAwbs.length} AWB{nameSearchAwbs.length !== 1 ? 's' : ''}
-                </p>
+                <div className="mt-1 space-y-1">
+                  <p className="text-xs text-green-600">
+                    Found {nameSearchAwbs.length} AWB{nameSearchAwbs.length !== 1 ? 's' : ''}
+                  </p>
+                  <div className="text-xs text-muted-foreground">
+                    {nameSearchAwbs.map((awb, idx) => (
+                      <p key={idx} className="font-mono">AWB: {awb}</p>
+                    ))}
+                  </div>
+                  {filteredRequests.length === 0 && (
+                    <p className="text-xs text-orange-600 mt-1">
+                      No matching invoice requests found. The AWB may not be linked to an invoice request yet.
+                    </p>
+                  )}
+                </div>
               )}
               {!searchingByName && nameSearch.trim().length >= 2 && nameSearchAwbs.length === 0 && (
                 <p className="text-xs text-muted-foreground mt-1">
