@@ -944,8 +944,11 @@ export default function InvoiceRequestsPage() {
     const awbMatch = !awbSearch.trim() || 
       getAwbNumber(request).toLowerCase().includes(awbSearch.toLowerCase().trim());
     
-    // Name search filter - check if request AWB is in the name search results
+    // Name search filter - check customer name directly first, then AWB matching
     const nameMatch = !nameSearch.trim() || 
+      // Primary: Direct customer name matching (most reliable)
+      (request.customer_name && request.customer_name.toLowerCase().includes(nameSearch.toLowerCase().trim())) ||
+      // Secondary: Check if request AWB is in the name search results
       (nameSearchAwbs.length > 0 && nameSearchAwbs.some(awb => {
         const requestAwb = getAwbNumber(request).toLowerCase().trim();
         const searchAwb = awb.toLowerCase().trim();
@@ -969,9 +972,8 @@ export default function InvoiceRequestsPage() {
         }
         return false;
       })) ||
-      // Fallback: if AWBs found but no match, try matching by customer name
-      (nameSearch.trim() && nameSearchAwbs.length > 0 && !getAwbNumber(request) && 
-       request.customer_name && request.customer_name.toLowerCase().includes(nameSearch.toLowerCase().trim()));
+      // Fallback: Also check receiver name
+      (request.receiver_name && request.receiver_name.toLowerCase().includes(nameSearch.toLowerCase().trim()));
     
     return awbMatch && nameMatch;
   });
