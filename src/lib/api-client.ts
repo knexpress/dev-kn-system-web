@@ -1708,6 +1708,18 @@ class ApiClient {
       false // Don't cache PUT requests
     );
   }
+
+  /** Superadmin: pending EmPost shipment / invoice pushes */
+  async getEmpostPending(limit = 100) {
+    return this.request(`/empost/pending?limit=${limit}`, {}, false, 0);
+  }
+
+  async retryEmpostPending(id: string, type: 'shipment_creation' | 'invoice') {
+    return this.request('/empost/retry', {
+      method: 'POST',
+      body: JSON.stringify({ id, type }),
+    });
+  }
 }
 
 export const apiClient = new ApiClient();

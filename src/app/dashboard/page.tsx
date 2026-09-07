@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { getNavigationLinks } from '@/lib/navigation';
 import PerformanceMetrics from '@/components/performance-metrics';
 import DashboardWeather from '@/components/dashboard-weather';
+import EmpostPendingWidget from '@/components/empost-pending-widget';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Link from 'next/link';
 
@@ -11,6 +12,7 @@ export default function Dashboard() {
   const { userProfile, department } = useAuth();
 
   const quickLinks = getNavigationLinks(department).filter(link => link.href !== '/dashboard');
+  const isSuperAdmin = userProfile?.role === 'SUPERADMIN';
 
 
   if (!userProfile || !department) {
@@ -41,6 +43,9 @@ export default function Dashboard() {
         </div>
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
       </div>
+
+      {/* Superadmin: EmPost pending queue (shipment creation vs invoice) */}
+      {isSuperAdmin && <EmpostPendingWidget />}
 
       {/* Performance Metrics - Hidden for Operations, Sales, and Finance */}
       {department.name !== 'Operations' && department.name !== 'Sales' && department.name !== 'Finance' && (
