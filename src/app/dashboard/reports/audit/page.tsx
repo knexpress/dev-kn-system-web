@@ -4,10 +4,14 @@ import { useState, useEffect } from "react";
 import dynamic from 'next/dynamic';
 import { apiClient } from "@/lib/api-client";
 import { secureLog } from '@/lib/secure-logger';
+import { DashboardPageShell } from "@/components/dashboard/maglo-shell";
 
-// Dynamically import AuditReportTable to reduce initial bundle size
 const AuditReportTable = dynamic(() => import("@/components/audit-report-table"), {
-  loading: () => <div className="flex items-center justify-center h-64">Loading audit table...</div>,
+  loading: () => (
+    <div className="flex h-64 items-center justify-center text-sm text-slate-500">
+      Loading audit table...
+    </div>
+  ),
   ssr: false
 });
 
@@ -243,15 +247,17 @@ export default function AuditReportPage() {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-64">
-                <div className="text-lg">Loading audit data...</div>
-            </div>
+            <DashboardPageShell title="Audit Report">
+                <div className="flex h-64 items-center justify-center text-sm text-slate-500">
+                    Loading audit data...
+                </div>
+            </DashboardPageShell>
         );
     }
 
     return (
-        <div>
+        <DashboardPageShell title="Audit Report">
             <AuditReportTable data={allData} />
-        </div>
+        </DashboardPageShell>
     );
 }

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,6 +35,14 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { Package, Truck, Plane, MapPin, CheckCircle, Search, Layers, Hash, Filter } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import { cn } from '@/lib/utils';
+import {
+  DashboardPageShell,
+  ErpToolbar,
+  ErpGrid,
+  erpOutlineControlClass,
+  erpPrimaryButtonClass,
+} from '@/components/dashboard/maglo-shell';
 
 // Helper function to normalize service code
 const normalizeServiceCode = (code?: string | null) =>
@@ -465,72 +472,60 @@ export default function ReviewRequestsPage() {
 
 
   return (
-    <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5" />
-            Cargo Status Management
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+    <DashboardPageShell title="Cargo Status">
+      <ErpToolbar
+        title="Shipments"
+        filters={
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              ref={awbInputRef}
+              type="text"
+              placeholder="AWB number…"
+              value={awbSearch}
+              className={cn(erpOutlineControlClass(), 'w-[180px] pl-9 sm:w-[220px]')}
+              onChange={(e) => {
+                setAwbSearch(e.target.value);
+                setShowAwbSuggestions(true);
+                if (awbInputRef.current) {
+                  const rect = awbInputRef.current.getBoundingClientRect();
+                  setDropdownPosition({
+                    top: rect.bottom + window.scrollY + 4,
+                    left: rect.left + window.scrollX,
+                    width: rect.width,
+                  });
+                }
+              }}
+              onFocus={() => {
+                setShowAwbSuggestions(true);
+                if (awbInputRef.current) {
+                  const rect = awbInputRef.current.getBoundingClientRect();
+                  setDropdownPosition({
+                    top: rect.bottom + window.scrollY + 4,
+                    left: rect.left + window.scrollX,
+                    width: rect.width,
+                  });
+                }
+              }}
+              onBlur={() => {
+                setTimeout(() => setShowAwbSuggestions(false), 200);
+              }}
+            />
+          </div>
+        }
+        actions={
+          <Button
+            className={erpPrimaryButtonClass()}
+            onClick={() => setShowStatusDialog(true)}
+            disabled={selectedBookings.size === 0}
+          >
+            <Truck className="h-4 w-4 mr-2" />
+            Update Status ({selectedBookings.size})
+          </Button>
+        }
+      />
+      <div className="space-y-4 px-5 pb-5 sm:px-6">
           <div className="space-y-4 mb-4">
-            {/* Search and Actions Bar */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="relative">
-                <Label htmlFor="awb-search">Search by AWB Number</Label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    ref={awbInputRef}
-                    id="awb-search"
-                    type="text"
-                    placeholder="Enter AWB number..."
-                    value={awbSearch}
-                    className="pl-9"
-                    onChange={(e) => {
-                      setAwbSearch(e.target.value);
-                      setShowAwbSuggestions(true);
-                      if (awbInputRef.current) {
-                        const rect = awbInputRef.current.getBoundingClientRect();
-                        setDropdownPosition({
-                          top: rect.bottom + window.scrollY + 4,
-                          left: rect.left + window.scrollX,
-                          width: rect.width,
-                        });
-                      }
-                    }}
-                    onFocus={() => {
-                      setShowAwbSuggestions(true);
-                      if (awbInputRef.current) {
-                        const rect = awbInputRef.current.getBoundingClientRect();
-                        setDropdownPosition({
-                          top: rect.bottom + window.scrollY + 4,
-                          left: rect.left + window.scrollX,
-                          width: rect.width,
-                        });
-                      }
-                    }}
-                    onBlur={() => {
-                      setTimeout(() => setShowAwbSuggestions(false), 200);
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-end gap-2">
-                <Button
-                  variant="default"
-                  onClick={() => setShowStatusDialog(true)}
-                  disabled={selectedBookings.size === 0}
-                  className="flex items-center gap-2"
-                >
-                  <Truck className="h-4 w-4" />
-                  Update Status ({selectedBookings.size})
-                </Button>
-              </div>
-            </div>
-
             {/* AWB Suggestions Dropdown */}
             {typeof window !== 'undefined' && showAwbSuggestions && awbSuggestions.length > 0 && createPortal(
               <div
@@ -621,7 +616,7 @@ export default function ReviewRequestsPage() {
               <p className="text-muted-foreground">No bookings found</p>
             </div>
           ) : (
-            <div className="rounded-md border">
+            <ErpGrid className="!px-0" maxHeight="min(55vh, 600px)">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -762,10 +757,9 @@ export default function ReviewRequestsPage() {
                   })}
                 </TableBody>
               </Table>
-            </div>
+            </ErpGrid>
           )}
-        </CardContent>
-      </Card>
+        </div>
 
       {/* Status Update Dialog */}
       <Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
@@ -862,6 +856,6 @@ export default function ReviewRequestsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </DashboardPageShell>
   );
 }

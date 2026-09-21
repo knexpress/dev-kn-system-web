@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
@@ -12,19 +13,16 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from '@/components/ui/sidebar';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { Truck } from 'lucide-react';
 import { useActivityBadges } from '@/hooks/use-activity-badges';
 import { UserNav } from './user-nav';
+import { cn } from '@/lib/utils';
 
 export default function AppSidebar() {
-  const { department } = useAuth();
+  const { department, userProfile } = useAuth();
   const pathname = usePathname();
   const { hasNew, markSeen } = useActivityBadges();
   const navLinks = getNavigationLinks(department);
 
-  // Map sidebar links to activity keys
   const activityKeyForHref = (href: string): string | undefined => {
     const map: Record<string, string> = {
       '/dashboard/invoices': 'invoices',
@@ -38,60 +36,93 @@ export default function AppSidebar() {
     return map[href];
   };
 
+  const isLinkActive = (href: string) => {
+    if (href === '/dashboard') return pathname === '/dashboard';
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
+
   return (
     <>
-      <SidebarHeader className="border-b border-sidebar-border/50 bg-gradient-to-r from-sidebar-background to-sidebar-accent/10">
-        <div className="flex h-14 items-center gap-3 px-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary/30 to-primary/20 shadow-lg">
-            <Truck className="h-6 w-6 text-primary-foreground" />
+      <SidebarHeader className="border-b border-white/10 bg-gradient-to-b from-emerald-950/40 to-transparent p-4">
+        <Link href="/dashboard" className="group flex items-center gap-3 rounded-2xl px-1 py-1 transition-colors">
+          <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-black ring-1 ring-white/15 shadow-lg shadow-black/30">
+            <Image
+              src="/KNEXPRESSGREEN.png"
+              alt="KN Express"
+              width={44}
+              height={44}
+              className="h-full w-full object-contain"
+              priority
+            />
           </div>
-          <div className="flex flex-col">
-            <span className="text-xl font-bold tracking-tight text-sidebar-foreground">KNEX</span>
-            <span className="text-xs text-sidebar-foreground/60 font-medium">Logistics System</span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold tracking-tight text-white">
+              KN Express
+            </p>
+            <p className="truncate text-[11px] text-slate-400">
+              {department?.name || 'Workspace'}
+            </p>
           </div>
-        </div>
+        </Link>
       </SidebarHeader>
-      <SidebarContent className="px-3 py-5">
-        <SidebarMenu className="space-y-1.5">
+
+      <SidebarContent className="px-3 py-4">
+        <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          Navigation
+        </p>
+        <SidebarMenu className="gap-1">
           {navLinks.map((link) => {
             const activityKey = activityKeyForHref(link.href);
             const hasNewFlag = activityKey ? hasNew[activityKey] : false;
-            const isActive = pathname === link.href;
+            const isActive = isLinkActive(link.href);
+            const Icon = link.icon;
+
             return (
               <SidebarMenuItem key={link.href}>
                 <SidebarMenuButton
                   asChild
                   isActive={isActive}
                   tooltip={{ children: link.label }}
-                  className="group relative transition-industrial hover:bg-sidebar-accent/60 data-[active=true]:bg-gradient-to-r data-[active=true]:from-sidebar-accent data-[active=true]:to-sidebar-accent/80 data-[active=true]:text-sidebar-accent-foreground data-[active=true]:font-semibold data-[active=true]:shadow-md"
+                  className={cn(
+                    'h-auto rounded-2xl px-0 py-0 transition-all duration-200',
+                    'hover:bg-transparent data-[active=true]:bg-transparent'
+                  )}
                 >
-                  <Link 
-                    href={link.href} 
-                    className="flex items-center justify-between w-full px-3 py-3 rounded-lg"
+                  <Link
+                    href={link.href}
                     onClick={() => {
                       if (activityKey) markSeen(activityKey);
                     }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`flex h-8 w-8 items-center justify-center rounded-md transition-all ${
-                        isActive 
-                          ? 'bg-primary/20 text-primary shadow-sm' 
-                          : 'bg-sidebar-accent/30 text-sidebar-foreground/70 group-hover:bg-primary/20 group-hover:text-primary'
-                      }`}>
-                        <link.icon className="h-4 w-4" />
-                      </div>
-                      <span className="text-sm font-medium">{link.label}</span>
-                    </div>
-                    {hasNewFlag && (
-                      <Badge 
-                        variant="destructive" 
-                        className="ml-auto h-6 min-w-[10px] rounded-full px-2 text-[10px] font-bold flex items-center justify-center transition-industrial hover:scale-110 shadow-sm"
-                      >
-                        •
-                      </Badge>
+                    className={cn(
+                      'group relative flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors duration-200',
+                      isActive
+                        ? 'bg-emerald-500/15 text-white'
+                        : 'text-slate-400 hover:bg-white/5 hover:text-slate-100'
                     )}
+                  >
                     {isActive && (
-                      <div className="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-1.5 rounded-r-full bg-primary shadow-lg" />
+                      <span className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full bg-emerald-400" />
+                    )}
+                    <span
+                      className={cn(
+                        'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors',
+                        isActive
+                          ? 'bg-emerald-500/25 text-emerald-300'
+                          : 'text-slate-500 group-hover:text-slate-300'
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span
+                      className={cn(
+                        'min-w-0 flex-1 truncate text-sm tracking-tight',
+                        isActive ? 'font-semibold' : 'font-medium'
+                      )}
+                    >
+                      {link.label}
+                    </span>
+                    {hasNewFlag && (
+                      <span className="flex h-2 w-2 shrink-0 rounded-full bg-rose-400 shadow-[0_0_0_3px_rgba(251,113,133,0.25)]" />
                     )}
                   </Link>
                 </SidebarMenuButton>
@@ -100,14 +131,23 @@ export default function AppSidebar() {
           })}
         </SidebarMenu>
       </SidebarContent>
-      <SidebarFooter className="border-t border-sidebar-border/50 px-3 py-3 flex flex-col gap-3">
-        <div className="flex items-center justify-center">
-          <UserNav />
-        </div>
-        <div className="flex items-center justify-center">
-          <span className="text-xs text-sidebar-foreground/60 font-medium">
-            Version 1.8.1
-          </span>
+
+      <SidebarFooter className="border-t border-white/10 p-3">
+        <div className="rounded-2xl bg-white/5 p-3 ring-1 ring-white/10">
+          <div className="flex items-center gap-3">
+            <UserNav variant="sidebar" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-white">
+                {userProfile?.full_name?.split(' ')[0] || 'User'}
+              </p>
+              <p className="truncate text-[11px] text-slate-400">
+                {userProfile?.email || 'Signed in'}
+              </p>
+            </div>
+          </div>
+          <p className="mt-3 text-center text-[10px] tracking-wide text-slate-500">
+            v1.8.1
+          </p>
         </div>
       </SidebarFooter>
     </>

@@ -155,31 +155,33 @@ export default function AddAccountDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Add Account</DialogTitle>
-          <DialogDescription>
-            Create a new account in the chart of accounts. Codes must be unique.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-w-lg gap-0 p-0 max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="border-b border-border/60 px-4 py-3 shrink-0">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base">Add Account</DialogTitle>
+            <DialogDescription className="text-xs">
+              Create a CoA account — codes must be unique.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
-        <div className="grid gap-4 py-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="account-code">Code *</Label>
+        <div className="flex-1 overflow-y-auto px-4 py-3 grid gap-3 text-xs">
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="space-y-1">
+              <Label htmlFor="account-code" className="text-[11px]">Code *</Label>
               <Input
                 id="account-code"
                 placeholder="e.g. 1150"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                className="font-mono"
+                className="h-8 font-mono text-xs"
                 autoFocus
               />
             </div>
-            <div className="space-y-2">
-              <Label>Type *</Label>
+            <div className="space-y-1">
+              <Label className="text-[11px]">Type *</Label>
               <Select value={type} onValueChange={(v) => handleTypeChange(v as typeof type)}>
-                <SelectTrigger>
+                <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -193,20 +195,21 @@ export default function AddAccountDialog({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="account-name">Account name *</Label>
+          <div className="space-y-1">
+            <Label htmlFor="account-name" className="text-[11px]">Account name *</Label>
             <Input
               id="account-name"
               placeholder="e.g. Prepaid Expenses"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              className="h-8 text-xs"
             />
           </div>
 
-          <div className="space-y-2">
-            <Label>Subtype</Label>
+          <div className="space-y-1">
+            <Label className="text-[11px]">Subtype</Label>
             <Select value={subtype} onValueChange={setSubtype}>
-              <SelectTrigger>
+              <SelectTrigger className="h-8 text-xs">
                 <SelectValue placeholder="Select subtype" />
               </SelectTrigger>
               <SelectContent>
@@ -219,13 +222,13 @@ export default function AddAccountDialog({
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label>Parent account (optional)</Label>
+          <div className="space-y-1">
+            <Label className="text-[11px]">Parent account (optional)</Label>
             <Select
               value={parentCode || '__none__'}
               onValueChange={(v) => setParentCode(v === '__none__' ? '' : v)}
             >
-              <SelectTrigger>
+              <SelectTrigger className="h-8 text-xs">
                 <SelectValue placeholder="None" />
               </SelectTrigger>
               <SelectContent>
@@ -239,40 +242,41 @@ export default function AddAccountDialog({
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="account-description">Description</Label>
+          <div className="space-y-1">
+            <Label htmlFor="account-description" className="text-[11px]">Description</Label>
             <Textarea
               id="account-description"
               placeholder="Optional notes about this account"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
+              className="text-xs min-h-[60px]"
             />
           </div>
 
-          <div className="flex flex-col gap-3 rounded-md border p-3">
+          <div className="flex flex-col gap-2.5 rounded-md border border-border/60 p-2.5">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium">Active</p>
-                <p className="text-xs text-muted-foreground">Inactive accounts are hidden from posting.</p>
+                <p className="text-xs font-medium">Active</p>
+                <p className="text-[10px] text-muted-foreground">Hidden from posting when inactive.</p>
               </div>
               <Switch checked={isActive} onCheckedChange={setIsActive} />
             </div>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium">Postable</p>
-                <p className="text-xs text-muted-foreground">Allow journal lines against this account.</p>
+                <p className="text-xs font-medium">Postable</p>
+                <p className="text-[10px] text-muted-foreground">Allow journal lines against this account.</p>
               </div>
               <Switch checked={isPostable} onCheckedChange={setIsPostable} />
             </div>
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+        <DialogFooter className="border-t border-border/60 px-4 py-2.5 shrink-0 sm:space-x-2">
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button size="sm" className="h-8 text-xs" onClick={handleSave} disabled={saving}>
             {saving ? 'Creating…' : 'Create Account'}
           </Button>
         </DialogFooter>

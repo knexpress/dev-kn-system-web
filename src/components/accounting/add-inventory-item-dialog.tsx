@@ -186,31 +186,33 @@ export default function AddInventoryItemDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Add Inventory Item</DialogTitle>
-          <DialogDescription>
-            Create a product/SKU with GL accounts for inventory, COGS, and sales.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-w-lg gap-0 p-0 max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="border-b border-border/60 px-4 py-3 shrink-0">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base">Add Inventory Item</DialogTitle>
+            <DialogDescription className="text-xs">
+              Create a SKU with inventory, COGS, and sales GL accounts.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
-        <div className="grid gap-4 py-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="item-sku">SKU *</Label>
+        <div className="flex-1 overflow-y-auto px-4 py-3 grid gap-3 text-xs">
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="space-y-1">
+              <Label htmlFor="item-sku" className="text-[11px]">SKU *</Label>
               <Input
                 id="item-sku"
                 placeholder="e.g. BOX-SML"
                 value={sku}
                 onChange={(e) => setSku(e.target.value.toUpperCase())}
-                className="font-mono"
+                className="h-8 font-mono text-xs"
                 autoFocus
               />
             </div>
-            <div className="space-y-2">
-              <Label>Unit *</Label>
+            <div className="space-y-1">
+              <Label className="text-[11px]">Unit *</Label>
               <Select value={unit} onValueChange={setUnit}>
-                <SelectTrigger>
+                <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -224,19 +226,20 @@ export default function AddInventoryItemDialog({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="item-name">Item name *</Label>
+          <div className="space-y-1">
+            <Label htmlFor="item-name" className="text-[11px]">Item name *</Label>
             <Input
               id="item-name"
               placeholder="e.g. Small Carton Box"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              className="h-8 text-xs"
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="item-qty">Opening qty</Label>
+          <div className="grid grid-cols-3 gap-2.5">
+            <div className="space-y-1">
+              <Label htmlFor="item-qty" className="text-[11px]">Opening qty</Label>
               <Input
                 id="item-qty"
                 type="number"
@@ -244,11 +247,11 @@ export default function AddInventoryItemDialog({
                 step="1"
                 value={qtyOnHand}
                 onChange={(e) => setQtyOnHand(e.target.value)}
-                className="font-mono"
+                className="h-8 font-mono text-xs"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="item-cost">Avg cost (AED)</Label>
+            <div className="space-y-1">
+              <Label htmlFor="item-cost" className="text-[11px]">Avg cost</Label>
               <Input
                 id="item-cost"
                 type="number"
@@ -256,11 +259,11 @@ export default function AddInventoryItemDialog({
                 step="0.01"
                 value={avgCost}
                 onChange={(e) => setAvgCost(e.target.value)}
-                className="font-mono"
+                className="h-8 font-mono text-xs"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="item-reorder">Reorder level</Label>
+            <div className="space-y-1">
+              <Label htmlFor="item-reorder" className="text-[11px]">Reorder</Label>
               <Input
                 id="item-reorder"
                 type="number"
@@ -268,15 +271,15 @@ export default function AddInventoryItemDialog({
                 step="1"
                 value={reorderLevel}
                 onChange={(e) => setReorderLevel(e.target.value)}
-                className="font-mono"
+                className="h-8 font-mono text-xs"
               />
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Inventory asset account</Label>
+          <div className="space-y-1">
+            <Label className="text-[11px]">Inventory asset account</Label>
             <Select value={assetAccount} onValueChange={setAssetAccount}>
-              <SelectTrigger>
+              <SelectTrigger className="h-8 text-xs">
                 <SelectValue>{accountLabel(assetAccount)}</SelectValue>
               </SelectTrigger>
               <SelectContent>
@@ -289,10 +292,10 @@ export default function AddInventoryItemDialog({
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label>COGS account</Label>
+          <div className="space-y-1">
+            <Label className="text-[11px]">COGS account</Label>
             <Select value={cogsAccount} onValueChange={setCogsAccount}>
-              <SelectTrigger>
+              <SelectTrigger className="h-8 text-xs">
                 <SelectValue>{accountLabel(cogsAccount)}</SelectValue>
               </SelectTrigger>
               <SelectContent>
@@ -305,10 +308,10 @@ export default function AddInventoryItemDialog({
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label>Income / sales account</Label>
+          <div className="space-y-1">
+            <Label className="text-[11px]">Income / sales account</Label>
             <Select value={incomeAccount} onValueChange={setIncomeAccount}>
-              <SelectTrigger>
+              <SelectTrigger className="h-8 text-xs">
                 <SelectValue>{accountLabel(incomeAccount)}</SelectValue>
               </SelectTrigger>
               <SelectContent>
@@ -321,20 +324,20 @@ export default function AddInventoryItemDialog({
             </Select>
           </div>
 
-          <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+          <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-2.5">
             <div>
-              <p className="text-sm font-medium">Active</p>
-              <p className="text-xs text-muted-foreground">Inactive items are hidden from stock movements.</p>
+              <p className="text-xs font-medium">Active</p>
+              <p className="text-[10px] text-muted-foreground">Hidden from stock movements when inactive.</p>
             </div>
             <Switch checked={isActive} onCheckedChange={setIsActive} />
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+        <DialogFooter className="border-t border-border/60 px-4 py-2.5 shrink-0">
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button size="sm" className="h-8 text-xs" onClick={handleSave} disabled={saving}>
             {saving ? 'Creating…' : 'Create Item'}
           </Button>
         </DialogFooter>

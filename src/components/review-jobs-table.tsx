@@ -26,12 +26,17 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Separator } from './ui/separator';
 import { approveRequest } from '@/lib/actions';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import {
+  ErpToolbar,
+  ErpGrid,
+  erpOutlineControlClass,
+  erpPrimaryButtonClass,
+} from '@/components/dashboard/maglo-shell';
 
 const shipmentTypes = ["Docs", "Non-Docs", "Grocery", "Other"] as const;
 const serviceTypes = ["Inbound", "Outbound", "Domestic"] as const;
@@ -93,12 +98,9 @@ export default function ReviewRequestsTable({ requests }: { requests: Request[] 
 
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Review Pending Requests</CardTitle>
-        <CardDescription>Review details of new invoice requests and approve them to be sent to Finance for invoicing.</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <>
+      <ErpToolbar title={`Pending · ${requests.length}`} />
+      <ErpGrid>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <Table>
             <TableHeader>
@@ -123,7 +125,12 @@ export default function ReviewRequestsTable({ requests }: { requests: Request[] 
                   <TableCell>${request.value?.toLocaleString()}</TableCell>
                   <TableCell>
                     <DialogTrigger asChild>
-                      <Button variant="outline" size="sm" onClick={() => handleOpenDialog(request)}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={erpOutlineControlClass()}
+                        onClick={() => handleOpenDialog(request)}
+                      >
                         <Eye className="mr-2 h-4 w-4" />
                         View & Approve
                       </Button>
@@ -133,7 +140,7 @@ export default function ReviewRequestsTable({ requests }: { requests: Request[] 
               ))}
               {requests.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center">No pending requests to review.</TableCell>
+                  <TableCell colSpan={7} className="text-center text-slate-500 py-8">No pending requests to review.</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -222,9 +229,9 @@ export default function ReviewRequestsTable({ requests }: { requests: Request[] 
                   </div>
                   <DialogFooter>
                     <DialogClose asChild>
-                      <Button variant="outline" type="button">Cancel</Button>
+                      <Button variant="outline" type="button" className={erpOutlineControlClass()}>Cancel</Button>
                     </DialogClose>
-                    <Button type="submit" disabled={isPending}>
+                    <Button type="submit" disabled={isPending} className={erpPrimaryButtonClass()}>
                       {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                       Approve & Send to Finance
                     </Button>
@@ -234,7 +241,7 @@ export default function ReviewRequestsTable({ requests }: { requests: Request[] 
             </DialogContent>
           )}
         </Dialog>
-      </CardContent>
-    </Card>
+      </ErpGrid>
+    </>
   );
 }

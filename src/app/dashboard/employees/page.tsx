@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -42,7 +41,16 @@ import { Label } from '@/components/ui/label';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
-import { PlusCircle, Trash2, Edit, UserCheck, UserX, Users, Loader2 } from 'lucide-react';
+import { PlusCircle, Trash2, Edit, UserCheck, UserX, Loader2 } from 'lucide-react';
+import {
+  DashboardPageShell,
+  ErpGrid,
+  ErpToolbar,
+  erpOutlineControlClass,
+  erpPrimaryButtonClass,
+  erpTableClasses,
+} from '@/components/dashboard/maglo-shell';
+import { cn } from '@/lib/utils';
 
 interface Employee {
   _id: string;
@@ -356,45 +364,43 @@ export default function EmployeesPage() {
 
   if (!canManage) {
     return (
-        <Card>
-            <CardHeader>
-          <CardTitle>Access Denied</CardTitle>
-            </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground">
+      <DashboardPageShell title="Employees">
+        <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
+          <p className="text-sm font-medium text-slate-700">Access Denied</p>
+          <p className="max-w-md text-sm text-slate-500">
             You do not have permission to access this page. Only SuperAdmin and Manager roles can manage employees.
           </p>
-            </CardContent>
-        </Card>
+        </div>
+      </DashboardPageShell>
     );
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
+      <DashboardPageShell title="Employees">
+        <div className="flex h-64 items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-sky-500" />
+        </div>
+      </DashboardPageShell>
     );
   }
 
+  const t = erpTableClasses();
+
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Employee Management
-              </CardTitle>
-              <CardDescription>
-                Manage employees and create user accounts. Changes to employees will reflect in their user accounts.
-              </CardDescription>
-            </div>
+    <DashboardPageShell title="Employees">
+      <div className="flex h-full min-h-0 flex-col">
+        <ErpToolbar
+          title="Team"
+          onRefresh={() => {
+            fetchEmployees();
+            fetchUsers();
+          }}
+          actions={
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
               <DialogTrigger asChild>
-                <Button>
-                  <PlusCircle className="h-4 w-4 mr-2" />
+                <Button className={erpPrimaryButtonClass()}>
+                  <PlusCircle className="mr-2 h-4 w-4" />
                   Add Employee
                 </Button>
               </DialogTrigger>
@@ -449,32 +455,34 @@ export default function EmployeesPage() {
                     <Button
                       type="button"
                       variant="outline"
+                      className={erpOutlineControlClass()}
                       onClick={() => setIsCreateDialogOpen(false)}
                     >
                       Cancel
                     </Button>
-                    <Button type="submit">Create Employee</Button>
+                    <Button type="submit" className={erpPrimaryButtonClass()}>Create Employee</Button>
                   </div>
                 </form>
               </DialogContent>
             </Dialog>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <Table>
+          }
+        />
+
+        <ErpGrid>
+          <Table className={t.table}>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Department</TableHead>
-                <TableHead>User Account</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead className={t.head}>Name</TableHead>
+                <TableHead className={t.head}>Email</TableHead>
+                <TableHead className={t.head}>Department</TableHead>
+                <TableHead className={t.head}>User Account</TableHead>
+                <TableHead className={t.head}>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {employees.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={5} className={cn(t.cell, 'py-10 text-center text-slate-400')}>
                     No employees found. Create your first employee to get started.
                   </TableCell>
                 </TableRow>
@@ -482,18 +490,18 @@ export default function EmployeesPage() {
                 employees.map((employee) => {
                   const hasUser = hasUserAccount(employee._id);
                   const userAccount = getUserAccount(employee._id);
-                  
+
                   return (
-                    <TableRow key={employee._id}>
-                      <TableCell className="font-medium">{employee.full_name}</TableCell>
-                      <TableCell>{employee.email}</TableCell>
-                      <TableCell>
+                    <TableRow key={employee._id} className={t.row}>
+                      <TableCell className={cn(t.cell, 'font-medium')}>{employee.full_name}</TableCell>
+                      <TableCell className={t.cell}>{employee.email}</TableCell>
+                      <TableCell className={t.cell}>
                         <Badge variant="outline">{employee.department_id.name}</Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className={t.cell}>
                         {hasUser && userAccount ? (
                           <div className="flex items-center gap-2">
-                            <UserCheck className="h-4 w-4 text-green-600" />
+                            <UserCheck className="h-4 w-4 text-emerald-600" />
                             <Badge variant="secondary">{userAccount.role}</Badge>
                             {!userAccount.isActive && (
                               <Badge variant="destructive" className="text-xs">Inactive</Badge>
@@ -501,16 +509,17 @@ export default function EmployeesPage() {
                           </div>
                         ) : (
                           <div className="flex items-center gap-2">
-                            <UserX className="h-4 w-4 text-gray-400" />
-                            <span className="text-sm text-muted-foreground">No account</span>
+                            <UserX className="h-4 w-4 text-slate-400" />
+                            <span className="text-sm text-slate-400">No account</span>
                           </div>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className={t.cell}>
                         <div className="flex items-center gap-2">
                           <Button
                             variant="outline"
                             size="sm"
+                            className={erpOutlineControlClass()}
                             onClick={() => openEditDialog(employee)}
                           >
                             <Edit className="h-4 w-4" />
@@ -519,9 +528,10 @@ export default function EmployeesPage() {
                             <Button
                               variant="outline"
                               size="sm"
+                              className={erpOutlineControlClass()}
                               onClick={() => openCreateUserDialog(employee)}
                             >
-                              <UserCheck className="h-4 w-4 mr-1" />
+                              <UserCheck className="mr-1 h-4 w-4" />
                               Create User
                             </Button>
                           )}
@@ -541,8 +551,8 @@ export default function EmployeesPage() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+        </ErpGrid>
+      </div>
 
       {/* Edit Employee Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
@@ -597,11 +607,12 @@ export default function EmployeesPage() {
               <Button
                 type="button"
                 variant="outline"
+                className={erpOutlineControlClass()}
                 onClick={() => setIsEditDialogOpen(false)}
               >
                 Cancel
               </Button>
-              <Button type="submit">Update Employee</Button>
+              <Button type="submit" className={erpPrimaryButtonClass()}>Update Employee</Button>
             </div>
           </form>
         </DialogContent>
@@ -676,15 +687,16 @@ export default function EmployeesPage() {
               <Button
                 type="button"
                 variant="outline"
+                className={erpOutlineControlClass()}
                 onClick={() => setIsCreateUserDialogOpen(false)}
               >
                 Cancel
               </Button>
-              <Button type="submit">Create User Account</Button>
+              <Button type="submit" className={erpPrimaryButtonClass()}>Create User Account</Button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
-    </div>
-    );
+    </DashboardPageShell>
+  );
 }

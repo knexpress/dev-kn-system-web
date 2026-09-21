@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo, memo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -34,6 +33,14 @@ import { apiCache } from '@/lib/api-cache';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { Eye, CheckCircle, XCircle, Image as ImageIcon, Download, Loader2, Zap } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import {
+  DashboardPageShell,
+  ErpToolbar,
+  ErpGrid,
+  erpOutlineControlClass,
+  erpPrimaryButtonClass,
+} from '@/components/dashboard/maglo-shell';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -877,109 +884,46 @@ export default function BookingRequestsPage() {
   }, [filterStatus]);
 
   return (
-    <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Booking Requests</CardTitle>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-          {canManageSystemAutoReview && (
-            <div className="flex items-center gap-3 rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2">
-              <Switch
-                id="system-auto-approve"
-                checked={autoReviewEnabled}
-                onCheckedChange={handleSystemAutoReviewToggle}
-                disabled={autoReviewSettingsLoading || autoReviewSaving}
-              />
-              <Label htmlFor="system-auto-approve" className="cursor-pointer text-sm font-medium leading-tight">
-                System auto-approve
-                <span className="block text-xs font-normal text-muted-foreground">
-                  {autoReviewSettingsLoading
-                    ? 'Loading…'
-                    : autoReviewEnabled
-                      ? 'ON — runs on server when bookings are created'
-                      : 'OFF'}
-                </span>
-              </Label>
-            </div>
-          )}
-          {canBatchApprovePending && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={
-                autoReviewRunning ||
-                pendingBookingsCount === 0 ||
-                filterStatus === 'reviewed'
-              }
-              onClick={() => setShowAutoReviewConfirm(true)}
-              className="shrink-0"
-              title="Approve all pending bookings in the current list"
-            >
-              {autoReviewRunning ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  {autoReviewProgress
-                    ? `Approving ${autoReviewProgress.current}/${autoReviewProgress.total}…`
-                    : 'Approving…'}
-                </>
-              ) : (
-                <>
-                  <Zap className="h-4 w-4 mr-2" />
-                  Approve all pending ({pendingBookingsCount})
-                </>
-              )}
-            </Button>
-          )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4 mb-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="relative">
-                <Label htmlFor="awb-search">Search by AWB Number</Label>
-                <Input
-                  ref={awbInputRef}
-                  id="awb-search"
-                  type="text"
-                  placeholder="Enter AWB number..."
-                  value={awbSearch}
-                  onChange={(e) => {
-                    setAwbSearch(e.target.value);
-                    setShowAwbSuggestions(true);
-                    // Update dropdown position
-                    if (awbInputRef.current) {
-                      const rect = awbInputRef.current.getBoundingClientRect();
-                      setDropdownPosition({
-                        top: rect.bottom + window.scrollY + 4,
-                        left: rect.left + window.scrollX,
-                        width: rect.width,
-                      });
-                    }
-                  }}
-                  onFocus={() => {
-                    setShowAwbSuggestions(true);
-                    // Update dropdown position
-                    if (awbInputRef.current) {
-                      const rect = awbInputRef.current.getBoundingClientRect();
-                      setDropdownPosition({
-                        top: rect.bottom + window.scrollY + 4,
-                        left: rect.left + window.scrollX,
-                        width: rect.width,
-                      });
-                    }
-                  }}
-                  onBlur={() => {
-                    // Delay hiding suggestions to allow click
-                    setTimeout(() => setShowAwbSuggestions(false), 200);
-                  }}
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="status-filter">Review Status</Label>
+    <DashboardPageShell title="Booking Requests">
+      <ErpToolbar
+        title="Bookings"
+        filters={
+          <>
+            <Input
+              ref={awbInputRef}
+              type="text"
+              placeholder="AWB number…"
+              value={awbSearch}
+              className={cn(erpOutlineControlClass(), 'w-[150px] sm:w-[180px]')}
+              onChange={(e) => {
+                setAwbSearch(e.target.value);
+                setShowAwbSuggestions(true);
+                if (awbInputRef.current) {
+                  const rect = awbInputRef.current.getBoundingClientRect();
+                  setDropdownPosition({
+                    top: rect.bottom + window.scrollY + 4,
+                    left: rect.left + window.scrollX,
+                    width: rect.width,
+                  });
+                }
+              }}
+              onFocus={() => {
+                setShowAwbSuggestions(true);
+                if (awbInputRef.current) {
+                  const rect = awbInputRef.current.getBoundingClientRect();
+                  setDropdownPosition({
+                    top: rect.bottom + window.scrollY + 4,
+                    left: rect.left + window.scrollX,
+                    width: rect.width,
+                  });
+                }
+              }}
+              onBlur={() => {
+                setTimeout(() => setShowAwbSuggestions(false), 200);
+              }}
+            />
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger id="status-filter">
+              <SelectTrigger className={cn(erpOutlineControlClass(), 'w-[180px]')}>
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
@@ -988,9 +932,54 @@ export default function BookingRequestsPage() {
                 <SelectItem value="reviewed">Reviewed (Archive)</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-            </div>
-          </div>
+          </>
+        }
+        actions={
+          <>
+            {canManageSystemAutoReview && (
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5">
+                <Switch
+                  id="system-auto-approve"
+                  checked={autoReviewEnabled}
+                  onCheckedChange={handleSystemAutoReviewToggle}
+                  disabled={autoReviewSettingsLoading || autoReviewSaving}
+                />
+                <Label htmlFor="system-auto-approve" className="cursor-pointer text-xs font-medium leading-tight">
+                  Auto-approve
+                </Label>
+              </div>
+            )}
+            {canBatchApprovePending && (
+              <Button
+                type="button"
+                size="sm"
+                className={erpPrimaryButtonClass()}
+                disabled={
+                  autoReviewRunning ||
+                  pendingBookingsCount === 0 ||
+                  filterStatus === 'reviewed'
+                }
+                onClick={() => setShowAutoReviewConfirm(true)}
+                title="Approve all pending bookings in the current list"
+              >
+                {autoReviewRunning ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    {autoReviewProgress
+                      ? `${autoReviewProgress.current}/${autoReviewProgress.total}`
+                      : '…'}
+                  </>
+                ) : (
+                  <>
+                    <Zap className="h-4 w-4 mr-2" />
+                    Approve all ({pendingBookingsCount})
+                  </>
+                )}
+              </Button>
+            )}
+          </>
+        }
+      />
 
           {/* AWB Suggestions Dropdown Portal */}
           {typeof window !== 'undefined' && showAwbSuggestions && awbSuggestions.length > 0 && createPortal(
@@ -1024,14 +1013,15 @@ export default function BookingRequestsPage() {
 
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <p className="text-muted-foreground">Loading bookings...</p>
+              <p className="text-slate-500 text-sm">Loading bookings...</p>
             </div>
           ) : filteredBookings.length === 0 ? (
             <div className="flex items-center justify-center py-8">
-              <p className="text-muted-foreground">No bookings found</p>
+              <p className="text-slate-500 text-sm">No bookings found</p>
             </div>
           ) : (
-            <div className="rounded-md border">
+            <>
+            <ErpGrid>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1203,30 +1193,33 @@ export default function BookingRequestsPage() {
                   })}
                 </TableBody>
               </Table>
-            </div>
+            </ErpGrid>
+            </>
           )}
 
           {/* Pagination Controls */}
           {!loading && filteredBookings.length > itemsPerPage && (
-            <div className="flex items-center justify-between mt-4">
-              <div className="text-sm text-muted-foreground">
+            <div className="flex items-center justify-between px-5 pb-5 sm:px-6">
+              <div className="text-sm text-slate-500">
                 Showing {startIndex + 1} to {Math.min(endIndex, filteredBookings.length)} of {filteredBookings.length} bookings
               </div>
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
+                  className={erpOutlineControlClass()}
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                   disabled={currentPage === 1}
                 >
                   Previous
                 </Button>
-                <span className="text-sm">
+                <span className="text-sm text-slate-600">
                   Page {currentPage} of {totalPages}
                 </span>
                 <Button
                   variant="outline"
                   size="sm"
+                  className={erpOutlineControlClass()}
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
                 >
@@ -1235,8 +1228,6 @@ export default function BookingRequestsPage() {
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
 
       {showReviewModal && selectedBooking && (
         <BookingReviewModal
@@ -1296,7 +1287,7 @@ export default function BookingRequestsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-    </div>
+    </DashboardPageShell>
   );
 }
 

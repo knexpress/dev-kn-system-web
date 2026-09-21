@@ -15,10 +15,15 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, TrendingUp, FileSpreadsheet, X } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import * as XLSX from 'xlsx';
 import { apiClient } from '@/lib/api-client';
 import { secureLog } from '@/lib/secure-logger';
+import {
+  ErpGrid,
+  erpOutlineControlClass,
+  erpTableClasses,
+} from '@/components/dashboard/maglo-shell';
+import { cn } from '@/lib/utils';
 
 interface InvoicesTableProps {
     invoices: any[];
@@ -30,6 +35,7 @@ interface InvoicesTableProps {
 export default function InvoicesTable({ invoices, department, onRemit, onCancel }: InvoicesTableProps) {
     const { toast } = useToast();
     const [isExporting, setIsExporting] = useState(false);
+    const t = erpTableClasses();
 
     // Ensure invoices is always an array
     const safeInvoices = Array.isArray(invoices) ? invoices : [];
@@ -752,52 +758,37 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel 
     };
 
     return (
-        <div className="space-y-8">
-            <Card>
-                <CardHeader>
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <CardTitle>Invoices</CardTitle>
-                            <CardDescription>A list of all generated invoices.</CardDescription>
-                        </div>
-                        <Button
-                            variant="outline"
-                            onClick={handleDownloadAllInvoices}
-                            className="ml-auto"
-                            disabled={isExporting}
-                        >
-                            <FileSpreadsheet className="h-4 w-4 mr-2" />
-                            {isExporting ? 'Preparing…' : 'Download Excel'}
-                        </Button>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <div className="relative">
-                        {/* Table Container */}
-                        <div
-                            className="flex overflow-x-hidden overflow-y-auto scrollbar-thin"
-                            style={{
-                                maxHeight: 'calc(100vh - 400px)',
-                            }}
-                        >
-                        <Table style={{ minWidth: 'max-content', width: '100%' }}>
+        <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex justify-end px-5 pb-2 sm:px-6">
+                <Button
+                    variant="outline"
+                    onClick={handleDownloadAllInvoices}
+                    className={erpOutlineControlClass()}
+                    disabled={isExporting}
+                >
+                    <FileSpreadsheet className="mr-2 h-4 w-4" />
+                    {isExporting ? 'Preparing…' : 'Download Excel'}
+                </Button>
+            </div>
+            <ErpGrid maxHeight="min(58vh, 620px)" className="pt-0">
+                        <Table className={t.table} style={{ minWidth: 'max-content', width: '100%' }}>
                         <TableHeader>
                         <TableRow>
-                            <TableHead>Invoice ID</TableHead>
-                            <TableHead>AWB</TableHead>
-                            <TableHead>Batch No</TableHead>
-                            <TableHead>Client</TableHead>
-                            <TableHead>Amount</TableHead>
-                            <TableHead>Service Code</TableHead>
-                            <TableHead>Weight (KG)</TableHead>
-                            <TableHead>No. of Boxes</TableHead>
-                            <TableHead>Volume (CBM)</TableHead>
-                            <TableHead>Receiver</TableHead>
-                            <TableHead>Receiver Address</TableHead>
-                            <TableHead>Receiver Phone</TableHead>
-                            <TableHead>Issue Date</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Action</TableHead>
+                            <TableHead className={t.head}>Invoice ID</TableHead>
+                            <TableHead className={t.head}>AWB</TableHead>
+                            <TableHead className={t.head}>Batch No</TableHead>
+                            <TableHead className={t.head}>Client</TableHead>
+                            <TableHead className={t.head}>Amount</TableHead>
+                            <TableHead className={t.head}>Service Code</TableHead>
+                            <TableHead className={t.head}>Weight (KG)</TableHead>
+                            <TableHead className={t.head}>No. of Boxes</TableHead>
+                            <TableHead className={t.head}>Volume (CBM)</TableHead>
+                            <TableHead className={t.head}>Receiver</TableHead>
+                            <TableHead className={t.head}>Receiver Address</TableHead>
+                            <TableHead className={t.head}>Receiver Phone</TableHead>
+                            <TableHead className={t.head}>Issue Date</TableHead>
+                            <TableHead className={t.head}>Status</TableHead>
+                            <TableHead className={cn(t.head, 'text-right')}>Action</TableHead>
                         </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -822,15 +813,14 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel 
                                 : null;
                             
                             return (
-                            <TableRow key={invoice._id}>
-                            <TableCell className="font-mono text-xs">{invoice.invoice_id || 'N/A'}</TableCell>
-                            <TableCell className="font-mono text-xs">{invoice.awb_number || 'N/A'}</TableCell>
-                            {/* Batch number fetched directly from invoices collection batch_number field */}
-                            <TableCell className="font-mono text-xs">
+                            <TableRow key={invoice._id} className={t.row}>
+                            <TableCell className={cn(t.cell, 'font-mono text-xs')}>{invoice.invoice_id || 'N/A'}</TableCell>
+                            <TableCell className={cn(t.cell, 'font-mono text-xs')}>{invoice.awb_number || 'N/A'}</TableCell>
+                            <TableCell className={cn(t.cell, 'font-mono text-xs')}>
                                 {batchNumber || 'N/A'}
                             </TableCell>
-                            <TableCell>{invoice.client_id?.company_name || 'Unknown'}</TableCell>
-                            <TableCell>
+                            <TableCell className={t.cell}>{invoice.client_id?.company_name || 'Unknown'}</TableCell>
+                            <TableCell className={t.cell}>
                                 {(() => {
                                     // PH TO UAE: Use appropriate total based on invoice type
                                     const serviceCode = (invoice.service_code || '').toString().toUpperCase().replace(/[\s-]+/g, '_');
@@ -860,9 +850,9 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel 
                                     return `AED ${displayAmount ? parseFloat(displayAmount.toString()).toFixed(2) : '0.00'}`;
                                 })()}
                             </TableCell>
-                            <TableCell className="font-mono text-xs">{invoice.service_code ?? 'N/A'}</TableCell>
-                            <TableCell>{invoice.weight_kg != null ? invoice.weight_kg : 'N/A'}</TableCell>
-                            <TableCell>
+                            <TableCell className={cn(t.cell, 'font-mono text-xs')}>{invoice.service_code ?? 'N/A'}</TableCell>
+                            <TableCell className={t.cell}>{invoice.weight_kg != null ? invoice.weight_kg : 'N/A'}</TableCell>
+                            <TableCell className={t.cell}>
                                 {(() => {
                                     const boxArrays = [
                                         invoice.boxes,
@@ -881,12 +871,12 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel 
                                     return (computedCount ?? fallbackCount) ?? 'N/A';
                                 })()}
                             </TableCell>
-                            <TableCell>{invoice.volume_cbm != null ? invoice.volume_cbm : 'N/A'}</TableCell>
-                            <TableCell>{invoice.receiver_name ?? 'N/A'}</TableCell>
-                            <TableCell className="max-w-[200px] truncate" title={invoice.receiver_address ?? ''}>{invoice.receiver_address ?? 'N/A'}</TableCell>
-                            <TableCell>{invoice.receiver_phone ?? 'N/A'}</TableCell>
-                            <TableCell>{invoice.issue_date ? new Date(invoice.issue_date).toLocaleDateString() : 'N/A'}</TableCell>
-                            <TableCell>
+                            <TableCell className={t.cell}>{invoice.volume_cbm != null ? invoice.volume_cbm : 'N/A'}</TableCell>
+                            <TableCell className={t.cell}>{invoice.receiver_name ?? 'N/A'}</TableCell>
+                            <TableCell className={cn(t.cell, 'max-w-[200px] truncate')} title={invoice.receiver_address ?? ''}>{invoice.receiver_address ?? 'N/A'}</TableCell>
+                            <TableCell className={t.cell}>{invoice.receiver_phone ?? 'N/A'}</TableCell>
+                            <TableCell className={t.cell}>{invoice.issue_date ? new Date(invoice.issue_date).toLocaleDateString() : 'N/A'}</TableCell>
+                            <TableCell className={t.cell}>
                                 <Badge 
                                     variant={
                                         invoice.status === 'PAID' || invoice.status === 'REMITTED' 
@@ -897,18 +887,18 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel 
                                     } 
                                     className={
                                         invoice.status === 'PAID' || invoice.status === 'REMITTED'
-                                            ? 'bg-green-500 text-white'
+                                            ? 'bg-emerald-500 text-white'
                                             : invoice.status === 'COLLECTED_BY_DRIVER'
-                                                ? 'bg-blue-500 text-white'
+                                                ? 'bg-sky-500 text-white'
                                                 : ''
                                     }
                                 >
                                     {invoice.status}
                                 </Badge>
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className={cn(t.cell, 'text-right')}>
                                 <div className="flex gap-2 justify-end">
-                                    <Button asChild variant="outline" size="sm">
+                                    <Button asChild variant="outline" size="sm" className={erpOutlineControlClass()}>
                                         <Link href={`/dashboard/invoices/${invoice._id}`}>
                                             <Eye className="mr-2 h-4 w-4" />
                                             View
@@ -918,7 +908,7 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel 
                                         <Button 
                                             variant="outline" 
                                             size="sm"
-                                            className="bg-green-600 text-white hover:bg-green-700"
+                                            className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
                                             onClick={() => onRemit(invoice._id)}
                                         >
                                             <TrendingUp className="mr-2 h-4 w-4" />
@@ -929,7 +919,7 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel 
                                         <Button 
                                             variant="outline" 
                                             size="sm"
-                                            className="bg-blue-600 text-white hover:bg-blue-700"
+                                            className="h-10 rounded-xl bg-sky-600 text-white hover:bg-sky-700"
                                             onClick={() => onRemit(invoice._id)}
                                         >
                                             <TrendingUp className="mr-2 h-4 w-4" />
@@ -940,7 +930,7 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel 
                                         <Button 
                                             variant="outline" 
                                             size="sm"
-                                            className="bg-red-600 text-white hover:bg-red-700"
+                                            className="h-10 rounded-xl bg-rose-600 text-white hover:bg-rose-700"
                                             onClick={() => onCancel(invoice._id)}
                                         >
                                             <X className="mr-2 h-4 w-4" />
@@ -954,17 +944,14 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel 
                         })}
                          {safeInvoices.length === 0 && (
                             <TableRow>
-                                <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
+                                <TableCell colSpan={15} className={cn(t.cell, 'py-10 text-center text-slate-400')}>
                                     No invoices found. Try adjusting your search or filters.
                                 </TableCell>
                             </TableRow>
                         )}
                         </TableBody>
                         </Table>
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
+            </ErpGrid>
         </div>
     );
 }

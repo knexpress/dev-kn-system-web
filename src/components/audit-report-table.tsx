@@ -2,12 +2,17 @@
 
 import { useState, useRef } from 'react';
 import { Request, Invoice } from '@/lib/types';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from './ui/button';
 import { Download, Upload } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import {
+  ErpToolbar,
+  ErpGrid,
+  erpOutlineControlClass,
+  erpPrimaryButtonClass,
+} from '@/components/dashboard/maglo-shell';
 
 type AuditData = Request & { invoice?: Invoice };
 
@@ -197,14 +202,11 @@ export default function AuditReportTable({ data: initialData }: AuditReportTable
     };
 
     return (
-        <Card>
-            <CardHeader>
-                <div className="flex items-center justify-between">
-                    <div>
-                        <CardTitle>Audit & Revenue Report</CardTitle>
-                        <CardDescription>A comprehensive report of all shipment transactions.</CardDescription>
-                    </div>
-                    <div className="flex gap-2">
+        <div className="flex h-full min-h-0 flex-col">
+            <ErpToolbar
+                title={`Transactions · ${tableData.length}`}
+                actions={
+                    <>
                         <input
                             type="file"
                             ref={fileInputRef}
@@ -212,18 +214,22 @@ export default function AuditReportTable({ data: initialData }: AuditReportTable
                             className="hidden"
                             accept=".xlsx, .xls"
                         />
-                         <Button onClick={handleImportClick} variant="outline">
+                        <Button
+                            onClick={handleImportClick}
+                            variant="outline"
+                            className={erpOutlineControlClass()}
+                        >
                             <Upload className="mr-2 h-4 w-4" />
-                            Import from Excel
+                            Import
                         </Button>
-                        <Button onClick={handleExport}>
+                        <Button onClick={handleExport} className={erpPrimaryButtonClass()}>
                             <Download className="mr-2 h-4 w-4" />
-                            Export as Excel
+                            Export
                         </Button>
-                    </div>
-                </div>
-            </CardHeader>
-            <CardContent>
+                    </>
+                }
+            />
+            <ErpGrid maxHeight="min(65vh, 720px)">
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -316,7 +322,7 @@ export default function AuditReportTable({ data: initialData }: AuditReportTable
                         )}
                     </TableBody>
                 </Table>
-            </CardContent>
-        </Card>
+            </ErpGrid>
+        </div>
     );
 }

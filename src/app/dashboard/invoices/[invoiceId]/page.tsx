@@ -27,6 +27,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import {
+    DashboardPageShell,
+    erpOutlineControlClass,
+    erpPrimaryButtonClass,
+} from '@/components/dashboard/maglo-shell';
+import { cn } from '@/lib/utils';
 
 export default function InvoicePage() {
     const params = useParams();
@@ -510,36 +516,47 @@ export default function InvoicePage() {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center p-8">
-                <div className="text-center">
-                    <p className="text-lg">Loading invoice...</p>
+            <DashboardPageShell
+                title="Invoice"
+                backHref="/dashboard/invoices"
+                backLabel="Back to Invoices"
+                panel
+                panelPadded
+            >
+                <div className="flex items-center justify-center py-16">
+                    <p className="text-sm text-slate-500">Loading invoice…</p>
                 </div>
-            </div>
+            </DashboardPageShell>
         );
     }
 
     if (error || !invoice) {
         return (
-            <div className="p-8 space-y-4">
-                <Card className="p-6">
-                    <Alert variant="destructive">
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertTitle>Invoice Not Found</AlertTitle>
-                        <AlertDescription>
-                            {error || 'The invoice you are looking for does not exist or could not be loaded.'}
-                        </AlertDescription>
-                    </Alert>
-                    <div className="mt-4">
-                        <Button
-                            variant="outline"
-                            onClick={() => router.push('/dashboard/invoices')}
-                        >
-                            <ArrowLeft className="h-4 w-4 mr-2" />
-                            Back to Invoices
-                        </Button>
-                    </div>
-                </Card>
-            </div>
+            <DashboardPageShell
+                title="Invoice"
+                backHref="/dashboard/invoices"
+                backLabel="Back to Invoices"
+                panel
+                panelPadded
+            >
+                <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Invoice Not Found</AlertTitle>
+                    <AlertDescription>
+                        {error || 'The invoice you are looking for does not exist or could not be loaded.'}
+                    </AlertDescription>
+                </Alert>
+                <div className="mt-4">
+                    <Button
+                        variant="outline"
+                        className={erpOutlineControlClass()}
+                        onClick={() => router.push('/dashboard/invoices')}
+                    >
+                        <ArrowLeft className="h-4 w-4 mr-2" />
+                        Back to Invoices
+                    </Button>
+                </div>
+            </DashboardPageShell>
         );
     }
 
@@ -2579,33 +2596,55 @@ export default function InvoicePage() {
         return null;
     };
 
+    const pageTitle =
+        invoice?.invoice_id || invoice?._id || invoiceData?.invoiceNumber || 'Invoice';
+
     return (
-        <div className="space-y-4">
+        <DashboardPageShell
+            title={String(pageTitle)}
+            eyebrow="Invoice"
+            backHref="/dashboard/invoices"
+            backLabel="Back to Invoices"
+            panel={false}
+        >
             {/* Navigation Bar */}
-            <Card className="p-4 no-print">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
+            <div className="no-print mb-4 rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white to-slate-50/80 p-4 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.35)]">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                         <Button
                             variant="outline"
+                            className={erpOutlineControlClass()}
                             onClick={() => router.push('/dashboard/invoices')}
                         >
                             <ArrowLeft className="h-4 w-4 mr-2" />
                             Back to Invoices
                         </Button>
-                        <div className="h-6 w-px bg-border" />
-                        <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">Invoice View:</span>
+                        <div className="hidden h-6 w-px bg-slate-200 sm:block" />
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[11px] font-medium tracking-wide text-slate-400">
+                                Invoice View
+                            </span>
                             <Button
-                                variant={invoiceType === 'normal' ? 'default' : 'outline'}
                                 size="sm"
+                                className={cn(
+                                    invoiceType === 'normal'
+                                        ? erpPrimaryButtonClass()
+                                        : erpOutlineControlClass()
+                                )}
+                                variant={invoiceType === 'normal' ? 'default' : 'outline'}
                                 onClick={() => setInvoiceType('normal')}
                             >
                                 <FileText className="h-4 w-4 mr-2" />
                                 Normal Invoice
                             </Button>
                             <Button
-                                variant={invoiceType === 'tax' ? 'default' : 'outline'}
                                 size="sm"
+                                className={cn(
+                                    invoiceType === 'tax'
+                                        ? erpPrimaryButtonClass()
+                                        : erpOutlineControlClass()
+                                )}
+                                variant={invoiceType === 'tax' ? 'default' : 'outline'}
                                 onClick={() => setInvoiceType('tax')}
                             >
                                 <Receipt className="h-4 w-4 mr-2" />
@@ -2613,9 +2652,10 @@ export default function InvoicePage() {
                             </Button>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <Button
                             variant="outline"
+                            className={erpOutlineControlClass()}
                             onClick={handlePrint}
                         >
                             <Printer className="h-4 w-4 mr-2" />
@@ -2626,14 +2666,14 @@ export default function InvoicePage() {
                                 <Button
                                     variant="outline"
                                     onClick={() => setShowCodEditDialog(true)}
-                                    className="bg-blue-50 hover:bg-blue-100"
+                                    className={cn(erpOutlineControlClass(), 'hover:border-sky-200 hover:bg-sky-50')}
                                 >
                                     Edit COD Invoice
                                 </Button>
                                 <Button
                                     variant="outline"
                                     onClick={() => setShowTaxEditDialog(true)}
-                                    className="bg-green-50 hover:bg-green-100"
+                                    className={cn(erpOutlineControlClass(), 'hover:border-emerald-200 hover:bg-emerald-50')}
                                 >
                                     Edit Tax Invoice
                                 </Button>
@@ -2641,6 +2681,7 @@ export default function InvoicePage() {
                         ) : (
                             <Button
                                 variant="outline"
+                                className={erpOutlineControlClass()}
                                 onClick={() => setShowEditDialog(true)}
                             >
                                 Edit Invoice
@@ -2648,12 +2689,14 @@ export default function InvoicePage() {
                         )}
                         <Button
                             variant="outline"
+                            className={erpOutlineControlClass()}
                             onClick={handleDownloadExcel}
                         >
                             <FileSpreadsheet className="h-4 w-4 mr-2" />
                             Download Excel
                         </Button>
                         <Button
+                            className={erpPrimaryButtonClass()}
                             onClick={handleDownloadPDF}
                         >
                             <Download className="h-4 w-4 mr-2" />
@@ -2662,14 +2705,14 @@ export default function InvoicePage() {
                         <Button
                             variant="outline"
                             onClick={() => setShowRequestDataDialog(true)}
-                            className="bg-purple-50 hover:bg-purple-100 border-purple-200"
+                            className={cn(erpOutlineControlClass(), 'hover:border-slate-300 hover:bg-slate-50')}
                         >
                             <Database className="h-4 w-4 mr-2" />
                             View Request Data
                         </Button>
                     </div>
                 </div>
-            </Card>
+            </div>
 
             {/* Invoice Template */}
             <div id="invoice-content">
@@ -3962,6 +4005,6 @@ export default function InvoicePage() {
                     </DialogContent>
                 </Dialog>
             )}
-        </div>
+        </DashboardPageShell>
     );
 }

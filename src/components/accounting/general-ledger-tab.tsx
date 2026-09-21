@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
@@ -12,37 +11,33 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { Plus, RefreshCw } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import NewJournalEntryDialog from './new-journal-entry-dialog';
 import JournalEntryDetailDialog from './journal-entry-detail-dialog';
+import {
+  ErpEmptyState,
+  ErpGrid,
+  ErpStatStrip,
+  ErpToolbar,
+  JournalStatusBadge,
+  SourceBadge,
+  erpPrimaryButtonClass,
+  erpOutlineControlClass,
+  erpTableClasses,
+} from './erp-shell';
+import { fmtDate, money } from './erp-format';
+import { cn } from '@/lib/utils';
 
 type GeneralLedgerTabProps = {
+  mode?: 'journals' | 'ledger';
   selectedAccountCode?: string | null;
-  initialSubTab?: 'journals' | 'ledger';
 };
 
-function money(n: number) {
-  return Number(n || 0).toLocaleString('en-AE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-function fmtDate(d: string | Date) {
-  if (!d) return '—';
-  const dt = new Date(d);
-  if (Number.isNaN(dt.getTime())) return String(d);
-  return dt.toISOString().slice(0, 10);
-}
-
 export default function GeneralLedgerTab({
+  mode = 'journals',
   selectedAccountCode = null,
-  initialSubTab = 'journals',
 }: GeneralLedgerTabProps) {
-  const [subTab, setSubTab] = useState<'journals' | 'ledger'>(initialSubTab);
   const [accountCode, setAccountCode] = useState<string>(selectedAccountCode || '');
   const [accounts, setAccounts] = useState<any[]>([]);
   const [journals, setJournals] = useState<any[]>([]);
@@ -54,17 +49,13 @@ export default function GeneralLedgerTab({
   const [newEntryOpen, setNewEntryOpen] = useState(false);
   const [selectedJournal, setSelectedJournal] = useState<any | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
-    if (selectedAccountCode) {
-      setAccountCode(selectedAccountCode);
-      setSubTab('ledger');
-    }
+    if (selectedAccountCode) setAccountCode(selectedAccountCode);
   }, [selectedAccountCode]);
-
-  useEffect(() => {
-    if (initialSubTab) setSubTab(initialSubTab);
-  }, [initialSubTab]);
 
   const loadAccountsAndJournals = async () => {
     setLoadingJournals(true);
@@ -88,11 +79,8 @@ export default function GeneralLedgerTab({
     setLoadingLedger(true);
     try {
       const result = await apiClient.getAccountLedger(code);
-      if (result.success && result.data) {
-        setLedger(result.data);
-      } else {
-        setLedger({ rows: [] });
-      }
+      if (result.success && result.data) setLedger(result.data);
+      else setLedger({ rows: [] });
     } finally {
       setLoadingLedger(false);
     }
@@ -103,37 +91,306 @@ export default function GeneralLedgerTab({
   }, []);
 
   useEffect(() => {
-    if (accountCode) loadLedger(accountCode);
-  }, [accountCode]);
+    if (mode === 'ledger' && accountCode) loadLedger(accountCode);
+  }, [accountCode, mode]);
 
   const selectedAccount =
     accounts.find((a) => a.code === accountCode) || ledger.account || null;
 
   const handleJournalCreated = async () => {
     await loadAccountsAndJournals();
-    if (accountCode) {
-      await loadLedger(accountCode);
-    }
+    if (accountCode) await loadLedger(accountCode);
+  };
+
+  const openJournal = (journal: any) => {
+    setSelectedJournal(journal);
+    setDetailOpen(true);
   };
 
   const openJournalFromLedger = async (row: any) => {
     if (row.journal_id) {
       const result = await apiClient.getJournal(String(row.journal_id));
       if (result.success && result.data) {
-        setSelectedJournal(result.data);
-        setDetailOpen(true);
+        openJournal(result.data);
         return;
       }
     }
     const match = journals.find((j) => j.entry_no === row.entry_no);
-    if (match) {
-      setSelectedJournal(match);
-      setDetailOpen(true);
-    }
+    if (match) openJournal(match);
   };
 
+  const filteredJournals = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return journals.filter((j) => {
+      if (sourceFilter !== 'all' && j.source !== sourceFilter) return false;
+      if (statusFilter !== 'all' && j.status !== statusFilter) return false;
+      if (!q) return true;
+      return (
+        String(j.entry_no || '').toLowerCase().includes(q) ||
+        String(j.memo || '').toLowerCase().includes(q) ||
+        String(j.source_reference || '').toLowerCase().includes(q)
+      );
+    });
+  }, [journals, search, sourceFilter, statusFilter]);
+
+  const journalStats = useMemo(() => {
+    const posted = journals.filter((j) => j.status === 'POSTED').length;
+    const debit = journals.reduce((s, j) => s + (Number(j.total_debit) || 0), 0);
+    return [
+      { label: 'Entries', value: journals.length },
+      { label: 'Posted', value: posted },
+      { label: 'Showing', value: filteredJournals.length },
+      { label: 'Total Debit', value: money(debit) },
+      {
+        label: 'Sources',
+        value: new Set(journals.map((j) => j.source)).size,
+      },
+    ];
+  }, [journals, filteredJournals.length]);
+
+  const filteredLedgerRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return ledger.rows || [];
+    return (ledger.rows || []).filter(
+      (r) =>
+        String(r.entry_no || '').toLowerCase().includes(q) ||
+        String(r.description || '').toLowerCase().includes(q)
+    );
+  }, [ledger.rows, search]);
+
+  const t = erpTableClasses();
+
+  if (mode === 'ledger') {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <ErpToolbar
+          title="Account Ledger"
+          search={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="Entry or description…"
+          onRefresh={() => accountCode && loadLedger(accountCode)}
+          refreshing={loadingLedger}
+          filters={
+            <div className="flex items-center gap-1.5">
+              <Label className="sr-only">Account</Label>
+              <Select value={accountCode || undefined} onValueChange={setAccountCode}>
+                <SelectTrigger className={cn(erpOutlineControlClass(), 'w-[240px]')}>
+                  <SelectValue placeholder="Select account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts.map((account) => (
+                    <SelectItem key={account.code} value={account.code} className="text-xs">
+                      {account.code} — {account.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          }
+        />
+        <ErpStatStrip
+          items={[
+            { label: 'Account', value: selectedAccount?.code || '—' },
+            { label: 'Name', value: selectedAccount?.name || '—' },
+            { label: 'Type', value: selectedAccount?.type || '—' },
+            { label: 'Lines', value: filteredLedgerRows.length },
+            {
+              label: 'Closing',
+              value: `${money(ledger.closing_balance || 0)} AED`,
+            },
+          ]}
+        />
+        <ErpGrid>
+          <Table className={t.table}>
+            <TableHeader>
+              <TableRow>
+                <TableHead className={t.head}>Date</TableHead>
+                <TableHead className={t.head}>Entry No</TableHead>
+                <TableHead className={t.head}>Description</TableHead>
+                <TableHead className={cn(t.head, 'text-right')}>Debit</TableHead>
+                <TableHead className={cn(t.head, 'text-right')}>Credit</TableHead>
+                <TableHead className={cn(t.head, 'text-right')}>Balance</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {!accountCode ? (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <ErpEmptyState message="Select an account to view its ledger." />
+                  </TableCell>
+                </TableRow>
+              ) : loadingLedger ? (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <ErpEmptyState message="Loading ledger…" />
+                  </TableCell>
+                </TableRow>
+              ) : filteredLedgerRows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <ErpEmptyState message="No posted movements for this account." />
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredLedgerRows.map((row, idx) => (
+                  <TableRow
+                    key={`${row.entry_no}-${idx}`}
+                    data-clickable="true"
+                    className={cn(t.row, t.rowAlt)}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openJournalFromLedger(row)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openJournalFromLedger(row);
+                      }
+                    }}
+                  >
+                    <TableCell className={t.cell}>{fmtDate(row.date)}</TableCell>
+                    <TableCell className={cn(t.cell, 'font-mono text-primary')}>
+                      {row.entry_no}
+                    </TableCell>
+                    <TableCell className={cn(t.cell, 'max-w-[240px] truncate')}>
+                      {row.description || '—'}
+                    </TableCell>
+                    <TableCell className={cn(t.cell, 'text-right font-mono tabular-nums')}>
+                      {row.debit ? money(row.debit) : '—'}
+                    </TableCell>
+                    <TableCell className={cn(t.cell, 'text-right font-mono tabular-nums')}>
+                      {row.credit ? money(row.credit) : '—'}
+                    </TableCell>
+                    <TableCell className={cn(t.cell, 'text-right font-mono tabular-nums font-medium')}>
+                      {money(row.balance)}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </ErpGrid>
+
+        <JournalEntryDetailDialog
+          open={detailOpen}
+          onOpenChange={setDetailOpen}
+          journal={selectedJournal}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-0 flex-col">
+      <ErpToolbar
+        title="Journal Entries"
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Entry no or memo…"
+        onRefresh={loadAccountsAndJournals}
+        refreshing={loadingJournals}
+        filters={
+          <>
+            <Select value={sourceFilter} onValueChange={setSourceFilter}>
+              <SelectTrigger className={cn(erpOutlineControlClass(), 'w-[120px]')}>
+                <SelectValue placeholder="Source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All sources</SelectItem>
+                {['MANUAL', 'INVOICE', 'INVENTORY', 'PAYMENT', 'ADJUSTMENT', 'OPENING'].map(
+                  (s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  )
+                )}
+              </SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className={cn(erpOutlineControlClass(), 'w-[110px]')}>
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All status</SelectItem>
+                <SelectItem value="POSTED">POSTED</SelectItem>
+                <SelectItem value="DRAFT">DRAFT</SelectItem>
+              </SelectContent>
+            </Select>
+          </>
+        }
+        actions={
+          <Button className={erpPrimaryButtonClass()} onClick={() => setNewEntryOpen(true)}>
+            <Plus className="mr-1.5 h-4 w-4" />
+            New Entry
+          </Button>
+        }
+      />
+      <ErpStatStrip items={journalStats} />
+      <ErpGrid>
+        <Table className={t.table}>
+          <TableHeader>
+            <TableRow>
+              <TableHead className={t.head}>Entry No</TableHead>
+              <TableHead className={t.head}>Date</TableHead>
+              <TableHead className={t.head}>Memo</TableHead>
+              <TableHead className={t.head}>Source</TableHead>
+              <TableHead className={cn(t.head, 'text-right')}>Debit</TableHead>
+              <TableHead className={cn(t.head, 'text-right')}>Credit</TableHead>
+              <TableHead className={t.head}>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loadingJournals ? (
+              <TableRow>
+                <TableCell colSpan={7}>
+                  <ErpEmptyState message="Loading journals…" />
+                </TableCell>
+              </TableRow>
+            ) : filteredJournals.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7}>
+                  <ErpEmptyState message="No journal entries found." />
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredJournals.map((j) => (
+                <TableRow
+                  key={j._id || j.entry_no}
+                  data-clickable="true"
+                  className={cn(t.row, t.rowAlt)}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openJournal(j)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openJournal(j);
+                    }
+                  }}
+                >
+                  <TableCell className={cn(t.cell, 'font-mono text-primary')}>{j.entry_no}</TableCell>
+                  <TableCell className={t.cell}>{fmtDate(j.entry_date)}</TableCell>
+                  <TableCell className={cn(t.cell, 'max-w-[220px] truncate')}>
+                    {j.memo || '—'}
+                  </TableCell>
+                  <TableCell className={t.cell}>
+                    <SourceBadge source={j.source} />
+                  </TableCell>
+                  <TableCell className={cn(t.cell, 'text-right font-mono tabular-nums')}>
+                    {money(j.total_debit)}
+                  </TableCell>
+                  <TableCell className={cn(t.cell, 'text-right font-mono tabular-nums')}>
+                    {money(j.total_credit)}
+                  </TableCell>
+                  <TableCell className={t.cell}>
+                    <JournalStatusBadge status={j.status} />
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </ErpGrid>
+
       <NewJournalEntryDialog
         open={newEntryOpen}
         onOpenChange={setNewEntryOpen}
@@ -144,243 +401,6 @@ export default function GeneralLedgerTab({
         onOpenChange={setDetailOpen}
         journal={selectedJournal}
       />
-
-      <Tabs value={subTab} onValueChange={(v) => setSubTab(v as 'journals' | 'ledger')}>
-        <TabsList>
-          <TabsTrigger value="journals">Journal Entries</TabsTrigger>
-          <TabsTrigger value="ledger">Account Ledger</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="journals" className="mt-4">
-          <Card>
-            <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-              <div>
-                <CardTitle>Journal Entries</CardTitle>
-                <CardDescription>Posted double-entry journals from the ledger.</CardDescription>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={loadAccountsAndJournals}
-                  disabled={loadingJournals}
-                >
-                  <RefreshCw className={`mr-2 h-4 w-4 ${loadingJournals ? 'animate-spin' : ''}`} />
-                  Refresh
-                </Button>
-                <Button onClick={() => setNewEntryOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  New Journal Entry
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Entry No</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Memo</TableHead>
-                      <TableHead>Docs</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead className="text-right">Debit</TableHead>
-                      <TableHead className="text-right">Credit</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loadingJournals ? (
-                      <TableRow>
-                        <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
-                          Loading journals...
-                        </TableCell>
-                      </TableRow>
-                    ) : journals.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
-                          No journal entries found.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      journals.map((j) => (
-                        <TableRow
-                          key={j._id || j.entry_no}
-                          role="button"
-                          tabIndex={0}
-                          className="cursor-pointer hover:bg-muted/60"
-                          onClick={() => {
-                            setSelectedJournal(j);
-                            setDetailOpen(true);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              setSelectedJournal(j);
-                              setDetailOpen(true);
-                            }
-                          }}
-                        >
-                          <TableCell className="font-mono text-primary">{j.entry_no}</TableCell>
-                          <TableCell>{fmtDate(j.entry_date)}</TableCell>
-                          <TableCell className="max-w-[240px] truncate">{j.memo || '—'}</TableCell>
-                          <TableCell onClick={(e) => e.stopPropagation()}>
-                            {(j.supporting_documents || []).length === 0 ? (
-                              <span className="text-muted-foreground">—</span>
-                            ) : (
-                              <div className="flex flex-col gap-1">
-                                {(j.supporting_documents || []).map((doc: any, i: number) => (
-                                  <a
-                                    key={`${j.entry_no}-doc-${i}`}
-                                    href={`${process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, '') || 'http://localhost:5000'}${doc.url}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-xs text-primary hover:underline truncate max-w-[140px]"
-                                    title={doc.original_name}
-                                  >
-                                    {doc.original_name || 'Document'}
-                                  </a>
-                                ))}
-                              </div>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{j.source}</Badge>
-                          </TableCell>
-                          <TableCell className="text-right font-mono">{money(j.total_debit)}</TableCell>
-                          <TableCell className="text-right font-mono">{money(j.total_credit)}</TableCell>
-                          <TableCell>
-                            <Badge variant={j.status === 'POSTED' ? 'secondary' : 'outline'}>
-                              {j.status}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="ledger" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Account Ledger</CardTitle>
-              <CardDescription>
-                Running debit/credit activity for a single account. Click a ledger line to open the
-                journal.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap items-end gap-4">
-                <div className="space-y-2 min-w-[280px]">
-                  <Label htmlFor="ledger-account">Account</Label>
-                  <Select value={accountCode || undefined} onValueChange={setAccountCode}>
-                    <SelectTrigger id="ledger-account">
-                      <SelectValue placeholder="Select an account" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {accounts.map((account) => (
-                        <SelectItem key={account.code} value={account.code}>
-                          {account.code} — {account.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {selectedAccount && (
-                  <div className="flex flex-wrap items-center gap-2 pb-2">
-                    <Badge variant="outline">{selectedAccount.type}</Badge>
-                    {selectedAccount.subtype && (
-                      <Badge variant="secondary">{selectedAccount.subtype}</Badge>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {selectedAccount && (
-                <div className="rounded-md border bg-muted/30 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="font-mono text-sm text-muted-foreground">{selectedAccount.code}</p>
-                    <p className="text-lg font-semibold">{selectedAccount.name}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Closing balance</p>
-                    <p className="font-mono text-lg font-semibold">
-                      {money(ledger.closing_balance || 0)} AED
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Entry No</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="text-right">Debit</TableHead>
-                      <TableHead className="text-right">Credit</TableHead>
-                      <TableHead className="text-right">Balance</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {!accountCode ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                          Select an account above, or click one from Chart of Accounts.
-                        </TableCell>
-                      </TableRow>
-                    ) : loadingLedger ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                          Loading ledger...
-                        </TableCell>
-                      </TableRow>
-                    ) : (ledger.rows || []).length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                          No posted movements for this account yet.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      ledger.rows.map((row, idx) => (
-                        <TableRow
-                          key={`${row.entry_no}-${idx}`}
-                          role="button"
-                          tabIndex={0}
-                          className="cursor-pointer hover:bg-muted/60"
-                          onClick={() => openJournalFromLedger(row)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              openJournalFromLedger(row);
-                            }
-                          }}
-                        >
-                          <TableCell>{fmtDate(row.date)}</TableCell>
-                          <TableCell className="font-mono text-primary">{row.entry_no}</TableCell>
-                          <TableCell>{row.description || '—'}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            {row.debit ? money(row.debit) : '—'}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {row.credit ? money(row.credit) : '—'}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">{money(row.balance)}</TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
     </div>
   );
 }

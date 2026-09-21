@@ -4,10 +4,9 @@ import InvoicesTable from "@/components/invoices-table";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useNotifications } from '@/contexts/NotificationContext';
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useToast } from '@/hooks/use-toast';
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -15,10 +14,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Search, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { secureLog } from '@/lib/secure-logger';
+import { Loader2 } from "lucide-react";
+import {
+  DashboardPageShell,
+  ErpToolbar,
+  erpOutlineControlClass,
+} from "@/components/dashboard/maglo-shell";
+import { cn } from "@/lib/utils";
 
 export default function InvoicesPage() {
     const { department } = useAuth();
@@ -27,14 +32,12 @@ export default function InvoicesPage() {
     const [loading, setLoading] = useState(true);
     const { toast } = useToast();
     
-    // Search and filter states
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
     const [filterStatus, setFilterStatus] = useState('all');
     const [filterDateFrom, setFilterDateFrom] = useState('');
     const [filterDateTo, setFilterDateTo] = useState('');
     
-    // Backend pagination states
     const [currentPage, setCurrentPage] = useState(1);
     const [pagination, setPagination] = useState<{
         page: number;
@@ -44,23 +47,19 @@ export default function InvoicesPage() {
     } | null>(null);
     const itemsPerPage = 50;
 
-    // Debounce search query to avoid too many API calls
     useEffect(() => {
         const timer = setTimeout(() => {
             setDebouncedSearchQuery(searchQuery);
-        }, 500); // 500ms delay
+        }, 500);
 
         return () => clearTimeout(timer);
     }, [searchQuery]);
 
-    // Reset to page 1 when search or filters change
     useEffect(() => {
         setCurrentPage(1);
     }, [debouncedSearchQuery, filterStatus, filterDateFrom, filterDateTo]);
 
-    // Load invoices from backend with pagination and search
     useEffect(() => {
-        // Clear invoices notification count when page is visited
         clearCount('invoices');
         
         const loadInvoiceData = async () => {
@@ -76,7 +75,7 @@ export default function InvoicesPage() {
                     page: currentPage,
                     limit: itemsPerPage,
                     search: debouncedSearchQuery || undefined,
-                    useCache: currentPage === 1 && !debouncedSearchQuery // Only cache first page without search
+                    useCache: currentPage === 1 && !debouncedSearchQuery
                 });
                 
                 secureLog.debug('Invoices API result', { success: result?.success });
@@ -115,18 +114,15 @@ export default function InvoicesPage() {
         loadInvoiceData();
     }, [currentPage, debouncedSearchQuery, clearCount]);
 
-    // Apply frontend filters (status and date) to the invoices from backend
     const filteredInvoices = useMemo(() => {
         let filtered = [...invoices];
 
-        // Status filter (frontend only, backend doesn't support this yet)
         if (filterStatus !== 'all') {
             filtered = filtered.filter((invoice) => {
                 return invoice.status === filterStatus;
             });
         }
 
-        // Date range filter (frontend only, backend doesn't support this yet)
         if (filterDateFrom) {
             const fromDate = new Date(filterDateFrom);
             fromDate.setHours(0, 0, 0, 0);
@@ -165,7 +161,6 @@ export default function InvoicesPage() {
             const invoice = invoices.find(inv => inv._id === invoiceId);
             const currentStatus = invoice?.status;
             
-            // If UNPAID, mark as COLLECTED_BY_DRIVER; if COLLECTED_BY_DRIVER, mark as REMITTED
             const result = currentStatus === 'UNPAID'
                 ? await apiClient.updateInvoiceUnified(invoiceId, { status: 'COLLECTED_BY_DRIVER' })
                 : await apiClient.remitInvoiceUnified(invoiceId);
@@ -177,7 +172,6 @@ export default function InvoicesPage() {
                         ? 'Invoice marked as collected successfully'
                         : 'Invoice marked as remitted successfully',
                 });
-                // Refresh current page
                 const updatedResult = await apiClient.getInvoicesUnified({
                     page: currentPage,
                     limit: itemsPerPage,
@@ -228,10 +222,8 @@ export default function InvoicesPage() {
                     title: 'Success',
                     description: 'Invoice and related entities cancelled successfully',
                 });
-                // Invalidate cache to ensure fresh data
                 apiClient.invalidateCache('/invoice-requests');
                 apiClient.invalidateCache('/invoices-unified');
-                // Refresh current page
                 const updatedResult = await apiClient.getInvoicesUnified({
                     page: currentPage,
                     limit: itemsPerPage,
@@ -260,54 +252,35 @@ export default function InvoicesPage() {
         }
     };
 
-    // Calculate display counts
     const totalInvoices = pagination?.total || 0;
     const totalPages = pagination?.pages || 1;
     const startIndex = (currentPage - 1) * itemsPerPage + 1;
     const endIndex = Math.min(currentPage * itemsPerPage, totalInvoices);
+    const hasActiveFilters = !!(searchQuery || filterStatus !== 'all' || filterDateFrom || filterDateTo);
 
     if (loading && invoices.length === 0) {
         return (
-            <div className="flex items-center justify-center h-64">
-                <div className="text-lg">Loading invoices...</div>
-            </div>
+            <DashboardPageShell title="Invoices">
+                <div className="flex h-64 flex-col items-center justify-center gap-3">
+                    <Loader2 className="h-8 w-8 animate-spin text-sky-500" />
+                    <p className="text-sm text-slate-500">Loading invoices...</p>
+                </div>
+            </DashboardPageShell>
         );
     }
 
     return (
-        <div className="space-y-6">
-            {/* Search and Filter Bar */}
-            <Card>
-                <CardHeader>
-                    <CardTitle>Search & Filter Invoices</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {/* Search Input */}
-                        <div className="space-y-2">
-                            <Label htmlFor="search">Search</Label>
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                <Input
-                                    id="search"
-                                    placeholder="Invoice ID, AWB, Batch, Receiver..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="pl-9"
-                                />
-                            </div>
-                            {debouncedSearchQuery && (
-                                <p className="text-xs text-muted-foreground">
-                                    Searching all invoices...
-                                </p>
-                            )}
-                        </div>
-
-                        {/* Status Filter */}
-                        <div className="space-y-2">
-                            <Label htmlFor="status">Status</Label>
+        <DashboardPageShell title="Invoices">
+            <div className="flex h-full min-h-0 flex-col">
+                <ErpToolbar
+                    title="All invoices"
+                    search={searchQuery}
+                    onSearchChange={setSearchQuery}
+                    searchPlaceholder="Invoice ID, AWB, Batch, Receiver..."
+                    filters={
+                        <>
                             <Select value={filterStatus} onValueChange={setFilterStatus}>
-                                <SelectTrigger id="status">
+                                <SelectTrigger className={cn(erpOutlineControlClass(), 'w-[160px]')}>
                                     <SelectValue placeholder="All Statuses" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -318,92 +291,74 @@ export default function InvoicesPage() {
                                     <SelectItem value="REMITTED">Remitted</SelectItem>
                                 </SelectContent>
                             </Select>
-                        </div>
-
-                        {/* Date From */}
-                        <div className="space-y-2">
-                            <Label htmlFor="dateFrom">Date From</Label>
                             <Input
-                                id="dateFrom"
                                 type="date"
                                 value={filterDateFrom}
                                 onChange={(e) => setFilterDateFrom(e.target.value)}
+                                className={cn(erpOutlineControlClass(), 'w-[140px]')}
+                                aria-label="Date from"
                             />
-                        </div>
-
-                        {/* Date To */}
-                        <div className="space-y-2">
-                            <Label htmlFor="dateTo">Date To</Label>
                             <Input
-                                id="dateTo"
                                 type="date"
                                 value={filterDateTo}
                                 onChange={(e) => setFilterDateTo(e.target.value)}
+                                className={cn(erpOutlineControlClass(), 'w-[140px]')}
+                                aria-label="Date to"
                             />
-                        </div>
-                    </div>
+                            {hasActiveFilters && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={clearFilters}
+                                    className={erpOutlineControlClass()}
+                                >
+                                    <X className="mr-1.5 h-4 w-4" />
+                                    Clear
+                                </Button>
+                            )}
+                        </>
+                    }
+                />
 
-                    {/* Clear Filters Button */}
-                    {(searchQuery || filterStatus !== 'all' || filterDateFrom || filterDateTo) && (
-                        <div className="mt-4">
+                <InvoicesTable 
+                    invoices={filteredInvoices}
+                    department={department?.name as any}
+                    onRemit={handleRemitInvoice}
+                    onCancel={handleCancelInvoice}
+                />
+
+                {!loading && pagination && pagination.pages > 1 && (
+                    <div className="sticky bottom-0 z-10 mx-5 mb-5 flex items-center justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/95 px-4 py-3 shadow-[0_12px_40px_-24px_rgba(15,23,42,0.35)] backdrop-blur sm:mx-6">
+                        <div className="text-sm text-slate-500">
+                            Showing {startIndex} to {endIndex} of {totalInvoices} invoices
+                            {debouncedSearchQuery && ` (matching "${debouncedSearchQuery}")`}
+                        </div>
+                        <div className="flex items-center gap-2">
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={clearFilters}
+                                className={erpOutlineControlClass()}
+                                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                disabled={currentPage === 1 || loading}
                             >
-                                <X className="h-4 w-4 mr-2" />
-                                Clear Filters
+                                Previous
                             </Button>
-                            <span className="ml-4 text-sm text-muted-foreground">
-                                Showing {filteredInvoices.length} of {totalInvoices} invoices
-                                {debouncedSearchQuery && ` (searching: "${debouncedSearchQuery}")`}
-                            </span>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
-
-            <InvoicesTable 
-                invoices={filteredInvoices}
-                department={department?.name as any}
-                onRemit={handleRemitInvoice}
-                onCancel={handleCancelInvoice}
-            />
-
-            {/* Pagination Controls */}
-            {!loading && pagination && pagination.pages > 1 && (
-                <Card className="sticky bottom-6 z-10 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
-                    <CardContent className="pt-6">
-                        <div className="flex items-center justify-between">
-                            <div className="text-sm text-muted-foreground">
-                                Showing {startIndex} to {endIndex} of {totalInvoices} invoices
-                                {debouncedSearchQuery && ` (matching "${debouncedSearchQuery}")`}
+                            <div className="text-sm text-slate-700">
+                                Page {currentPage} of {totalPages}
                             </div>
-                            <div className="flex items-center gap-2">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                                    disabled={currentPage === 1 || loading}
-                                >
-                                    Previous
-                                </Button>
-                                <div className="text-sm">
-                                    Page {currentPage} of {totalPages}
-                                </div>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                                    disabled={currentPage >= totalPages || loading}
-                                >
-                                    Next
-                                </Button>
-                            </div>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className={erpOutlineControlClass()}
+                                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                disabled={currentPage >= totalPages || loading}
+                            >
+                                Next
+                            </Button>
                         </div>
-                    </CardContent>
-                </Card>
-            )}
-        </div>
+                    </div>
+                )}
+            </div>
+        </DashboardPageShell>
     );
 }

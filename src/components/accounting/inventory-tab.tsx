@@ -1,33 +1,39 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { Plus, RefreshCw } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Plus } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import AddInventoryItemDialog from './add-inventory-item-dialog';
 import RecordStockMovementDialog from './record-stock-movement-dialog';
 import InventoryItemDetailDialog from './inventory-item-detail-dialog';
 import JournalEntryDetailDialog from './journal-entry-detail-dialog';
+import {
+  ErpEmptyState,
+  ErpGrid,
+  ErpStatStrip,
+  ErpToolbar,
+  MovementTypeBadge,
+  erpPrimaryButtonClass,
+  erpOutlineControlClass,
+  erpTableClasses,
+} from './erp-shell';
+import { fmtDate, money } from './erp-format';
+import { cn } from '@/lib/utils';
 
-function money(n: number) {
-  return Number(n || 0).toLocaleString('en-AE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
+type InventoryTabProps = {
+  mode?: 'items' | 'movements';
+};
 
-function fmtDate(d: string | Date) {
-  if (!d) return '—';
-  const dt = new Date(d);
-  if (Number.isNaN(dt.getTime())) return String(d);
-  return dt.toISOString().slice(0, 10);
-}
-
-export default function InventoryTab() {
+export default function InventoryTab({ mode = 'items' }: InventoryTabProps) {
   const [items, setItems] = useState<any[]>([]);
   const [txns, setTxns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +43,8 @@ export default function InventoryTab() {
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
   const [journalOpen, setJournalOpen] = useState(false);
   const [selectedJournal, setSelectedJournal] = useState<any | null>(null);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
 
   const load = async () => {
     setLoading(true);
@@ -62,201 +70,294 @@ export default function InventoryTab() {
   };
 
   const openMovementJournal = async (txn: any) => {
-    if (!txn.journal_entry_id && !txn.journal_entry_no) return;
-    if (txn.journal_entry_id) {
-      const result = await apiClient.getJournal(String(txn.journal_entry_id));
-      if (result.success && result.data) {
-        setSelectedJournal(result.data);
-        setJournalOpen(true);
-        return;
-      }
+    if (!txn.journal_entry_id) return;
+    const result = await apiClient.getJournal(String(txn.journal_entry_id));
+    if (result.success && result.data) {
+      setSelectedJournal(result.data);
+      setJournalOpen(true);
     }
   };
 
+  const filteredItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return items.filter((item) => {
+      if (!q) return true;
+      return (
+        String(item.sku || '').toLowerCase().includes(q) ||
+        String(item.name || '').toLowerCase().includes(q)
+      );
+    });
+  }, [items, search]);
+
+  const filteredTxns = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return txns.filter((t) => {
+      if (typeFilter !== 'all' && t.type !== typeFilter) return false;
+      if (!q) return true;
+      return (
+        String(t.sku || '').toLowerCase().includes(q) ||
+        String(t.item_name || '').toLowerCase().includes(q) ||
+        String(t.journal_entry_no || '').toLowerCase().includes(q)
+      );
+    });
+  }, [txns, search, typeFilter]);
+
+  const stockValue = useMemo(
+    () => items.reduce((s, i) => s + (Number(i.qty_on_hand) || 0) * (Number(i.avg_cost) || 0), 0),
+    [items]
+  );
+
+  const lowStock = useMemo(
+    () =>
+      items.filter(
+        (i) =>
+          Number(i.reorder_level) > 0 && Number(i.qty_on_hand) <= Number(i.reorder_level)
+      ).length,
+    [items]
+  );
+
+  const t = erpTableClasses();
+
+  if (mode === 'movements') {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <ErpToolbar
+          title="Stock Movements"
+          search={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="SKU or journal…"
+          onRefresh={load}
+          refreshing={loading}
+          filters={
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <SelectTrigger className={cn(erpOutlineControlClass(), 'w-[140px]')}>
+                <SelectValue placeholder="Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                <SelectItem value="RECEIPT">RECEIPT</SelectItem>
+                <SelectItem value="ISSUE">ISSUE</SelectItem>
+                <SelectItem value="ADJUSTMENT">ADJUSTMENT</SelectItem>
+              </SelectContent>
+            </Select>
+          }
+          actions={
+            <Button className={erpPrimaryButtonClass()} onClick={() => setMovementOpen(true)}>
+              <Plus className="mr-1.5 h-4 w-4" />
+              Record Movement
+            </Button>
+          }
+        />
+        <ErpStatStrip
+          items={[
+            { label: 'Movements', value: txns.length },
+            { label: 'Showing', value: filteredTxns.length },
+            {
+              label: 'Linked JEs',
+              value: txns.filter((x) => x.journal_entry_id).length,
+            },
+            {
+              label: 'Receipts',
+              value: txns.filter((x) => x.type === 'RECEIPT').length,
+            },
+            {
+              label: 'Issues',
+              value: txns.filter((x) => x.type === 'ISSUE').length,
+            },
+          ]}
+        />
+        <ErpGrid>
+          <Table className={t.table}>
+            <TableHeader>
+              <TableRow>
+                <TableHead className={t.head}>Date</TableHead>
+                <TableHead className={t.head}>Type</TableHead>
+                <TableHead className={t.head}>SKU</TableHead>
+                <TableHead className={t.head}>Item</TableHead>
+                <TableHead className={cn(t.head, 'text-right')}>Qty</TableHead>
+                <TableHead className={cn(t.head, 'text-right')}>Unit Cost</TableHead>
+                <TableHead className={t.head}>Journal</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={7}>
+                    <ErpEmptyState message="Loading movements…" />
+                  </TableCell>
+                </TableRow>
+              ) : filteredTxns.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7}>
+                    <ErpEmptyState message="No stock movements yet." />
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredTxns.map((txn) => (
+                  <TableRow
+                    key={txn._id}
+                    data-clickable={txn.journal_entry_id ? 'true' : undefined}
+                    className={cn(t.row, t.rowAlt)}
+                    role={txn.journal_entry_id ? 'button' : undefined}
+                    tabIndex={txn.journal_entry_id ? 0 : undefined}
+                    onClick={() => openMovementJournal(txn)}
+                    onKeyDown={(e) => {
+                      if ((e.key === 'Enter' || e.key === ' ') && txn.journal_entry_id) {
+                        e.preventDefault();
+                        openMovementJournal(txn);
+                      }
+                    }}
+                  >
+                    <TableCell className={t.cell}>{fmtDate(txn.txn_date)}</TableCell>
+                    <TableCell className={t.cell}>
+                      <MovementTypeBadge type={txn.type} />
+                    </TableCell>
+                    <TableCell className={cn(t.cell, 'font-mono')}>{txn.sku}</TableCell>
+                    <TableCell className={cn(t.cell, 'max-w-[160px] truncate')}>
+                      {txn.item_name}
+                    </TableCell>
+                    <TableCell className={cn(t.cell, 'text-right font-mono tabular-nums')}>
+                      {txn.qty}
+                    </TableCell>
+                    <TableCell className={cn(t.cell, 'text-right font-mono tabular-nums')}>
+                      {money(txn.unit_cost)}
+                    </TableCell>
+                    <TableCell className={cn(t.cell, 'font-mono text-primary')}>
+                      {txn.journal_entry_no || '—'}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </ErpGrid>
+
+        <RecordStockMovementDialog
+          open={movementOpen}
+          onOpenChange={setMovementOpen}
+          onCreated={load}
+        />
+        <JournalEntryDetailDialog
+          open={journalOpen}
+          onOpenChange={setJournalOpen}
+          journal={selectedJournal}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4">
-      <Tabs defaultValue="items">
-        <TabsList>
-          <TabsTrigger value="items">Products / SKUs</TabsTrigger>
-          <TabsTrigger value="movements">Stock Movements</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="items" className="mt-4">
-          <Card>
-            <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-              <div>
-                <CardTitle>Inventory Items</CardTitle>
-                <CardDescription>
-                  Click an item to see stock movements and linked journal entries.
-                </CardDescription>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-                  <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </Button>
-                <Button onClick={() => setAddOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Item
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>SKU</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Unit</TableHead>
-                      <TableHead className="text-right">Qty on Hand</TableHead>
-                      <TableHead className="text-right">Avg Cost (AED)</TableHead>
-                      <TableHead className="text-right">Reorder Level</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loading ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                          Loading inventory...
-                        </TableCell>
-                      </TableRow>
-                    ) : items.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                          No inventory items found. Add one to get started.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      items.map((item) => (
-                        <TableRow
-                          key={item._id || item.sku}
-                          role="button"
-                          tabIndex={0}
-                          className="cursor-pointer hover:bg-muted/60"
-                          onClick={() => openItem(item.sku)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              openItem(item.sku);
-                            }
-                          }}
-                        >
-                          <TableCell className="font-mono text-primary">{item.sku}</TableCell>
-                          <TableCell>{item.name}</TableCell>
-                          <TableCell>{item.unit}</TableCell>
-                          <TableCell className="text-right font-mono">{item.qty_on_hand}</TableCell>
-                          <TableCell className="text-right font-mono">{money(item.avg_cost)}</TableCell>
-                          <TableCell className="text-right font-mono">{item.reorder_level}</TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="movements" className="mt-4">
-          <Card>
-            <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-              <div>
-                <CardTitle>Stock Movements</CardTitle>
-                <CardDescription>
-                  Click a movement to open its linked journal entry audit trail.
-                </CardDescription>
-              </div>
-              <Button onClick={() => setMovementOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Record Movement
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>SKU</TableHead>
-                      <TableHead>Item</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead className="text-right">Unit Cost</TableHead>
-                      <TableHead>Journal</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loading ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                          Loading movements...
-                        </TableCell>
-                      </TableRow>
-                    ) : txns.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                          No stock movements yet.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      txns.map((t) => (
-                        <TableRow
-                          key={t._id}
-                          role={t.journal_entry_id ? 'button' : undefined}
-                          tabIndex={t.journal_entry_id ? 0 : undefined}
-                          className={
-                            t.journal_entry_id ? 'cursor-pointer hover:bg-muted/60' : undefined
-                          }
-                          onClick={() => openMovementJournal(t)}
-                          onKeyDown={(e) => {
-                            if ((e.key === 'Enter' || e.key === ' ') && t.journal_entry_id) {
-                              e.preventDefault();
-                              openMovementJournal(t);
-                            }
-                          }}
-                        >
-                          <TableCell>{fmtDate(t.txn_date)}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{t.type}</Badge>
-                          </TableCell>
-                          <TableCell className="font-mono">{t.sku}</TableCell>
-                          <TableCell>{t.item_name}</TableCell>
-                          <TableCell className="text-right font-mono">{t.qty}</TableCell>
-                          <TableCell className="text-right font-mono">{money(t.unit_cost)}</TableCell>
-                          <TableCell className="font-mono text-primary">
-                            {t.journal_entry_no || '—'}
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      <AddInventoryItemDialog
-        open={addOpen}
-        onOpenChange={setAddOpen}
-        onCreated={load}
+    <div className="flex h-full min-h-0 flex-col">
+      <ErpToolbar
+        title="Inventory Items"
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="SKU or name…"
+        onRefresh={load}
+        refreshing={loading}
+        actions={
+          <Button className={erpPrimaryButtonClass()} onClick={() => setAddOpen(true)}>
+            <Plus className="mr-1.5 h-4 w-4" />
+            Add Item
+          </Button>
+        }
       />
-      <RecordStockMovementDialog
-        open={movementOpen}
-        onOpenChange={setMovementOpen}
-        onCreated={load}
+      <ErpStatStrip
+        items={[
+          { label: 'SKUs', value: items.length },
+          { label: 'Showing', value: filteredItems.length },
+          { label: 'Low stock', value: lowStock },
+          { label: 'Stock value', value: `${money(stockValue)} AED` },
+          {
+            label: 'Units on hand',
+            value: items.reduce((s, i) => s + (Number(i.qty_on_hand) || 0), 0),
+          },
+        ]}
       />
+      <ErpGrid>
+        <Table className={t.table}>
+          <TableHeader>
+            <TableRow>
+              <TableHead className={t.head}>SKU</TableHead>
+              <TableHead className={t.head}>Name</TableHead>
+              <TableHead className={t.head}>Unit</TableHead>
+              <TableHead className={cn(t.head, 'text-right')}>Qty</TableHead>
+              <TableHead className={cn(t.head, 'text-right')}>Avg Cost</TableHead>
+              <TableHead className={cn(t.head, 'text-right')}>Value</TableHead>
+              <TableHead className={cn(t.head, 'text-right')}>Reorder</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={7}>
+                  <ErpEmptyState message="Loading inventory…" />
+                </TableCell>
+              </TableRow>
+            ) : filteredItems.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7}>
+                  <ErpEmptyState message="No inventory items found." />
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredItems.map((item) => {
+                const low =
+                  Number(item.reorder_level) > 0 &&
+                  Number(item.qty_on_hand) <= Number(item.reorder_level);
+                const value =
+                  (Number(item.qty_on_hand) || 0) * (Number(item.avg_cost) || 0);
+                return (
+                  <TableRow
+                    key={item._id || item.sku}
+                    data-clickable="true"
+                    className={cn(t.row, t.rowAlt, low && 'bg-amber-500/5')}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openItem(item.sku)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openItem(item.sku);
+                      }
+                    }}
+                  >
+                    <TableCell className={cn(t.cell, 'font-mono text-primary')}>
+                      {item.sku}
+                    </TableCell>
+                    <TableCell className={cn(t.cell, 'font-medium')}>{item.name}</TableCell>
+                    <TableCell className={t.cell}>{item.unit}</TableCell>
+                    <TableCell
+                      className={cn(
+                        t.cell,
+                        'text-right font-mono tabular-nums',
+                        low && 'font-semibold text-amber-700 dark:text-amber-400'
+                      )}
+                    >
+                      {item.qty_on_hand}
+                    </TableCell>
+                    <TableCell className={cn(t.cell, 'text-right font-mono tabular-nums')}>
+                      {money(item.avg_cost)}
+                    </TableCell>
+                    <TableCell className={cn(t.cell, 'text-right font-mono tabular-nums')}>
+                      {money(value)}
+                    </TableCell>
+                    <TableCell className={cn(t.cell, 'text-right font-mono tabular-nums')}>
+                      {item.reorder_level}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </ErpGrid>
+
+      <AddInventoryItemDialog open={addOpen} onOpenChange={setAddOpen} onCreated={load} />
       <InventoryItemDetailDialog
         open={itemDetailOpen}
         onOpenChange={setItemDetailOpen}
         sku={selectedSku}
-      />
-      <JournalEntryDetailDialog
-        open={journalOpen}
-        onOpenChange={setJournalOpen}
-        journal={selectedJournal}
       />
     </div>
   );

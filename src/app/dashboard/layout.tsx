@@ -30,8 +30,8 @@ export default function DashboardLayout({
 
   if (loading || !userProfile) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-background">
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+      <div className="flex h-screen w-full items-center justify-center bg-slate-50">
+        <Loader2 className="h-10 w-10 animate-spin text-emerald-600" />
       </div>
     );
   }
@@ -53,7 +53,7 @@ export default function DashboardLayout({
         <SidebarInset className="flex flex-col w-full min-w-0">
           <AppHeader />
           <main 
-            className="flex-1 overflow-y-auto overflow-x-hidden p-6 md:p-8 lg:p-10 w-full min-w-0 scrollbar-hide bg-gradient-to-br from-background via-muted/10 to-background"
+            className="flex-1 overflow-y-auto overflow-x-hidden p-6 md:p-8 lg:p-10 w-full min-w-0 scrollbar-hide bg-gradient-to-br from-slate-50 via-emerald-50/20 to-white"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
               <div className="max-w-[1600px] mx-auto space-y-6">

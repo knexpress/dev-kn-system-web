@@ -4,6 +4,8 @@ import RequestsTable from "@/components/jobs-table";
 import { fetchRequests } from "@/lib/data";
 import { useState, useEffect } from "react";
 import { Request } from "@/lib/types";
+import { Loader2 } from "lucide-react";
+import { DashboardPageShell } from "@/components/dashboard/maglo-shell";
 
 export default function RequestsPage() {
     const [requests, setRequests] = useState<Request[]>([]);
@@ -26,15 +28,18 @@ export default function RequestsPage() {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-64">
-                <div className="text-lg">Loading requests...</div>
-            </div>
+            <DashboardPageShell title="Jobs">
+                <div className="flex h-64 flex-col items-center justify-center gap-3">
+                    <Loader2 className="h-8 w-8 animate-spin text-sky-500" />
+                    <p className="text-sm text-slate-500">Loading requests...</p>
+                </div>
+            </DashboardPageShell>
         );
     }
 
     return (
-        <div>
+        <DashboardPageShell title="Jobs">
             <RequestsTable requests={requests} />
-        </div>
+        </DashboardPageShell>
     );
 }

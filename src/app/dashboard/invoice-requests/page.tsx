@@ -32,14 +32,20 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { secureLog } from '@/lib/secure-logger';
 import { getAwbNumber, isPhToUaeService, isUaeToPhService } from '@/lib/invoice-request-utils';
 import InvoiceRequestCard from '@/components/invoice-request-card';
-// Dynamically import heavy form components to reduce initial bundle size
+import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText, ArrowRight, Phone, MapPin, AlertTriangle, Hash, Download, ChevronLeft, ChevronRight, Loader2, ArrowUp, X } from 'lucide-react';
+import {
+  DashboardPageShell,
+  ErpToolbar,
+  erpOutlineControlClass,
+} from '@/components/dashboard/maglo-shell';
+import { cn } from '@/lib/utils';
+
 const SalesBookingForm = dynamic(() => import('@/components/sales-booking-form'), {
   ssr: false
 });
 const VerificationForm = dynamic(() => import('@/components/verification-form'), {
   ssr: false
 });
-import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText, ArrowRight, Phone, MapPin, AlertTriangle, Hash, Download, ChevronLeft, ChevronRight, Loader2, ArrowUp, X } from 'lucide-react';
 
 export default function InvoiceRequestsPage() {
   const [invoiceRequests, setInvoiceRequests] = useState<any[]>([]);
@@ -3132,175 +3138,133 @@ export default function InvoiceRequestsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-lg">Loading invoice requests...</div>
-      </div>
+      <DashboardPageShell title="Invoice Requests">
+        <div className="flex h-48 items-center justify-center text-sm text-slate-500">
+          Loading invoice requests...
+        </div>
+      </DashboardPageShell>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Invoice Requests</h1>
-          <p className="text-muted-foreground">
-            {userProfile.department.name === 'Sales' && 'Create and track your bookings'}
-            {userProfile.department.name === 'Operations' && 'Process submitted invoice requests'}
-            {userProfile.department.name === 'Finance' && 'Generate invoices for completed requests'}
-          </p>
-        </div>
-        {userProfile.department.name === 'Sales' && (
+    <DashboardPageShell
+      title="Invoice Requests"
+      actions={
+        userProfile.department.name === 'Sales' ? (
           <SalesBookingForm
             onBookingCreated={fetchInvoiceRequests}
             currentUser={userProfile}
             skipAutoReview
           />
-        )}
-      </div>
-
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <Label htmlFor="status-filter">Filter by Status</Label>
-              <Select
-                value={statusFilter}
-                onValueChange={(value) => {
-                  setStatusFilter(value);
-                  setCurrentPage(1); // Reset to first page when filter changes
-                  // If a fetch is in progress, queue the filter change
-                  // Otherwise, fetch immediately with a small delay to allow any pending operations to complete
-                  if (!isFetchingRef.current) {
-                    setTimeout(() => {
-                      fetchInvoiceRequests(1, false, value); // Fetch with new filter
-                    }, 150);
-                  } else {
-                    // Queue the filter change - it will be processed after current fetch completes
-                    pendingFilterChangeRef.current = value;
-                  }
-                }}
-              >
-                <SelectTrigger id="status-filter">
-                  <SelectValue placeholder={userProfile?.department?.name === 'Finance' ? 'Select Status' : 'All Statuses'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {userProfile?.department?.name === 'Finance' ? (
-                    <>
-                      <SelectItem value="VERIFIED">VERIFIED</SelectItem>
-                      <SelectItem value="COMPLETED">COMPLETED</SelectItem>
-                      <SelectItem value="CANCELLED">CANCELLED</SelectItem>
-                    </>
-                  ) : (
-                    <>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="SUBMITTED">SUBMITTED</SelectItem>
-                  <SelectItem value="IN_PROGRESS">IN_PROGRESS</SelectItem>
-                  <SelectItem value="VERIFIED">VERIFIED</SelectItem>
-                  <SelectItem value="COMPLETED">COMPLETED</SelectItem>
-                  <SelectItem value="CANCELLED">CANCELLED</SelectItem>
-                    </>
-                  )}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">
-                {statusFilter && statusFilter !== 'all' 
-                  ? `Showing only ${statusFilter} requests` 
-                  : userProfile?.department?.name === 'Operations' 
-                    ? 'Default: IN_PROGRESS (Operations)' 
-                    : userProfile?.department?.name === 'Finance'
-                      ? 'Select VERIFIED or COMPLETED'
-                      : 'Showing all statuses'}
-              </p>
-            </div>
-            
-            <div className="relative">
-              <Label htmlFor="awb-search">Search by AWB Number</Label>
-              <Input
-                ref={awbInputRef}
-                id="awb-search"
-                type="text"
-                placeholder="Enter AWB number..."
-                value={awbSearch}
-                onChange={(e) => {
-                  setAwbSearch(e.target.value);
-                  setShowAwbSuggestions(true);
-                  // Update dropdown position
-                  if (awbInputRef.current) {
-                    const rect = awbInputRef.current.getBoundingClientRect();
-                    setDropdownPosition({
-                      top: rect.bottom + window.scrollY + 4,
-                      left: rect.left + window.scrollX,
-                      width: rect.width,
-                    });
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    setShowAwbSuggestions(false);
-                  }
-                }}
-                onFocus={() => {
-                  setShowAwbSuggestions(true);
-                  // Update dropdown position
-                  if (awbInputRef.current) {
-                    const rect = awbInputRef.current.getBoundingClientRect();
-                    setDropdownPosition({
-                      top: rect.bottom + window.scrollY + 4,
-                      left: rect.left + window.scrollX,
-                      width: rect.width,
-                    });
-                  }
-                }}
-                onBlur={() => {
-                  // Delay hiding suggestions to allow click
-                  setTimeout(() => setShowAwbSuggestions(false), 200);
-                }}
-              />
-            </div>
-            <div className="relative">
-              <Label htmlFor="name-search">Search by Customer Name</Label>
-              <Input
-                id="name-search"
-                type="text"
-                placeholder="Enter customer name (e.g., John Doe or John)..."
-                value={nameSearch}
-                onChange={(e) => setNameSearch(e.target.value)}
-              />
-              {searchingByName && (
-                <p className="text-xs text-muted-foreground mt-1">Searching...</p>
-              )}
-              {!searchingByName && nameSearch.trim().length >= 2 && nameSearchAwbs.length > 0 && (
-                <div className="mt-1 space-y-1">
-                  <p className="text-xs text-green-600">
-                  Found {nameSearchAwbs.length} AWB{nameSearchAwbs.length !== 1 ? 's' : ''}
-                </p>
-                  <div className="text-xs text-muted-foreground">
-                    {nameSearchAwbs.map((awb, idx) => (
-                      <p key={idx} className="font-mono">AWB: {awb}</p>
-                    ))}
-                  </div>
-                  {filteredRequests.length === 0 && (
-                    <p className="text-xs text-orange-600 mt-1">
-                      No matching invoice requests found. The AWB may not be linked to an invoice request yet.
-                    </p>
-                  )}
-                </div>
-              )}
-              {!searchingByName && nameSearch.trim().length >= 2 && nameSearchAwbs.length === 0 && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  No bookings found for this name
-                </p>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+        ) : undefined
+      }
+    >
+      <ErpToolbar
+        title={
+          pagination
+            ? `Requests · ${pagination.displayText || `${pagination.startRecord || 0}-${pagination.endRecord || 0} of ${pagination.total || 0}`}`
+            : `Requests · ${filteredRequests.length}`
+        }
+        filters={
+          <>
+            <Select
+              value={statusFilter}
+              onValueChange={(value) => {
+                setStatusFilter(value);
+                setCurrentPage(1);
+                if (!isFetchingRef.current) {
+                  setTimeout(() => {
+                    fetchInvoiceRequests(1, false, value);
+                  }, 150);
+                } else {
+                  pendingFilterChangeRef.current = value;
+                }
+              }}
+            >
+              <SelectTrigger className={cn(erpOutlineControlClass(), 'w-[150px]')}>
+                <SelectValue placeholder={userProfile?.department?.name === 'Finance' ? 'Select Status' : 'All Statuses'} />
+              </SelectTrigger>
+              <SelectContent>
+                {userProfile?.department?.name === 'Finance' ? (
+                  <>
+                    <SelectItem value="VERIFIED">VERIFIED</SelectItem>
+                    <SelectItem value="COMPLETED">COMPLETED</SelectItem>
+                    <SelectItem value="CANCELLED">CANCELLED</SelectItem>
+                  </>
+                ) : (
+                  <>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="SUBMITTED">SUBMITTED</SelectItem>
+                    <SelectItem value="IN_PROGRESS">IN_PROGRESS</SelectItem>
+                    <SelectItem value="VERIFIED">VERIFIED</SelectItem>
+                    <SelectItem value="COMPLETED">COMPLETED</SelectItem>
+                    <SelectItem value="CANCELLED">CANCELLED</SelectItem>
+                  </>
+                )}
+              </SelectContent>
+            </Select>
+            <Input
+              ref={awbInputRef}
+              type="text"
+              placeholder="AWB number…"
+              value={awbSearch}
+              className={cn(erpOutlineControlClass(), 'w-[160px] sm:w-[180px]')}
+              onChange={(e) => {
+                setAwbSearch(e.target.value);
+                setShowAwbSuggestions(true);
+                if (awbInputRef.current) {
+                  const rect = awbInputRef.current.getBoundingClientRect();
+                  setDropdownPosition({
+                    top: rect.bottom + window.scrollY + 4,
+                    left: rect.left + window.scrollX,
+                    width: rect.width,
+                  });
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  setShowAwbSuggestions(false);
+                }
+              }}
+              onFocus={() => {
+                setShowAwbSuggestions(true);
+                if (awbInputRef.current) {
+                  const rect = awbInputRef.current.getBoundingClientRect();
+                  setDropdownPosition({
+                    top: rect.bottom + window.scrollY + 4,
+                    left: rect.left + window.scrollX,
+                    width: rect.width,
+                  });
+                }
+              }}
+              onBlur={() => {
+                setTimeout(() => setShowAwbSuggestions(false), 200);
+              }}
+            />
+            <Input
+              type="text"
+              placeholder="Customer name…"
+              value={nameSearch}
+              className={cn(erpOutlineControlClass(), 'w-[160px] sm:w-[200px]')}
+              onChange={(e) => setNameSearch(e.target.value)}
+            />
+          </>
+        }
+        actions={
+          filteredRequests.length > 0 && userProfile?.department?.name !== 'Sales' ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportToExcel}
+              className={cn(erpOutlineControlClass(), 'gap-2')}
+            >
+              <Download className="h-4 w-4" />
+              Excel
+            </Button>
+          ) : undefined
+        }
+      />
 
       {/* AWB Suggestions Dropdown Portal */}
       {typeof window !== 'undefined' && showAwbSuggestions && (awbSuggestions.length > 0 || searchingBookings) && createPortal(
@@ -3339,25 +3303,12 @@ export default function InvoiceRequestsPage() {
       )}
 
       {/* Invoice Requests Table */}
-      <Card>
-        <CardHeader>
+      <Card className="mx-5 mb-5 border-slate-200/70 shadow-none sm:mx-6">
+        <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <div className="flex flex-col gap-1">
-              <CardTitle>
-                Invoice Requests {pagination ? `(${pagination.displayText || `${pagination.startRecord || 0}-${pagination.endRecord || 0} of ${pagination.total || 0}`})` : `(${filteredRequests.length})`}
-              </CardTitle>
-            </div>
-            {filteredRequests.length > 0 && userProfile?.department?.name !== 'Sales' && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleExportToExcel}
-                className="gap-2"
-              >
-                <Download className="h-4 w-4" />
-                Download Excel
-              </Button>
-            )}
+            <CardTitle className="text-base font-semibold text-slate-800">
+              List
+            </CardTitle>
           </div>
         </CardHeader>
         {/* Pagination Controls */}
@@ -4312,6 +4263,6 @@ export default function InvoiceRequestsPage() {
         </Button>
       )}
 
-    </div>
+    </DashboardPageShell>
   );
 }

@@ -169,41 +169,47 @@ export default function NewJournalEntryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>New Journal Entry</DialogTitle>
-          <DialogDescription>
-            Enter balanced debit and credit lines. Posted entries update ledgers and reports.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-w-4xl gap-0 p-0 max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="border-b border-border/60 px-4 py-3 shrink-0">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base">New Journal Entry</DialogTitle>
+            <DialogDescription className="text-xs">
+              Balanced debit/credit lines — posted entries update ledgers and reports.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="je-date">Date</Label>
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+        <div className="grid gap-2.5 sm:grid-cols-2 text-xs">
+          <div className="space-y-1">
+            <Label htmlFor="je-date" className="text-[11px]">Date</Label>
             <Input
               id="je-date"
               type="date"
               value={entryDate}
               onChange={(e) => setEntryDate(e.target.value)}
+              className="h-8 text-xs"
             />
           </div>
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="je-memo">Memo</Label>
+          <div className="space-y-1 sm:col-span-2">
+            <Label htmlFor="je-memo" className="text-[11px]">Memo</Label>
             <Textarea
               id="je-memo"
               value={memo}
               onChange={(e) => setMemo(e.target.value)}
               placeholder="Description of this journal entry"
               rows={2}
+              className="text-xs min-h-[56px]"
             />
           </div>
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="je-docs">Supporting documents</Label>
+          <div className="space-y-1 sm:col-span-2">
+            <Label htmlFor="je-docs" className="text-[11px]">Supporting documents</Label>
             <Input
               id="je-docs"
               type="file"
               multiple
               accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,.xls,.xlsx"
+              className="h-8 text-xs"
               onChange={(e) => {
                 const files = Array.from(e.target.files || []);
                 setDocuments((prev) => {
@@ -213,7 +219,7 @@ export default function NewJournalEntryDialog({
                 e.target.value = '';
               }}
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[10px] text-muted-foreground">
               Optional. Up to 5 files (PDF, image, Word, Excel), 10MB each.
             </p>
             {documents.length > 0 && (
@@ -250,40 +256,41 @@ export default function NewJournalEntryDialog({
           </div>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <Label>Lines</Label>
+            <Label className="text-[11px]">Lines</Label>
             <Button
               type="button"
               variant="outline"
               size="sm"
+              className="h-7 text-xs"
               onClick={() => setLines((prev) => [...prev, emptyLine()])}
             >
-              <Plus className="mr-2 h-4 w-4" />
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
               Add Line
             </Button>
           </div>
 
-          <div className="rounded-md border overflow-x-auto">
-            <Table>
+          <div className="rounded-md border border-border/60 overflow-x-auto">
+            <Table className="text-xs">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-[220px]">Account</TableHead>
-                  <TableHead className="min-w-[180px]">Description</TableHead>
-                  <TableHead className="w-[130px] text-right">Debit</TableHead>
-                  <TableHead className="w-[130px] text-right">Credit</TableHead>
-                  <TableHead className="w-[50px]" />
+                  <TableHead className="h-8 min-w-[200px] text-[10px] uppercase">Account</TableHead>
+                  <TableHead className="h-8 min-w-[160px] text-[10px] uppercase">Description</TableHead>
+                  <TableHead className="h-8 w-[110px] text-right text-[10px] uppercase">Debit</TableHead>
+                  <TableHead className="h-8 w-[110px] text-right text-[10px] uppercase">Credit</TableHead>
+                  <TableHead className="h-8 w-[40px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {lines.map((line) => (
                   <TableRow key={line.id}>
-                    <TableCell>
+                    <TableCell className="p-1.5">
                       <Select
                         value={line.account_code || undefined}
                         onValueChange={(v) => updateLine(line.id, { account_code: v })}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className="h-8 text-xs">
                           <SelectValue placeholder="Select account" />
                         </SelectTrigger>
                         <SelectContent>
@@ -295,19 +302,20 @@ export default function NewJournalEntryDialog({
                         </SelectContent>
                       </Select>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="p-1.5">
                       <Input
                         value={line.description}
                         onChange={(e) => updateLine(line.id, { description: e.target.value })}
                         placeholder="Line note"
+                        className="h-8 text-xs"
                       />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="p-1.5">
                       <Input
                         type="number"
                         min="0"
                         step="0.01"
-                        className="text-right"
+                        className="h-8 text-right text-xs font-mono"
                         value={line.debit}
                         onChange={(e) =>
                           updateLine(line.id, {
@@ -318,12 +326,12 @@ export default function NewJournalEntryDialog({
                         placeholder="0.00"
                       />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="p-1.5">
                       <Input
                         type="number"
                         min="0"
                         step="0.01"
-                        className="text-right"
+                        className="h-8 text-right text-xs font-mono"
                         value={line.credit}
                         onChange={(e) =>
                           updateLine(line.id, {
@@ -334,27 +342,28 @@ export default function NewJournalEntryDialog({
                         placeholder="0.00"
                       />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="p-1.5">
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
+                        className="h-7 w-7"
                         disabled={lines.length <= 2}
                         onClick={() => removeLine(line.id)}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </TableCell>
                   </TableRow>
                 ))}
-                <TableRow>
-                  <TableCell colSpan={2} className="font-semibold text-right">
+                <TableRow className="bg-muted/30">
+                  <TableCell colSpan={2} className="p-1.5 text-xs font-semibold text-right">
                     Totals {totals.balanced ? '(balanced)' : '(unbalanced)'}
                   </TableCell>
-                  <TableCell className="text-right font-mono font-semibold">
+                  <TableCell className="p-1.5 text-right font-mono text-xs font-semibold">
                     {money(totals.debit)}
                   </TableCell>
-                  <TableCell className="text-right font-mono font-semibold">
+                  <TableCell className="p-1.5 text-right font-mono text-xs font-semibold">
                     {money(totals.credit)}
                   </TableCell>
                   <TableCell />
@@ -363,20 +372,23 @@ export default function NewJournalEntryDialog({
             </Table>
           </div>
         </div>
+        </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+        <DialogFooter className="border-t border-border/60 px-4 py-2.5 shrink-0 gap-2 sm:gap-0">
+          <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
           <Button
             type="button"
             variant="secondary"
+            size="sm"
+            className="h-8 text-xs"
             onClick={() => handleSave('DRAFT')}
             disabled={saving}
           >
             Save Draft
           </Button>
-          <Button type="button" onClick={() => handleSave('POSTED')} disabled={saving}>
+          <Button type="button" size="sm" className="h-8 text-xs" onClick={() => handleSave('POSTED')} disabled={saving}>
             {saving ? 'Saving...' : 'Post Entry'}
           </Button>
         </DialogFooter>

@@ -5,14 +5,20 @@ import { apiClient } from "@/lib/api-client";
 import { useState, useEffect } from "react";
 import { Client } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { secureLog } from "@/lib/secure-logger";
-import { Loader2, Users, AlertCircle, RefreshCw } from "lucide-react";
+import { Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DashboardPageShell,
+  erpOutlineControlClass,
+} from "@/components/dashboard/maglo-shell";
 
-// Dynamically import ClientTable to reduce initial bundle size
 const ClientTable = dynamic(() => import("@/components/client-table"), {
-    loading: () => <div className="flex items-center justify-center h-64">Loading clients...</div>,
+    loading: () => (
+      <div className="flex h-64 items-center justify-center text-sm text-slate-500">
+        Loading clients...
+      </div>
+    ),
     ssr: false
 });
 
@@ -27,11 +33,9 @@ export default function ClientsPage() {
                 setLoading(true);
                 setError(null);
                 
-                // Fetch clients from Finance database
                 const result = await apiClient.getClients();
                 
                 if (result.success && result.data) {
-                    // Map database fields to Client interface
                     const mappedClients: Client[] = Array.isArray(result.data) 
                         ? result.data.map((client: any) => ({
                             id: client._id || client.id || '',
@@ -76,55 +80,46 @@ export default function ClientsPage() {
 
     useEffect(() => {
         loadClients();
-    }, []); // Load clients on component mount
+    }, []);
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-64">
-                <Card className="p-8">
-                    <CardContent className="flex flex-col items-center gap-4">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                        <p className="text-sm text-muted-foreground">Loading clients from database...</p>
-                    </CardContent>
-                </Card>
-            </div>
+            <DashboardPageShell title="Clients">
+                <div className="flex h-64 flex-col items-center justify-center gap-3">
+                    <Loader2 className="h-8 w-8 animate-spin text-sky-500" />
+                    <p className="text-sm text-slate-500">Loading clients from database...</p>
+                </div>
+            </DashboardPageShell>
         );
     }
 
     if (error) {
         return (
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <AlertCircle className="h-5 w-5 text-destructive" />
-                        Error Loading Clients
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="flex items-start gap-3 p-4 rounded-md bg-destructive/10 border border-destructive/20">
-                        <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
-                        <div className="flex-1">
-                            <p className="text-sm font-medium text-destructive mb-1">Failed to fetch clients</p>
-                            <p className="text-xs text-muted-foreground">{error}</p>
+            <DashboardPageShell title="Clients">
+                <div className="flex flex-col items-center justify-center gap-4 px-6 py-16">
+                    <div className="flex items-start gap-3 rounded-2xl border border-rose-200/80 bg-rose-50/80 p-4">
+                        <AlertCircle className="mt-0.5 h-5 w-5 text-rose-600" />
+                        <div>
+                            <p className="text-sm font-medium text-rose-700">Failed to fetch clients</p>
+                            <p className="mt-1 text-xs text-slate-500">{error}</p>
                         </div>
                     </div>
-                    <Button 
-                        onClick={loadClients} 
-                        variant="outline" 
-                        className="w-full"
+                    <Button
+                        onClick={loadClients}
+                        variant="outline"
+                        className={erpOutlineControlClass()}
                     >
-                        <RefreshCw className="h-4 w-4 mr-2" />
+                        <RefreshCw className="mr-2 h-4 w-4" />
                         Retry
                     </Button>
-                </CardContent>
-            </Card>
+                </div>
+            </DashboardPageShell>
         );
     }
 
     return (
-        <div className="space-y-4">
+        <DashboardPageShell title="Clients">
             <ClientTable clients={clients} onRefresh={loadClients} />
-        </div>
+        </DashboardPageShell>
     );
 }
-  

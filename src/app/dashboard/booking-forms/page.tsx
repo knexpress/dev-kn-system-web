@@ -2,9 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Table,
   TableBody,
@@ -27,6 +25,14 @@ import { Badge } from '@/components/ui/badge';
 import { Download, Loader2, Search, User } from 'lucide-react';
 import { downloadBookingFormPdf } from '@/lib/booking-pdf-mapper';
 import { secureLog } from '@/lib/secure-logger';
+import { cn } from '@/lib/utils';
+import {
+  DashboardPageShell,
+  ErpToolbar,
+  ErpGrid,
+  erpOutlineControlClass,
+  erpPrimaryButtonClass,
+} from '@/components/dashboard/maglo-shell';
 
 type NameHit = {
   _id: string;
@@ -309,48 +315,38 @@ export default function BookingFormsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Booking Forms</h1>
-        <p className="text-muted-foreground">
-          Search by name to see matching names first. Click a name to load that booking, then
-          download the PDF.
-        </p>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Search</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="awb-search">AWB number</Label>
-              <Input
-                id="awb-search"
-                placeholder="Partial or full AWB…"
-                value={awbSearch}
-                onChange={(e) => setAwbSearch(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              />
-            </div>
-            <div>
-              <Label htmlFor="name-search">Sender or receiver name</Label>
-              <Input
-                id="name-search"
-                placeholder="e.g. SARAH TAPIT"
-                value={nameSearch}
-                onChange={(e) => setNameSearch(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              />
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Searches sender/receiver first and last name in bookings (e.g. &quot;SARAH
-            TAPIT&quot; also matches &quot;Sarah Camille Tapit&quot;). Click a name to open booking
-            details in a popup, then download the PDF.
-          </p>
-          <Button type="button" onClick={handleSearch} disabled={searching}>
+    <DashboardPageShell title="Booking Forms">
+      <ErpToolbar
+        title={
+          hasSearched && !searching
+            ? `${searchMode === 'names' ? 'Matching names' : 'Results'} · ${searchMode === 'names' ? nameHits.length : awbResults.length}`
+            : 'Search bookings'
+        }
+        filters={
+          <>
+            <Input
+              placeholder="AWB number…"
+              value={awbSearch}
+              onChange={(e) => setAwbSearch(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              className={cn(erpOutlineControlClass(), 'w-[150px] sm:w-[180px]')}
+            />
+            <Input
+              placeholder="Sender or receiver name…"
+              value={nameSearch}
+              onChange={(e) => setNameSearch(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              className={cn(erpOutlineControlClass(), 'w-[180px] sm:w-[220px]')}
+            />
+          </>
+        }
+        actions={
+          <Button
+            type="button"
+            className={erpPrimaryButtonClass()}
+            onClick={handleSearch}
+            disabled={searching}
+          >
             {searching ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -363,36 +359,19 @@ export default function BookingFormsPage() {
               </>
             )}
           </Button>
-        </CardContent>
-      </Card>
+        }
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between gap-3">
-            <span>{searchMode === 'names' ? 'Matching names' : 'Results'}</span>
-            {hasSearched && !searching && (
-              <span className="text-sm font-normal text-muted-foreground flex items-center gap-2">
-                {searchMode === 'names' ? nameHits.length : awbResults.length} found
-                {loadingMore ? (
-                  <span className="inline-flex items-center gap-1 text-primary">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Loading more…
-                  </span>
-                ) : null}
-              </span>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <div className="px-5 pb-5 sm:px-6">
           {searching ? (
-            <p className="text-muted-foreground py-8 text-center">Searching…</p>
+            <p className="text-slate-500 py-8 text-center text-sm">Searching…</p>
           ) : !hasSearched ? (
-            <p className="text-muted-foreground py-8 text-center">
+            <p className="text-slate-500 py-8 text-center text-sm">
               Enter AWB or name and click Search.
             </p>
           ) : searchMode === 'names' ? (
             nameHits.length === 0 ? (
-              <p className="text-muted-foreground py-8 text-center">No similar names found.</p>
+              <p className="text-slate-500 py-8 text-center text-sm">No similar names found.</p>
             ) : (
               <div className="space-y-2">
                 {nameHits.map((hit) => {
@@ -404,20 +383,20 @@ export default function BookingFormsPage() {
                       type="button"
                       onClick={() => handleSelectName(hit)}
                       disabled={!!loadingSummaryId}
-                      className={`w-full text-left rounded-md border px-4 py-3 transition hover:bg-muted/50 flex items-center justify-between gap-3 ${
-                        active ? 'border-primary bg-primary/5' : 'border-border'
+                      className={`w-full text-left rounded-2xl border px-4 py-3 transition hover:bg-sky-50/50 flex items-center justify-between gap-3 ${
+                        active ? 'border-sky-300 bg-sky-50/60' : 'border-slate-200/80'
                       }`}
                     >
                       <span className="flex items-center gap-2 min-w-0">
-                        <User className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <User className="h-4 w-4 shrink-0 text-slate-400" />
                         <span className="min-w-0">
                           <span className="font-medium truncate block">{hit.display_name}</span>
                           {hit.sender_name && hit.receiver_name ? (
-                            <span className="text-xs text-muted-foreground truncate block">
+                            <span className="text-xs text-slate-500 truncate block">
                               Sender: {hit.sender_name} · Receiver: {hit.receiver_name}
                             </span>
                           ) : hit.match_side ? (
-                            <span className="text-xs text-muted-foreground capitalize">
+                            <span className="text-xs text-slate-500 capitalize">
                               ({hit.match_side})
                             </span>
                           ) : null}
@@ -433,6 +412,7 @@ export default function BookingFormsPage() {
                       type="button"
                       variant="outline"
                       size="sm"
+                      className={erpOutlineControlClass()}
                       disabled={loadingMore}
                       onClick={handleLoadMore}
                     >
@@ -450,9 +430,9 @@ export default function BookingFormsPage() {
               </div>
             )
           ) : awbResults.length === 0 ? (
-            <p className="text-muted-foreground py-8 text-center">No matching bookings.</p>
+            <p className="text-slate-500 py-8 text-center text-sm">No matching bookings.</p>
           ) : (
-            <div className="rounded-md border overflow-x-auto">
+            <ErpGrid className="!px-0 !pb-0" maxHeight="min(58vh, 620px)">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -477,7 +457,7 @@ export default function BookingFormsPage() {
                           {formatReviewStatus(row.review_status).label}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
+                      <TableCell className="text-sm text-slate-500">
                         {formatDate(row.createdAt) || '—'}
                       </TableCell>
                       <TableCell className="text-right">
@@ -485,6 +465,7 @@ export default function BookingFormsPage() {
                           type="button"
                           variant="outline"
                           size="sm"
+                          className={erpOutlineControlClass()}
                           disabled={downloadingId === row._id}
                           onClick={() => handleDownloadPdf(row)}
                         >
@@ -506,11 +487,12 @@ export default function BookingFormsPage() {
                 </TableBody>
               </Table>
               {searchMeta?.hasMore && nextCursor ? (
-                <div className="p-3 border-t">
+                <div className="p-3 border-t border-slate-100">
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
+                    className={erpOutlineControlClass()}
                     disabled={loadingMore}
                     onClick={handleLoadMore}
                   >
@@ -525,10 +507,9 @@ export default function BookingFormsPage() {
                   </Button>
                 </div>
               ) : null}
-            </div>
+            </ErpGrid>
           )}
-        </CardContent>
-      </Card>
+      </div>
 
       <Dialog open={!!selectedSummary} onOpenChange={closeSelectedBooking}>
         <DialogContent className="sm:max-w-lg">
@@ -614,6 +595,6 @@ export default function BookingFormsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </DashboardPageShell>
   );
 }

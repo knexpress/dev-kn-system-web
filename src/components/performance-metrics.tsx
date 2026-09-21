@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { 
   DollarSign, 
@@ -34,6 +33,7 @@ import { secureLog } from '@/lib/secure-logger';
 import { getDepartmentPerformanceMetrics, calculateOverallScore, type PerformanceMetric } from '@/lib/performance-metrics';
 import { calculateCompanyMetrics } from '@/lib/metrics-calculator';
 import type { Department } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 interface PerformanceMetricsProps {
   department: Department;
@@ -135,105 +135,113 @@ export default function PerformanceMetrics({ department }: PerformanceMetricsPro
   const getTrendColor = (trend: 'up' | 'down' | 'neutral') => {
     switch (trend) {
       case 'up':
-        return 'text-green-600';
+        return 'text-emerald-600';
       case 'down':
-        return 'text-red-600';
+        return 'text-rose-600';
       default:
-        return 'text-gray-600';
+        return 'text-slate-500';
     }
   };
 
-  const getColorClasses = (color: string) => {
+  /** Subtle Maglo tone accents — no loud filled color borders */
+  const getToneAccent = (color: string) => {
     switch (color) {
       case 'success':
-        return 'border-green-200 bg-green-50';
+        return 'ring-emerald-100/70';
       case 'warning':
-        return 'border-yellow-200 bg-yellow-50';
+        return 'ring-amber-100/70';
       case 'destructive':
-        return 'border-red-200 bg-red-50';
+        return 'ring-rose-100/70';
       case 'primary':
-        return 'border-blue-200 bg-blue-50';
-      case 'secondary':
-        return 'border-gray-200 bg-gray-50';
+        return 'ring-sky-100/70';
       default:
-        return 'border-gray-200 bg-white';
+        return 'ring-transparent';
     }
   };
 
   if (loading) {
     return (
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         {[...Array(4)].map((_, i) => (
-          <Card key={i} className="animate-pulse">
-            <CardHeader className="pb-2">
-              <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-            </CardHeader>
-            <CardContent>
-              <div className="h-8 bg-gray-200 rounded w-1/2 mb-2"></div>
-              <div className="h-3 bg-gray-200 rounded w-full"></div>
-            </CardContent>
-          </Card>
+          <div
+            key={i}
+            className="animate-pulse rounded-2xl border border-white/80 bg-gradient-to-br from-white to-slate-50/80 p-3.5 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.35)]"
+          >
+            <div className="h-3 w-3/4 rounded bg-slate-200/80" />
+            <div className="mt-3 h-6 w-1/2 rounded bg-slate-200/80" />
+            <div className="mt-2 h-2.5 w-full rounded bg-slate-100" />
+          </div>
         ))}
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Overall Performance Score */}
-      <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Overall Performance Score</span>
-            <Badge variant="outline" className="text-lg px-3 py-1">
-              {overallScore}%
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div 
-              className="bg-gradient-to-r from-blue-500 to-indigo-600 h-2 rounded-full transition-all duration-500"
-              style={{ width: `${overallScore}%` }}
-            ></div>
+      <div className="relative overflow-hidden rounded-2xl border border-white/80 bg-gradient-to-br from-sky-50/80 via-white to-slate-50/80 p-4 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.35)] ring-1 ring-sky-100/80 sm:p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-medium tracking-wide text-slate-400">
+              Overall Performance Score
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              Based on key performance indicators for {department} department
+            </p>
           </div>
-          <p className="text-sm text-muted-foreground mt-2">
-            Based on key performance indicators for {department} department
-          </p>
-        </CardContent>
-      </Card>
+          <Badge
+            variant="outline"
+            className="rounded-xl border-sky-200/80 bg-white px-3 py-1 text-base font-semibold tabular-nums text-slate-900"
+          >
+            {overallScore}%
+          </Badge>
+        </div>
+        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+          <div
+            className="h-2 rounded-full bg-gradient-to-r from-sky-400 to-sky-600 transition-all duration-500"
+            style={{ width: `${overallScore}%` }}
+          />
+        </div>
+      </div>
 
-      {/* Performance Metrics */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {metrics.map((metric) => {
+      {/* Performance Metrics — Maglo ErpStatStrip language */}
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+        {metrics.map((metric, idx) => {
           const IconComponent = iconMap[metric.icon as keyof typeof iconMap] || Target;
           
           return (
-            <Card key={metric.id} className={`${getColorClasses(metric.color)} transition-all duration-200 hover:shadow-md`}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-gray-700">
+            <div
+              key={metric.id}
+              className={cn(
+                'rounded-2xl border border-white/80 bg-gradient-to-br from-white to-slate-50/80 p-3.5 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.35)] transition-shadow duration-200 hover:shadow-[0_14px_36px_-18px_rgba(15,23,42,0.4)]',
+                idx === 0 && 'from-sky-50 to-white ring-1 ring-sky-100/80',
+                idx !== 0 && getToneAccent(metric.color) && `ring-1 ${getToneAccent(metric.color)}`
+              )}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[11px] font-medium tracking-wide text-slate-400">
                   {metric.title}
-                </CardTitle>
-                <IconComponent className="h-4 w-4 text-gray-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center space-x-2">
-                  <div className="text-2xl font-bold text-gray-900">
-                    {metric.value.toLocaleString()}
-                    {metric.unit && <span className="text-sm font-normal text-gray-600 ml-1">{metric.unit}</span>}
-                  </div>
-                  {metric.trend && metric.trendPercentage && (
-                    <div className={`flex items-center text-xs ${getTrendColor(metric.trend)}`}>
-                      <span className="mr-1">{getTrendIcon(metric.trend)}</span>
-                      <span>{Math.abs(metric.trendPercentage).toFixed(1)}%</span>
-                    </div>
-                  )}
-                </div>
-                <p className="text-xs text-gray-600 mt-1">
-                  {metric.description}
                 </p>
-              </CardContent>
-            </Card>
+                <IconComponent className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              </div>
+              <div className="mt-1.5 flex items-baseline gap-2">
+                <p className="font-semibold tabular-nums tracking-tight text-slate-900 text-[15px] sm:text-base">
+                  {metric.value.toLocaleString()}
+                  {metric.unit && (
+                    <span className="ml-1 text-[11px] font-medium text-slate-400">{metric.unit}</span>
+                  )}
+                </p>
+                {metric.trend && metric.trendPercentage != null && (
+                  <span className={cn('text-[11px] font-medium tabular-nums', getTrendColor(metric.trend))}>
+                    {getTrendIcon(metric.trend)}
+                    {Math.abs(metric.trendPercentage).toFixed(1)}%
+                  </span>
+                )}
+              </div>
+              {metric.description && (
+                <p className="mt-0.5 text-[11px] text-slate-400 line-clamp-2">{metric.description}</p>
+              )}
+            </div>
           );
         })}
       </div>

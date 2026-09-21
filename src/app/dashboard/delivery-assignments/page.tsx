@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -12,9 +11,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, Plus, Eye, QrCode, MapPin, Package, User, Clock, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
+import { Loader2, Plus, Eye, QrCode, Clock, CheckCircle, XCircle } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { secureLog } from '@/lib/secure-logger';
+import {
+  DashboardPageShell,
+  ErpToolbar,
+  ErpGrid,
+  erpPrimaryButtonClass,
+  erpOutlineControlClass,
+} from '@/components/dashboard/maglo-shell';
 
 interface DeliveryAssignment {
   _id: string;
@@ -117,9 +123,11 @@ export default function DeliveryAssignmentsPage() {
 
   if (isOperations) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-lg text-muted-foreground">Access denied.</div>
-      </div>
+      <DashboardPageShell title="Delivery Assignments">
+        <div className="flex h-48 items-center justify-center text-sm text-slate-500">
+          Access denied.
+        </div>
+      </DashboardPageShell>
     );
   }
 
@@ -314,153 +322,150 @@ export default function DeliveryAssignmentsPage() {
     });
   };
 
-  if (loading) return <Loader2 className="h-8 w-8 animate-spin" />;
+  if (loading) {
+    return (
+      <DashboardPageShell title="Delivery Assignments">
+        <div className="flex h-64 items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-sky-500" />
+        </div>
+      </DashboardPageShell>
+    );
+  }
+
+  const createAssignmentDialog = (
+    <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+      <DialogTrigger asChild>
+        <Button className={erpPrimaryButtonClass()}>
+          <Plus className="mr-2 h-4 w-4" />
+          Create Assignment
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Create Delivery Assignment</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="request_id">Request ID</Label>
+              <Input
+                id="request_id"
+                value={formData.request_id}
+                onChange={(e) => setFormData(prev => ({ ...prev, request_id: e.target.value }))}
+                placeholder="SR-000001"
+              />
+            </div>
+            <div>
+              <Label htmlFor="driver_id">Driver</Label>
+              <Select value={formData.driver_id} onValueChange={(value) => setFormData(prev => ({ ...prev, driver_id: value }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select driver" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Array.isArray(drivers) ? drivers : []).map((driver) => (
+                    <SelectItem key={driver._id} value={driver._id}>
+                      {driver.name} - {driver.vehicle_type} ({driver.vehicle_number})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="invoice_id">Invoice ID</Label>
+              <Input
+                id="invoice_id"
+                value={formData.invoice_id}
+                onChange={(e) => setFormData(prev => ({ ...prev, invoice_id: e.target.value }))}
+                placeholder="INV-000001"
+              />
+            </div>
+            <div>
+              <Label htmlFor="client_id">Client ID</Label>
+              <Input
+                id="client_id"
+                value={formData.client_id}
+                onChange={(e) => setFormData(prev => ({ ...prev, client_id: e.target.value }))}
+                placeholder="CLI-000001"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="amount">Amount</Label>
+              <Input
+                id="amount"
+                type="number"
+                step="0.01"
+                value={formData.amount}
+                onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <Label htmlFor="delivery_type">Delivery Type</Label>
+              <Select value={formData.delivery_type} onValueChange={(value) => setFormData(prev => ({ ...prev, delivery_type: value }))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="COD">COD</SelectItem>
+                  <SelectItem value="PREPAID">Prepaid</SelectItem>
+                  <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
+                  <SelectItem value="WAREHOUSE_PICKUP">Warehouse Pickup</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="delivery_address">Delivery Address</Label>
+            <Textarea
+              id="delivery_address"
+              value={formData.delivery_address}
+              onChange={(e) => setFormData(prev => ({ ...prev, delivery_address: e.target.value }))}
+              placeholder="Full delivery address"
+              rows={3}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="delivery_instructions">Delivery Instructions</Label>
+            <Textarea
+              id="delivery_instructions"
+              value={formData.delivery_instructions}
+              onChange={(e) => setFormData(prev => ({ ...prev, delivery_instructions: e.target.value }))}
+              placeholder="Special delivery instructions"
+              rows={2}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" className={erpOutlineControlClass()} onClick={() => setShowCreateDialog(false)}>
+              Cancel
+            </Button>
+            <Button className={erpPrimaryButtonClass()} onClick={handleCreateAssignment}>
+              Create Assignment
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Delivery Assignments</h1>
-          <p className="text-gray-600">Manage driver assignments and QR payment collection</p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={fetchAssignments}
-            disabled={loading}
-          >
-            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Create Assignment
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>Create Delivery Assignment</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="request_id">Request ID</Label>
-                    <Input
-                      id="request_id"
-                      value={formData.request_id}
-                      onChange={(e) => setFormData(prev => ({ ...prev, request_id: e.target.value }))}
-                      placeholder="SR-000001"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="driver_id">Driver</Label>
-                    <Select value={formData.driver_id} onValueChange={(value) => setFormData(prev => ({ ...prev, driver_id: value }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select driver" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(Array.isArray(drivers) ? drivers : []).map((driver) => (
-                          <SelectItem key={driver._id} value={driver._id}>
-                            {driver.name} - {driver.vehicle_type} ({driver.vehicle_number})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="invoice_id">Invoice ID</Label>
-                    <Input
-                      id="invoice_id"
-                      value={formData.invoice_id}
-                      onChange={(e) => setFormData(prev => ({ ...prev, invoice_id: e.target.value }))}
-                      placeholder="INV-000001"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="client_id">Client ID</Label>
-                    <Input
-                      id="client_id"
-                      value={formData.client_id}
-                      onChange={(e) => setFormData(prev => ({ ...prev, client_id: e.target.value }))}
-                      placeholder="CLI-000001"
-                    />
-                  </div>
-                </div>
+    <DashboardPageShell title="Delivery Assignments">
+      <ErpToolbar
+        title="Assignments"
+        onRefresh={fetchAssignments}
+        refreshing={loading}
+        actions={createAssignmentDialog}
+      />
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="amount">Amount</Label>
-                    <Input
-                      id="amount"
-                      type="number"
-                      step="0.01"
-                      value={formData.amount}
-                      onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
-                      placeholder="0.00"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="delivery_type">Delivery Type</Label>
-                    <Select value={formData.delivery_type} onValueChange={(value) => setFormData(prev => ({ ...prev, delivery_type: value }))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="COD">COD</SelectItem>
-                        <SelectItem value="PREPAID">Prepaid</SelectItem>
-                        <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
-                        <SelectItem value="WAREHOUSE_PICKUP">Warehouse Pickup</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="delivery_address">Delivery Address</Label>
-                  <Textarea
-                    id="delivery_address"
-                    value={formData.delivery_address}
-                    onChange={(e) => setFormData(prev => ({ ...prev, delivery_address: e.target.value }))}
-                    placeholder="Full delivery address"
-                    rows={3}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="delivery_instructions">Delivery Instructions</Label>
-                  <Textarea
-                    id="delivery_instructions"
-                    value={formData.delivery_instructions}
-                    onChange={(e) => setFormData(prev => ({ ...prev, delivery_instructions: e.target.value }))}
-                    placeholder="Special delivery instructions"
-                    rows={2}
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleCreateAssignment}>
-                    Create Assignment
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>All Assignments</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <ErpGrid maxHeight="min(65vh, 720px)">
           <Table>
             <TableHeader>
               <TableRow>
@@ -658,8 +663,7 @@ export default function DeliveryAssignmentsPage() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </ErpGrid>
 
       {/* Assignment Details Dialog */}
       <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
@@ -807,6 +811,6 @@ export default function DeliveryAssignmentsPage() {
           )}
         </DialogContent>
       </Dialog>
-  </div>
+    </DashboardPageShell>
   );
 }

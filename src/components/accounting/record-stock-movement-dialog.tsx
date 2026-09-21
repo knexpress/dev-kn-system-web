@@ -219,29 +219,32 @@ export default function RecordStockMovementDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Record Stock Movement</DialogTitle>
-          <DialogDescription>
-            Receipts, issues, and adjustments update on-hand qty and can post a GL journal.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-w-lg gap-0 p-0 max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="border-b border-border/60 px-4 py-3 shrink-0">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base">Record Stock Movement</DialogTitle>
+            <DialogDescription className="text-xs">
+              Updates on-hand qty and can post a GL journal automatically.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
-        <div className="grid gap-4 py-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="txn-date">Date *</Label>
+        <div className="flex-1 overflow-y-auto px-4 py-3 grid gap-3 text-xs">
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="space-y-1">
+              <Label htmlFor="txn-date" className="text-[11px]">Date *</Label>
               <Input
                 id="txn-date"
                 type="date"
                 value={txnDate}
                 onChange={(e) => setTxnDate(e.target.value)}
+                className="h-8 text-xs"
               />
             </div>
-            <div className="space-y-2">
-              <Label>Type *</Label>
+            <div className="space-y-1">
+              <Label className="text-[11px]">Type *</Label>
               <Select value={type} onValueChange={(v) => setType(v as MovementType)}>
-                <SelectTrigger>
+                <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -253,10 +256,10 @@ export default function RecordStockMovementDialog({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Item / SKU *</Label>
+          <div className="space-y-1">
+            <Label className="text-[11px]">Item / SKU *</Label>
             <Select value={sku || undefined} onValueChange={setSku}>
-              <SelectTrigger>
+              <SelectTrigger className="h-8 text-xs">
                 <SelectValue placeholder="Select item" />
               </SelectTrigger>
               <SelectContent>
@@ -274,9 +277,9 @@ export default function RecordStockMovementDialog({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="txn-qty">
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="space-y-1">
+              <Label htmlFor="txn-qty" className="text-[11px]">
                 Quantity *{type === 'ADJUSTMENT' ? ' (±)' : ''}
               </Label>
               <Input
@@ -285,12 +288,12 @@ export default function RecordStockMovementDialog({
                 step="1"
                 value={qty}
                 onChange={(e) => setQty(e.target.value)}
-                className="font-mono"
+                className="h-8 font-mono text-xs"
                 placeholder={type === 'ADJUSTMENT' ? 'e.g. -50 or 25' : 'e.g. 100'}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="txn-cost">Unit cost (AED)</Label>
+            <div className="space-y-1">
+              <Label htmlFor="txn-cost" className="text-[11px]">Unit cost (AED)</Label>
               <Input
                 id="txn-cost"
                 type="number"
@@ -298,25 +301,26 @@ export default function RecordStockMovementDialog({
                 step="0.01"
                 value={unitCost}
                 onChange={(e) => setUnitCost(e.target.value)}
-                className="font-mono"
+                className="h-8 font-mono text-xs"
                 placeholder={type === 'RECEIPT' ? 'Required' : 'Uses avg cost'}
               />
             </div>
           </div>
 
           {estimatedTotal > 0 && (
-            <p className="text-sm text-muted-foreground">
-              Estimated value: <span className="font-mono font-medium text-foreground">{money(estimatedTotal)} AED</span>
+            <p className="text-[11px] text-muted-foreground">
+              Estimated value:{' '}
+              <span className="font-mono font-medium text-foreground">{money(estimatedTotal)} AED</span>
             </p>
           )}
 
           {needsOffset && postJournal && (
-            <div className="space-y-2">
-              <Label>
+            <div className="space-y-1">
+              <Label className="text-[11px]">
                 {type === 'RECEIPT' ? 'Credit offset (AP / Cash / Bank)' : 'Credit offset account'}
               </Label>
               <Select value={offsetAccount} onValueChange={setOffsetAccount}>
-                <SelectTrigger>
+                <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -330,21 +334,22 @@ export default function RecordStockMovementDialog({
             </div>
           )}
 
-          <div className="space-y-2">
-            <Label htmlFor="txn-notes">Notes</Label>
+          <div className="space-y-1">
+            <Label htmlFor="txn-notes" className="text-[11px]">Notes</Label>
             <Textarea
               id="txn-notes"
               placeholder="e.g. Supplier delivery, warehouse issue, stock count"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
+              className="text-xs min-h-[56px]"
             />
           </div>
 
-          <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+          <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 p-2.5">
             <div>
-              <p className="text-sm font-medium">Post journal entry</p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs font-medium">Post journal entry</p>
+              <p className="text-[10px] text-muted-foreground">
                 {type === 'RECEIPT' && 'Dr Inventory / Cr offset'}
                 {type === 'ISSUE' && 'Dr COGS / Cr Inventory'}
                 {type === 'ADJUSTMENT' && 'Posts inventory vs COGS (or offset)'}
@@ -354,11 +359,11 @@ export default function RecordStockMovementDialog({
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+        <DialogFooter className="border-t border-border/60 px-4 py-2.5 shrink-0">
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={saving || items.length === 0}>
+          <Button size="sm" className="h-8 text-xs" onClick={handleSave} disabled={saving || items.length === 0}>
             {saving ? 'Saving…' : 'Record Movement'}
           </Button>
         </DialogFooter>

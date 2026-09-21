@@ -4,10 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Table,
   TableBody,
@@ -16,7 +13,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { History, Search } from 'lucide-react';
+import {
+  DashboardPageShell,
+  ErpToolbar,
+  ErpGrid,
+} from '@/components/dashboard/maglo-shell';
 
 interface BookingLogItem {
   _id: string;
@@ -159,81 +160,72 @@ export default function LogsPage() {
 
   if (department && department.name !== 'Management' && department.name !== 'IT') {
     return (
-      <Card>
-        <CardContent className="py-8">
-          <p className="text-sm text-muted-foreground">You do not have access to booking logs.</p>
-        </CardContent>
-      </Card>
+      <DashboardPageShell title="Logs">
+        <div className="flex h-48 items-center justify-center px-6 text-sm text-slate-500">
+          You do not have access to booking logs.
+        </div>
+      </DashboardPageShell>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <History className="h-5 w-5" />
-            Booking Logs
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2 max-w-md">
-            <Label htmlFor="logs-search">Search logs</Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="logs-search"
-                className="pl-9"
-                placeholder="AWB, customer, reviewer, status..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
+    <DashboardPageShell title="Logs">
+      <ErpToolbar
+        title="Booking logs"
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="AWB, customer, reviewer, status…"
+      />
+      <ErpGrid>
+        {loading ? (
+          <div className="flex h-36 items-center justify-center text-sm text-slate-500">
+            Loading booking logs...
           </div>
-
-          {loading ? (
-            <div className="py-8 text-sm text-muted-foreground">Loading booking logs...</div>
-          ) : filteredLogs.length === 0 ? (
-            <div className="py-8 text-sm text-muted-foreground">No reviewed booking logs found.</div>
-          ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>AWB</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Receiver</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Reviewed By</TableHead>
-                    <TableHead>Date (dd/mm/yy)</TableHead>
-                    <TableHead>Time (hh:mm:ss)</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredLogs.map((booking) => (
-                    <TableRow key={booking._id}>
-                      <TableCell className="font-mono text-xs">{getAwb(booking)}</TableCell>
-                      <TableCell>{getCustomerName(booking)}</TableCell>
-                      <TableCell>{getReceiverName(booking)}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{booking.review_status || '-'}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        {(() => {
-                          const reviewerRaw = getReviewer(booking.reviewed_by_employee_id);
-                          return reviewerMap[reviewerRaw] || reviewerRaw;
-                        })()}
-                      </TableCell>
-                      <TableCell>{formatDate(booking.reviewed_at)}</TableCell>
-                      <TableCell>{formatTime(booking.reviewed_at)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+        ) : filteredLogs.length === 0 ? (
+          <div className="flex h-36 items-center justify-center text-sm text-slate-500">
+            No reviewed booking logs found.
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>AWB</TableHead>
+                <TableHead>Customer</TableHead>
+                <TableHead>Receiver</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Reviewed By</TableHead>
+                <TableHead>Date (dd/mm/yy)</TableHead>
+                <TableHead>Time (hh:mm:ss)</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredLogs.map((booking) => (
+                <TableRow key={booking._id}>
+                  <TableCell className="font-mono text-xs">{getAwb(booking)}</TableCell>
+                  <TableCell>{getCustomerName(booking)}</TableCell>
+                  <TableCell>{getReceiverName(booking)}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className="rounded-full border-slate-200 bg-slate-50 text-[11px] text-slate-600"
+                    >
+                      {booking.review_status || '-'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {(() => {
+                      const reviewerRaw = getReviewer(booking.reviewed_by_employee_id);
+                      return reviewerMap[reviewerRaw] || reviewerRaw;
+                    })()}
+                  </TableCell>
+                  <TableCell>{formatDate(booking.reviewed_at)}</TableCell>
+                  <TableCell>{formatTime(booking.reviewed_at)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </ErpGrid>
+    </DashboardPageShell>
   );
 }

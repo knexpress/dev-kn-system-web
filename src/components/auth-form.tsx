@@ -21,7 +21,7 @@ export function AuthForm() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    
+
     secureLog.debug('Login attempt initiated', { email: email.substring(0, 10) + '...' });
     const result = await login(email, password);
     secureLog.debug('Login result received', { success: result.success });
@@ -30,7 +30,6 @@ export function AuthForm() {
       secureLog.success('Login successful');
       if (result.requiresPasswordChange) {
         secureLog.warn('Password change required');
-        // Password change modal will show automatically in dashboard
       }
       router.push('/dashboard');
     } else {
@@ -45,32 +44,42 @@ export function AuthForm() {
   };
 
   return (
-    <form onSubmit={handleLogin} className="space-y-4">
+    <form onSubmit={handleLogin} className="space-y-5">
       <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="email" className="text-slate-700">
+          Email
+        </Label>
         <Input
           id="email"
           type="email"
-          placeholder="m@example.com"
+          placeholder="you@knexpress.com"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           disabled={isLoading}
+          className="h-11 rounded-xl border-slate-200 bg-slate-50/80 focus-visible:bg-white focus-visible:ring-emerald-500/30"
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
+        <Label htmlFor="password" className="text-slate-700">
+          Password
+        </Label>
         <Input
           id="password"
           type="password"
           required
-          placeholder="password"
+          placeholder="••••••••"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           disabled={isLoading}
+          className="h-11 rounded-xl border-slate-200 bg-slate-50/80 focus-visible:bg-white focus-visible:ring-emerald-500/30"
         />
       </div>
-      <Button type="submit" className="w-full" disabled={isLoading}>
+      <Button
+        type="submit"
+        className="h-11 w-full rounded-xl bg-emerald-600 text-sm font-semibold text-white shadow-md shadow-emerald-600/25 hover:bg-emerald-700"
+        disabled={isLoading}
+      >
         {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Login'}
       </Button>
     </form>

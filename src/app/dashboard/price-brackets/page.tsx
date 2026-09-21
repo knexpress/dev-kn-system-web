@@ -4,15 +4,19 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/lib/api-client';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2, Save, RefreshCw, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { cn } from '@/lib/utils';
+import {
+  DashboardPageShell,
+  ErpGrid,
+  erpOutlineControlClass,
+  erpPrimaryButtonClass,
+} from '@/components/dashboard/maglo-shell';
 
 interface WeightBracket {
   min: number;
@@ -40,15 +44,17 @@ export default function PriceBracketsPage() {
   // Check if user has permission (Finance department or IT)
   if (userProfile?.department?.name !== 'Finance' && userProfile?.department?.name !== 'IT') {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Alert variant="destructive" className="max-w-md">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Access Denied</AlertTitle>
-          <AlertDescription>
-            Only Finance department members and IT can access price bracket management.
-          </AlertDescription>
-        </Alert>
-      </div>
+      <DashboardPageShell title="Price Brackets">
+        <div className="flex items-center justify-center h-64 px-6">
+          <Alert variant="destructive" className="max-w-md">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Access Denied</AlertTitle>
+            <AlertDescription>
+              Only Finance department members and IT can access price bracket management.
+            </AlertDescription>
+          </Alert>
+        </div>
+      </DashboardPageShell>
     );
   }
 
@@ -253,68 +259,72 @@ export default function PriceBracketsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-lg">Loading price brackets...</div>
-      </div>
+      <DashboardPageShell title="Price Brackets">
+        <div className="flex h-64 items-center justify-center text-sm text-slate-500">
+          Loading price brackets...
+        </div>
+      </DashboardPageShell>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Price Bracket Management</h1>
-          <p className="text-muted-foreground mt-2">
-            Manage weight-based pricing brackets for different routes. Changes take effect immediately.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={fetchBrackets} disabled={saving}>
+    <DashboardPageShell
+      title="Price Brackets"
+      actions={
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            className={erpOutlineControlClass()}
+            onClick={fetchBrackets}
+            disabled={saving}
+          >
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
           {hasChanges() && (
-            <Button variant="outline" onClick={resetBrackets} disabled={saving}>
+            <Button
+              variant="outline"
+              className={erpOutlineControlClass()}
+              onClick={resetBrackets}
+              disabled={saving}
+            >
               Reset
             </Button>
           )}
-          <Button onClick={saveBrackets} disabled={saving || !hasChanges()}>
+          <Button
+            className={erpPrimaryButtonClass()}
+            onClick={saveBrackets}
+            disabled={saving || !hasChanges()}
+          >
             <Save className="mr-2 h-4 w-4" />
             {saving ? 'Saving...' : 'Save Changes'}
           </Button>
         </div>
-      </div>
-
-      <Alert>
-        <AlertCircle className="h-4 w-4" />
-        <AlertTitle>Real-Time Updates</AlertTitle>
-        <AlertDescription>
-          Changes to price brackets will immediately affect rate calculations in the Operations verification form and invoice generation.
+      }
+    >
+      <div className="space-y-5 p-5 sm:p-6">
+      <Alert className="rounded-2xl border-sky-100 bg-sky-50/60">
+        <AlertCircle className="h-4 w-4 text-sky-600" />
+        <AlertTitle className="text-slate-900">Real-time updates</AlertTitle>
+        <AlertDescription className="text-slate-600">
+          Changes to price brackets immediately affect rate calculations in verification and invoices.
         </AlertDescription>
       </Alert>
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as RouteType)}>
-        <TabsList>
-          <TabsTrigger value="PH_TO_UAE">PH TO UAE</TabsTrigger>
-          <TabsTrigger value="UAE_TO_PH">UAE TO PH</TabsTrigger>
+        <TabsList className="rounded-xl bg-slate-100/80 p-1">
+          <TabsTrigger value="PH_TO_UAE" className="rounded-lg">PH TO UAE</TabsTrigger>
+          <TabsTrigger value="UAE_TO_PH" className="rounded-lg">UAE TO PH</TabsTrigger>
         </TabsList>
 
         <TabsContent value="PH_TO_UAE" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>PH TO UAE Price Brackets</CardTitle>
-              <CardDescription>
-                Define weight ranges and corresponding rates per kilogram for PH TO UAE shipments.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex justify-end">
-                  <Button onClick={addBracket} variant="outline" size="sm">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Bracket
-                  </Button>
-                </div>
+          <div className="flex justify-end">
+            <Button onClick={addBracket} variant="outline" size="sm" className={erpOutlineControlClass()}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Bracket
+            </Button>
+          </div>
+          <ErpGrid className="!px-0 !pb-0" maxHeight="min(50vh, 520px)">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -333,6 +343,7 @@ export default function PriceBracketsPage() {
                             value={bracket.label}
                             onChange={(e) => updateBracket(index, 'label', e.target.value)}
                             placeholder="Bracket label"
+                            className={cn(erpOutlineControlClass(), 'h-9')}
                           />
                         </TableCell>
                         <TableCell>
@@ -343,6 +354,7 @@ export default function PriceBracketsPage() {
                             value={bracket.min}
                             onChange={(e) => updateBracket(index, 'min', e.target.value)}
                             placeholder="Min weight"
+                            className={cn(erpOutlineControlClass(), 'h-9')}
                           />
                         </TableCell>
                         <TableCell>
@@ -353,6 +365,7 @@ export default function PriceBracketsPage() {
                             value={bracket.max === null ? '' : bracket.max}
                             onChange={(e) => updateBracket(index, 'max', e.target.value === '' ? null : e.target.value)}
                             placeholder={bracket.max === null ? 'unlimited' : 'Max weight'}
+                            className={cn(erpOutlineControlClass(), 'h-9')}
                           />
                         </TableCell>
                         <TableCell>
@@ -363,6 +376,7 @@ export default function PriceBracketsPage() {
                             value={bracket.rate}
                             onChange={(e) => updateBracket(index, 'rate', e.target.value)}
                             placeholder="Rate per KG"
+                            className={cn(erpOutlineControlClass(), 'h-9')}
                           />
                         </TableCell>
                         <TableCell className="text-right">
@@ -379,27 +393,17 @@ export default function PriceBracketsPage() {
                     ))}
                   </TableBody>
                 </Table>
-              </div>
-            </CardContent>
-          </Card>
+          </ErpGrid>
         </TabsContent>
 
         <TabsContent value="UAE_TO_PH" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>UAE TO PH Price Brackets</CardTitle>
-              <CardDescription>
-                Define weight ranges and corresponding rates per kilogram for UAE TO PH shipments.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex justify-end">
-                  <Button onClick={addBracket} variant="outline" size="sm">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Bracket
-                  </Button>
-                </div>
+          <div className="flex justify-end">
+            <Button onClick={addBracket} variant="outline" size="sm" className={erpOutlineControlClass()}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Bracket
+            </Button>
+          </div>
+          <ErpGrid className="!px-0 !pb-0" maxHeight="min(50vh, 520px)">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -418,6 +422,7 @@ export default function PriceBracketsPage() {
                             value={bracket.label}
                             onChange={(e) => updateBracket(index, 'label', e.target.value)}
                             placeholder="Bracket label"
+                            className={cn(erpOutlineControlClass(), 'h-9')}
                           />
                         </TableCell>
                         <TableCell>
@@ -428,6 +433,7 @@ export default function PriceBracketsPage() {
                             value={bracket.min}
                             onChange={(e) => updateBracket(index, 'min', e.target.value)}
                             placeholder="Min weight"
+                            className={cn(erpOutlineControlClass(), 'h-9')}
                           />
                         </TableCell>
                         <TableCell>
@@ -438,6 +444,7 @@ export default function PriceBracketsPage() {
                             value={bracket.max === null ? '' : bracket.max}
                             onChange={(e) => updateBracket(index, 'max', e.target.value === '' ? null : e.target.value)}
                             placeholder={bracket.max === null ? 'unlimited' : 'Max weight'}
+                            className={cn(erpOutlineControlClass(), 'h-9')}
                           />
                         </TableCell>
                         <TableCell>
@@ -448,6 +455,7 @@ export default function PriceBracketsPage() {
                             value={bracket.rate}
                             onChange={(e) => updateBracket(index, 'rate', e.target.value)}
                             placeholder="Rate per KG"
+                            className={cn(erpOutlineControlClass(), 'h-9')}
                           />
                         </TableCell>
                         <TableCell className="text-right">
@@ -464,12 +472,11 @@ export default function PriceBracketsPage() {
                     ))}
                   </TableBody>
                 </Table>
-              </div>
-            </CardContent>
-          </Card>
+          </ErpGrid>
         </TabsContent>
       </Tabs>
-    </div>
+      </div>
+    </DashboardPageShell>
   );
 }
 

@@ -33,10 +33,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { addClient } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle } from 'lucide-react';
-import { Badge } from './ui/badge';
-import { Card, CardContent } from './ui/card';
-import { Users } from 'lucide-react';
+import { PlusCircle, Users } from 'lucide-react';
+import {
+  ErpGrid,
+  ErpToolbar,
+  erpPrimaryButtonClass,
+  erpTableClasses,
+} from '@/components/dashboard/maglo-shell';
 
 const clientSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters.'),
@@ -54,6 +57,7 @@ interface ClientTableProps {
 export default function ClientTable({ clients, onRefresh }: ClientTableProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const { toast } = useToast();
+  const t = erpTableClasses();
   const form = useForm<z.infer<typeof clientSchema>>({
     resolver: zodResolver(clientSchema),
     defaultValues: {
@@ -66,7 +70,6 @@ export default function ClientTable({ clients, onRefresh }: ClientTableProps) {
   });
 
   async function onSubmit(values: z.infer<typeof clientSchema>) {
-    // Map form values to database field names
     const clientData = {
       company_name: values.name,
       contact_name: values.contactPerson,
@@ -74,7 +77,7 @@ export default function ClientTable({ clients, onRefresh }: ClientTableProps) {
       phone: values.phone,
       address: values.address,
     };
-    
+
     const result = await addClient(clientData);
     if (result.success) {
       toast({
@@ -83,7 +86,6 @@ export default function ClientTable({ clients, onRefresh }: ClientTableProps) {
       });
       setIsDialogOpen(false);
       form.reset();
-      // Refresh the client list
       if (onRefresh) {
         onRefresh();
       }
@@ -96,136 +98,135 @@ export default function ClientTable({ clients, onRefresh }: ClientTableProps) {
     }
   }
 
+  const addClientDialog = (
+    <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <DialogTrigger asChild>
+        <Button className={erpPrimaryButtonClass()}>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Add Client
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add New Client</DialogTitle>
+          <DialogDescription>Enter the details of the new client.</DialogDescription>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Company Name</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Global Imports Inc." {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="contactPerson"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Contact Person</FormLabel>
+                  <FormControl>
+                    <Input placeholder="John Doe" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email</FormLabel>
+                  <FormControl>
+                    <Input placeholder="contact@global.com" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="phone"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Phone</FormLabel>
+                  <FormControl>
+                    <Input placeholder="123-456-7890" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="address"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Address</FormLabel>
+                  <FormControl>
+                    <Input placeholder="123 Import Lane, Trade City" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <Button type="submit" className={erpPrimaryButtonClass()} disabled={form.formState.isSubmitting}>
+              {form.formState.isSubmitting ? 'Adding...' : 'Add Client'}
+            </Button>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+
   return (
-    <div className="space-y-4">
-        <div className="flex items-center justify-between">
-            <div>
-                <h2 className="text-xl font-semibold tracking-tight">Clients</h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                    Manage clients from Finance database ({clients.length} {clients.length === 1 ? 'client' : 'clients'})
-                </p>
-            </div>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogTrigger asChild>
-                <Button>
-                    <PlusCircle className="mr-2 h-4 w-4" />
-                    Add Client
-                </Button>
-                </DialogTrigger>
-                <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>Add New Client</DialogTitle>
-                    <DialogDescription>
-                    Enter the details of the new client.
-                    </DialogDescription>
-                </DialogHeader>
-                <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                    <FormField
-                        control={form.control}
-                        name="name"
-                        render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Company Name</FormLabel>
-                            <FormControl>
-                            <Input placeholder="Global Imports Inc." {...field} />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                        )}
-                    />
-                    <FormField
-                        control={form.control}
-                        name="contactPerson"
-                        render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Contact Person</FormLabel>
-                            <FormControl>
-                            <Input placeholder="John Doe" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                        )}
-                    />
-                    <FormField
-                        control={form.control}
-                        name="email"
-                        render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Email</FormLabel>
-                            <FormControl>
-                            <Input placeholder="contact@global.com" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                        )}
-                    />
-                     <FormField
-                        control={form.control}
-                        name="phone"
-                        render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Phone</FormLabel>
-                            <FormControl>
-                            <Input placeholder="123-456-7890" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                        )}
-                    />
-                     <FormField
-                        control={form.control}
-                        name="address"
-                        render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Address</FormLabel>
-                            <FormControl>
-                            <Input placeholder="123 Import Lane, Trade City" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                        )}
-                    />
-                    <Button type="submit" disabled={form.formState.isSubmitting}>
-                        {form.formState.isSubmitting ? 'Adding...' : 'Add Client'}
-                    </Button>
-                    </form>
-                </Form>
-                </DialogContent>
-            </Dialog>
+    <div className="flex h-full min-h-0 flex-col">
+      <ErpToolbar
+        title="Directory"
+        onRefresh={onRefresh}
+        actions={addClientDialog}
+      />
+
+      {clients.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 px-5 py-16 sm:px-6">
+          <Users className="h-10 w-10 text-slate-300" />
+          <p className="text-sm font-medium text-slate-600">No clients found</p>
+          <p className="text-xs text-slate-400">Get started by adding a new client.</p>
         </div>
-        {clients.length === 0 ? (
-            <Card>
-                <CardContent className="flex flex-col items-center justify-center py-12">
-                    <Users className="h-12 w-12 text-muted-foreground mb-4" />
-                    <p className="text-sm font-medium text-foreground mb-1">No clients found</p>
-                    <p className="text-xs text-muted-foreground">Get started by adding a new client to the database.</p>
-                </CardContent>
-            </Card>
-        ) : (
-            <Card>
-                <Table>
-                    <TableHeader>
-                    <TableRow>
-                        <TableHead>Contact Person</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Phone</TableHead>
-                        <TableHead>Address</TableHead>
-                    </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                    {clients.map((client) => (
-                        <TableRow key={client.id}>
-                        <TableCell>{client.contactPerson}</TableCell>
-                        <TableCell className="text-muted-foreground">{client.email}</TableCell>
-                        <TableCell className="text-muted-foreground">{client.phone}</TableCell>
-                        <TableCell className="text-muted-foreground max-w-xs truncate">{client.address}</TableCell>
-                        </TableRow>
-                    ))}
-                    </TableBody>
-                </Table>
-            </Card>
-        )}
+      ) : (
+        <ErpGrid>
+          <Table className={t.table}>
+            <TableHeader>
+              <TableRow>
+                <TableHead className={t.head}>Contact Person</TableHead>
+                <TableHead className={t.head}>Email</TableHead>
+                <TableHead className={t.head}>Phone</TableHead>
+                <TableHead className={t.head}>Address</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {clients.map((client) => (
+                <TableRow key={client.id} className={t.row}>
+                  <TableCell className={t.cell}>{client.contactPerson}</TableCell>
+                  <TableCell className={`${t.cell} text-slate-500`}>{client.email}</TableCell>
+                  <TableCell className={`${t.cell} text-slate-500`}>{client.phone}</TableCell>
+                  <TableCell className={`${t.cell} max-w-xs truncate text-slate-500`}>
+                    {client.address}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </ErpGrid>
+      )}
     </div>
   );
 }

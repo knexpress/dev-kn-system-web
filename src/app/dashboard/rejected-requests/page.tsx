@@ -6,14 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -26,6 +18,10 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { XCircle, Printer, Eye, AlertCircle } from 'lucide-react';
 import BookingPrintView from '@/components/booking-print-view';
+import {
+  DashboardPageShell,
+  ErpToolbar,
+} from '@/components/dashboard/maglo-shell';
 
 export default function RejectedRequestsPage() {
   const [bookings, setBookings] = useState<any[]>([]);
@@ -381,50 +377,27 @@ export default function RejectedRequestsPage() {
   });
 
   return (
-    <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <XCircle className="h-5 w-5 text-destructive" />
-              Rejected Requests
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              <div className="text-sm text-muted-foreground">
-                {filteredBookings.length} of {bookings.length} shown
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  apiCache.invalidate('/bookings/status/rejected');
-                  fetchRejectedBookings(false);
-                }}
-              >
-                Refresh
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
-            <div className="relative w-full md:max-w-sm">
-              <Input
-                placeholder="Search by customer, receiver, AWB, agent, or reason..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-          </div>
+    <DashboardPageShell title="Rejected Requests">
+      <ErpToolbar
+        title={`${filteredBookings.length} of ${bookings.length} shown`}
+        search={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Customer, receiver, AWB, agent, reason…"
+        onRefresh={() => {
+          apiCache.invalidate('/bookings/status/rejected');
+          fetchRejectedBookings(false);
+        }}
+      />
+      <div className="px-5 pb-5 sm:px-6">
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <p className="text-muted-foreground">Loading rejected bookings...</p>
+              <p className="text-slate-500 text-sm">Loading rejected bookings...</p>
             </div>
           ) : filteredBookings.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12">
-              <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground text-lg">No rejected bookings found</p>
-              <p className="text-sm text-muted-foreground mt-2">
+              <AlertCircle className="h-12 w-12 text-slate-400 mb-4" />
+              <p className="text-slate-600 text-lg">No rejected bookings found</p>
+              <p className="text-sm text-slate-400 mt-2">
                 Try adjusting your search terms
               </p>
             </div>
@@ -456,25 +429,25 @@ export default function RejectedRequestsPage() {
                   : 'N/A';
 
                 return (
-                  <Card key={booking._id} className="border-border/60">
+                  <Card key={booking._id} className="border-slate-200/70 rounded-2xl shadow-sm">
                     <CardHeader className="pb-2">
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-base">{customerName}</CardTitle>
                         {getStatusBadge(booking.review_status || 'rejected')}
                       </div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-xs text-slate-500">
                         AWB: {awb || 'N/A'}
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="text-sm">
                         <div className="font-medium">{receiverName}</div>
-                        <div className="text-muted-foreground">{destination}</div>
+                        <div className="text-slate-500">{destination}</div>
                       </div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-xs text-slate-500">
                         From {origin} · {shipmentType}
                       </div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-xs text-slate-500">
                         Agent: {getAgentName(booking)} · Rejected: {rejectedAt}
                       </div>
                       <div className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-xs">
@@ -504,8 +477,7 @@ export default function RejectedRequestsPage() {
               })}
             </div>
           )}
-        </CardContent>
-      </Card>
+      </div>
 
       {showDetailsModal && selectedBooking && (
         <Dialog open={showDetailsModal} onOpenChange={setShowDetailsModal}>
@@ -632,7 +604,7 @@ export default function RejectedRequestsPage() {
           }} />
         </div>
       )}
-    </div>
+    </DashboardPageShell>
   );
 }
 

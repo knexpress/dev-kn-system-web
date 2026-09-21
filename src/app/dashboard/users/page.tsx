@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -32,7 +31,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
 import { secureLog } from '@/lib/secure-logger';
-import { PlusCircle, Trash2, Edit, UserCheck, UserX, KeyRound } from 'lucide-react';
+import { PlusCircle, Trash2, Edit, UserCheck, UserX, KeyRound, Loader2 } from 'lucide-react';
+import {
+  DashboardPageShell,
+  ErpGrid,
+  ErpToolbar,
+  erpOutlineControlClass,
+  erpPrimaryButtonClass,
+  erpTableClasses,
+} from '@/components/dashboard/maglo-shell';
+import { cn } from '@/lib/utils';
 
 interface Employee {
   _id: string;
@@ -349,329 +357,333 @@ export default function UserManagement() {
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case 'SUPERADMIN':
-        return 'bg-red-500 text-white';
+        return 'bg-rose-500 text-white';
       case 'ADMIN':
-        return 'bg-blue-500 text-white';
+        return 'bg-sky-500 text-white';
       case 'USER':
-        return 'bg-green-500 text-white';
+        return 'bg-emerald-500 text-white';
       default:
-        return 'bg-gray-500 text-white';
+        return 'bg-slate-500 text-white';
     }
   };
 
   if (loading) {
-    return <div className="flex justify-center items-center h-64">Loading...</div>;
+    return (
+      <DashboardPageShell title="Users">
+        <div className="flex h-64 flex-col items-center justify-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-sky-500" />
+          <p className="text-sm text-slate-500">Loading...</p>
+        </div>
+      </DashboardPageShell>
+    );
   }
 
+  const t = erpTableClasses();
+
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">User Management</h1>
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="reset-password">Reset Password</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="users" className="space-y-6">
-          <div className="flex justify-end">
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Create User
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create New User</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleCreateUser} className="space-y-4">
-              <div>
-                <Label htmlFor="employee_id">Select Employee</Label>
-                <Select
-                  value={formData.employee_id}
-                  onValueChange={(value) => {
-                    const employee = availableEmployees.find(emp => emp._id === value);
-                    setFormData({ 
-                      ...formData, 
-                      employee_id: value,
-                      full_name: employee?.full_name || '',
-                      department_id: employee?.department_id._id || '',
-                      email: employee?.email || ''
-                    });
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={
-                      availableEmployees.length === 0 
-                        ? "No available employees" 
-                        : "Select an employee"
-                    } />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableEmployees.length === 0 ? (
-                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                        No employees available. All employees have user accounts.
-                      </div>
-                    ) : (
-                      availableEmployees.map((employee) => (
-                        <SelectItem key={employee._id} value={employee._id}>
-                          {employee.full_name} - {employee.department_id?.name || 'No Department'}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-                {availableEmployees.length === 0 && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Create a new employee in the Employee Management page first.
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="full_name">Full Name</Label>
-                <Input
-                  id="full_name"
-                  type="text"
-                  value={formData.full_name}
-                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="role">Role</Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(value: 'SUPERADMIN' | 'ADMIN' | 'USER') => 
-                    setFormData({ ...formData, role: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="USER">User</SelectItem>
-                    <SelectItem value="ADMIN">Admin</SelectItem>
-                    <SelectItem value="SUPERADMIN">Superadmin</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button type="submit" className="w-full">
-                Create User
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-
-        {/* Edit User Dialog */}
-        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Edit User</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleEditUser} className="space-y-4">
-              <div>
-                <Label htmlFor="edit_email">Email</Label>
-                <Input
-                  id="edit_email"
-                  type="email"
-                  value={editFormData.email}
-                  onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit_full_name">Full Name</Label>
-                <Input
-                  id="edit_full_name"
-                  type="text"
-                  value={editFormData.full_name}
-                  onChange={(e) => setEditFormData({ ...editFormData, full_name: e.target.value })}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit_department">Department</Label>
-                <Select
-                  value={editFormData.department_id}
-                  onValueChange={(value) => setEditFormData({ ...editFormData, department_id: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select department" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {departments.map((dept) => (
-                      <SelectItem key={dept._id} value={dept._id}>
-                        {dept.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="edit_role">Role</Label>
-                <Select
-                  value={editFormData.role}
-                  onValueChange={(value: 'SUPERADMIN' | 'ADMIN' | 'USER') => 
-                    setEditFormData({ ...editFormData, role: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="USER">User</SelectItem>
-                    <SelectItem value="ADMIN">Admin</SelectItem>
-                    <SelectItem value="SUPERADMIN">Superadmin</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="edit_isActive"
-                  checked={editFormData.isActive}
-                  onChange={(e) => setEditFormData({ ...editFormData, isActive: e.target.checked })}
-                  className="rounded"
-                />
-                <Label htmlFor="edit_isActive">Active</Label>
-              </div>
-              <div className="flex gap-2">
-                <Button type="submit" className="flex-1">
-                  Update User
-                </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => setIsEditDialogOpen(false)}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+    <DashboardPageShell title="Users">
+      <div className="flex h-full min-h-0 flex-col">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <div className="px-5 pt-5 sm:px-6">
+            <TabsList className="grid w-full max-w-md grid-cols-2 rounded-xl bg-slate-100/80 p-1">
+              <TabsTrigger value="users" className="rounded-lg">Users</TabsTrigger>
+              <TabsTrigger value="reset-password" className="rounded-lg">Reset Password</TabsTrigger>
+            </TabsList>
           </div>
 
-          <Card>
-        <CardHeader>
-          <CardTitle>Users ({users.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Department</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Last Login</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((user) => (
-                <TableRow key={user._id}>
-                  <TableCell className="font-medium">{user.full_name}</TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell>{user.department_id?.name || 'N/A'}</TableCell>
-                  <TableCell>
-                    <Badge className={getRoleBadgeColor(user.role)}>
-                      {user.role}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={user.isActive ? 'default' : 'secondary'}>
-                      {user.isActive ? 'Active' : 'Inactive'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {user.lastLogin 
-                      ? new Date(user.lastLogin).toLocaleDateString()
-                      : 'Never'
-                    }
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleOpenEditDialog(user)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleToggleUserStatus(user._id, user.isActive)}
-                      >
-                        {user.isActive ? (
-                          <UserX className="h-4 w-4" />
-                        ) : (
-                          <UserCheck className="h-4 w-4" />
-                        )}
-                      </Button>
-                      {user.role !== 'SUPERADMIN' && (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleDeleteUser(user._id)}
+          <TabsContent value="users" className="mt-0 space-y-0">
+            <ErpToolbar
+              title={`Accounts (${users.length})`}
+              actions={
+                <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button className={erpPrimaryButtonClass()}>
+                      <PlusCircle className="mr-2 h-4 w-4" />
+                      Create User
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Create New User</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleCreateUser} className="space-y-4">
+                      <div>
+                        <Label htmlFor="employee_id">Select Employee</Label>
+                        <Select
+                          value={formData.employee_id}
+                          onValueChange={(value) => {
+                            const employee = availableEmployees.find(emp => emp._id === value);
+                            setFormData({ 
+                              ...formData, 
+                              employee_id: value,
+                              full_name: employee?.full_name || '',
+                              department_id: employee?.department_id._id || '',
+                              email: employee?.email || ''
+                            });
+                          }}
                         >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-        </TabsContent>
+                          <SelectTrigger>
+                            <SelectValue placeholder={
+                              availableEmployees.length === 0 
+                                ? "No available employees" 
+                                : "Select an employee"
+                            } />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableEmployees.length === 0 ? (
+                              <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                                No employees available. All employees have user accounts.
+                              </div>
+                            ) : (
+                              availableEmployees.map((employee) => (
+                                <SelectItem key={employee._id} value={employee._id}>
+                                  {employee.full_name} - {employee.department_id?.name || 'No Department'}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {availableEmployees.length === 0 && (
+                          <p className="mt-1 text-xs text-slate-400">
+                            Create a new employee in the Employee Management page first.
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <Label htmlFor="full_name">Full Name</Label>
+                        <Input
+                          id="full_name"
+                          type="text"
+                          value={formData.full_name}
+                          onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="email">Email</Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          value={formData.email}
+                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="password">Password</Label>
+                        <Input
+                          id="password"
+                          type="password"
+                          value={formData.password}
+                          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="role">Role</Label>
+                        <Select
+                          value={formData.role}
+                          onValueChange={(value: 'SUPERADMIN' | 'ADMIN' | 'USER') => 
+                            setFormData({ ...formData, role: value })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="USER">User</SelectItem>
+                            <SelectItem value="ADMIN">Admin</SelectItem>
+                            <SelectItem value="SUPERADMIN">Superadmin</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button type="submit" className={cn(erpPrimaryButtonClass(), 'w-full')}>
+                        Create User
+                      </Button>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              }
+            />
 
-        <TabsContent value="reset-password" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <KeyRound className="h-5 w-5" />
-                Reset User Password
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleResetPassword} className="space-y-4">
+            <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Edit User</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleEditUser} className="space-y-4">
+                  <div>
+                    <Label htmlFor="edit_email">Email</Label>
+                    <Input
+                      id="edit_email"
+                      type="email"
+                      value={editFormData.email}
+                      onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit_full_name">Full Name</Label>
+                    <Input
+                      id="edit_full_name"
+                      type="text"
+                      value={editFormData.full_name}
+                      onChange={(e) => setEditFormData({ ...editFormData, full_name: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit_department">Department</Label>
+                    <Select
+                      value={editFormData.department_id}
+                      onValueChange={(value) => setEditFormData({ ...editFormData, department_id: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select department" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {departments.map((dept) => (
+                          <SelectItem key={dept._id} value={dept._id}>
+                            {dept.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="edit_role">Role</Label>
+                    <Select
+                      value={editFormData.role}
+                      onValueChange={(value: 'SUPERADMIN' | 'ADMIN' | 'USER') => 
+                        setEditFormData({ ...editFormData, role: value })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="USER">User</SelectItem>
+                        <SelectItem value="ADMIN">Admin</SelectItem>
+                        <SelectItem value="SUPERADMIN">Superadmin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="edit_isActive"
+                      checked={editFormData.isActive}
+                      onChange={(e) => setEditFormData({ ...editFormData, isActive: e.target.checked })}
+                      className="rounded"
+                    />
+                    <Label htmlFor="edit_isActive">Active</Label>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button type="submit" className={cn(erpPrimaryButtonClass(), 'flex-1')}>
+                      Update User
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => setIsEditDialogOpen(false)}
+                      className={cn(erpOutlineControlClass(), 'flex-1')}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+
+            <ErpGrid>
+              <Table className={t.table}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className={t.head}>Name</TableHead>
+                    <TableHead className={t.head}>Email</TableHead>
+                    <TableHead className={t.head}>Department</TableHead>
+                    <TableHead className={t.head}>Role</TableHead>
+                    <TableHead className={t.head}>Status</TableHead>
+                    <TableHead className={t.head}>Last Login</TableHead>
+                    <TableHead className={t.head}>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {users.map((user) => (
+                    <TableRow key={user._id} className={t.row}>
+                      <TableCell className={cn(t.cell, 'font-medium')}>{user.full_name}</TableCell>
+                      <TableCell className={t.cell}>{user.email}</TableCell>
+                      <TableCell className={t.cell}>{user.department_id?.name || 'N/A'}</TableCell>
+                      <TableCell className={t.cell}>
+                        <Badge className={getRoleBadgeColor(user.role)}>
+                          {user.role}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className={t.cell}>
+                        <Badge variant={user.isActive ? 'default' : 'secondary'}>
+                          {user.isActive ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className={t.cell}>
+                        {user.lastLogin 
+                          ? new Date(user.lastLogin).toLocaleDateString()
+                          : 'Never'
+                        }
+                      </TableCell>
+                      <TableCell className={t.cell}>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className={erpOutlineControlClass()}
+                            onClick={() => handleOpenEditDialog(user)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className={erpOutlineControlClass()}
+                            onClick={() => handleToggleUserStatus(user._id, user.isActive)}
+                          >
+                            {user.isActive ? (
+                              <UserX className="h-4 w-4" />
+                            ) : (
+                              <UserCheck className="h-4 w-4" />
+                            )}
+                          </Button>
+                          {user.role !== 'SUPERADMIN' && (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDeleteUser(user._id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ErpGrid>
+          </TabsContent>
+
+          <TabsContent value="reset-password" className="mt-4 space-y-4 px-5 pb-5 sm:px-6">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-[0_12px_40px_-24px_rgba(15,23,42,0.35)]">
+              <div className="mb-4 flex items-center gap-2">
+                <KeyRound className="h-5 w-5 text-sky-600" />
+                <h2 className="text-lg font-semibold tracking-tight text-slate-900">Reset User Password</h2>
+              </div>
+              <form onSubmit={handleResetPassword} className="max-w-lg space-y-4">
                 <div>
                   <Label htmlFor="reset_user">Select User</Label>
                   <Select
                     value={resetPasswordData.userId}
                     onValueChange={(value) => setResetPasswordData({ ...resetPasswordData, userId: value })}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className={erpOutlineControlClass()}>
                       <SelectValue placeholder="Select a user to reset password" />
                     </SelectTrigger>
                     <SelectContent>
@@ -691,19 +703,24 @@ export default function UserManagement() {
                     value={resetPasswordData.password}
                     onChange={(e) => setResetPasswordData({ ...resetPasswordData, password: e.target.value })}
                     placeholder="Leave empty to reset to default password (password123)"
+                    className={erpOutlineControlClass()}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="mt-1 text-xs text-slate-400">
                     If left empty, password will be reset to the default: <strong>password123</strong>
                   </p>
                 </div>
-                <Button type="submit" disabled={isResettingPassword || !resetPasswordData.userId} className="w-full">
+                <Button
+                  type="submit"
+                  disabled={isResettingPassword || !resetPasswordData.userId}
+                  className={cn(erpPrimaryButtonClass(), 'w-full')}
+                >
                   {isResettingPassword ? 'Resetting...' : 'Reset Password'}
                 </Button>
               </form>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </DashboardPageShell>
   );
 }
