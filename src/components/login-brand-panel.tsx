@@ -75,10 +75,14 @@ export function LoginBrandPanel({ className }: { className?: string }) {
                 priority={i === 0}
                 sizes="(max-width: 1024px) 100vw, 58vw"
                 className={cn(
-                  'transition-transform duration-[5s] ease-out',
+                  'ease-out',
                   slide.fit === 'cover' ? 'object-cover' : 'object-contain p-10 sm:p-16',
                   active && slide.fit === 'cover' ? 'scale-105' : 'scale-100'
                 )}
+                style={{
+                  transitionProperty: 'transform',
+                  transitionDuration: '5s',
+                }}
               />
               {slide.fit === 'cover' && (
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-black/35" />

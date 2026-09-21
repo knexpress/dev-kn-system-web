@@ -1169,7 +1169,11 @@ class ApiClient {
   }
 
   async getAccountLedger(code: string) {
-    return this.request(`/accounting/accounts/${encodeURIComponent(code)}/ledger`, {}, false);
+    return this.request<{ account?: any; rows: any[]; closing_balance?: number }>(
+      `/accounting/accounts/${encodeURIComponent(code)}/ledger`,
+      {},
+      false
+    );
   }
 
   async getJournals() {
@@ -1243,7 +1247,11 @@ class ApiClient {
   }
 
   async getInventoryItem(sku: string) {
-    return this.request(`/accounting/inventory/items/${encodeURIComponent(sku)}`, {}, false);
+    return this.request<{ item: any; movements?: any[]; stock_value?: number }>(
+      `/accounting/inventory/items/${encodeURIComponent(sku)}`,
+      {},
+      false
+    );
   }
 
   async createInventoryItem(itemData: {
@@ -1278,10 +1286,13 @@ class ApiClient {
     offset_account_code?: string;
     post_journal?: boolean;
   }) {
-    return this.request('/accounting/inventory/transactions', {
-      method: 'POST',
-      body: JSON.stringify(txnData),
-    });
+    return this.request<{ journal?: any; transaction?: any }>(
+      '/accounting/inventory/transactions',
+      {
+        method: 'POST',
+        body: JSON.stringify(txnData),
+      }
+    );
   }
 
   async getTrialBalance(from?: string, to?: string) {
