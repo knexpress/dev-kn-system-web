@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +13,6 @@ export function AuthForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const router = useRouter();
   const { login } = useAuth();
   const { toast } = useToast();
 
@@ -31,16 +29,18 @@ export function AuthForm() {
       if (result.requiresPasswordChange) {
         secureLog.warn('Password change required');
       }
-      router.push('/dashboard');
-    } else {
-      secureLog.error('Login failed', { error: result.error });
-      toast({
-        variant: 'destructive',
-        title: 'Login Failed',
-        description: result.error || 'An unexpected error occurred.',
-      });
-      setIsLoading(false);
+      // Hard navigation so session storage is read cleanly on /dashboard
+      window.location.assign('/dashboard');
+      return;
     }
+
+    secureLog.error('Login failed', { error: result.error });
+    toast({
+      variant: 'destructive',
+      title: 'Login Failed',
+      description: result.error || 'An unexpected error occurred.',
+    });
+    setIsLoading(false);
   };
 
   return (

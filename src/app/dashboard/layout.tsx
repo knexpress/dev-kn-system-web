@@ -23,8 +23,9 @@ export default function DashboardLayout({
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !userProfile) {
-      router.push('/login');
+    if (loading) return;
+    if (!userProfile) {
+      router.replace('/');
     }
   }, [userProfile, loading, router]);
 

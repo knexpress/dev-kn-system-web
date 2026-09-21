@@ -115,7 +115,7 @@ export function LoginBrandPanel({ className }: { className?: string }) {
             {SLIDES[index].caption}
           </h2>
           <p className="mt-2 text-sm text-white/70">
-            Finance & logistics workspace for bookings, invoices, and operations.
+            Internal operations for bookings, delivery, invoices, audit, and reporting.
           </p>
         </div>
 

@@ -5,6 +5,7 @@ import { getNavigationLinks } from '@/lib/navigation';
 import PerformanceMetrics from '@/components/performance-metrics';
 import DashboardWeather from '@/components/dashboard-weather';
 import EmpostPendingWidget from '@/components/empost-pending-widget';
+import { MotivationQuote } from '@/components/motivation-quote';
 import {
   MagloHero,
   MagloModuleTile,
@@ -39,6 +40,8 @@ export default function Dashboard() {
           </div>
         }
       />
+
+      <MotivationQuote firstName={firstName} department={department.name} />
 
       {isSuperAdmin && <EmpostPendingWidget />}
 

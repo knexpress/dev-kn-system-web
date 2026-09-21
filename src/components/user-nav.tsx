@@ -26,7 +26,7 @@ export function UserNav({ variant = 'default' }: UserNavProps) {
 
   const handleLogout = async () => {
     logout();
-    router.push('/login');
+    router.push('/');
   };
 
   const getInitials = (name: string | null | undefined) => {

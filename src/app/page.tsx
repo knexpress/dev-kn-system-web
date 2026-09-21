@@ -1,68 +1,103 @@
+'use client';
+
 import Link from 'next/link';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import { useAuth } from '@/hooks/use-auth';
+import { AuthForm } from '@/components/auth-form';
+import { LoginBrandPanel } from '@/components/login-brand-panel';
+import { Loader2, ShieldCheck, Workflow, Users } from 'lucide-react';
+
 export default function HomePage() {
-  return (
-    <main className="min-h-screen bg-background px-4 py-10 text-foreground sm:px-8">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 rounded-lg border bg-card p-6 shadow-sm sm:p-10">
-        <header className="space-y-4">
-          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            KNEX Finance and Logistics System
-          </h1>
-          <p className="max-w-3xl text-base leading-7 text-muted-foreground">
-            KNEX is an internal operations platform that centralizes booking requests,
-            delivery assignment, invoice lifecycle, audit logs, and reporting for
-            logistics and finance teams. It helps organizations streamline daily
-            operations with controlled access, traceability, and data security.
-          </p>
-        </header>
+  const { userProfile, loading } = useAuth();
+  const router = useRouter();
 
-        <section className="grid gap-4 sm:grid-cols-2">
-          <article className="rounded-md border bg-background p-4">
-            <h2 className="mb-2 text-lg font-semibold">What the System Does</h2>
-            <ul className="list-disc space-y-1 pl-5 text-sm leading-6 text-muted-foreground">
-              <li>Manage booking and delivery workflows end-to-end.</li>
-              <li>Track invoices and approval states.</li>
-              <li>Maintain operational transparency with audit and activity logs.</li>
-              <li>Enable role-based access for secure team collaboration.</li>
-            </ul>
-          </article>
+  useEffect(() => {
+    if (!loading && userProfile) {
+      router.replace('/dashboard');
+    }
+  }, [userProfile, loading, router]);
 
-          <article className="rounded-md border bg-background p-4">
-            <h2 className="mb-2 text-lg font-semibold">Who Uses It</h2>
-            <ul className="list-disc space-y-1 pl-5 text-sm leading-6 text-muted-foreground">
-              <li>Operations managers and dispatch teams.</li>
-              <li>Finance and invoicing departments.</li>
-              <li>Review and compliance staff.</li>
-              <li>Authorized administrators and executives.</li>
-            </ul>
-          </article>
-        </section>
-
-        <section className="rounded-md border bg-background p-4">
-          <h2 className="mb-2 text-lg font-semibold">Compliance and Trust</h2>
-          <p className="text-sm leading-6 text-muted-foreground">
-            The platform follows controlled access patterns, security logging, and
-            documented legal policies that support service verification and UAE legal
-            compliance requirements.
-          </p>
-        </section>
-
-        <footer className="flex flex-wrap items-center gap-4 border-t pt-4 text-sm">
-          <Link
-            className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground transition hover:opacity-90"
-            href="/login"
-          >
-            Go to Login
-          </Link>
-          <div className="flex items-center gap-4 text-muted-foreground">
-            <Link className="underline transition hover:text-foreground" href="/privacy-policy">
-              Privacy Policy
-            </Link>
-            <Link className="underline transition hover:text-foreground" href="/terms-and-conditions">
-              Terms and Conditions
-            </Link>
-          </div>
-        </footer>
+  if (loading || (!loading && userProfile)) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-slate-50">
+        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
       </div>
-    </main>
+    );
+  }
+
+  return (
+    <div className="grid min-h-screen w-full lg:grid-cols-[1.05fr_0.95fr]">
+      <LoginBrandPanel />
+
+      <main className="relative flex items-center justify-center overflow-y-auto bg-gradient-to-br from-white via-emerald-50/30 to-slate-50 px-5 py-10 sm:px-8 lg:px-10">
+        <div className="pointer-events-none absolute -right-20 top-10 h-64 w-64 rounded-full bg-emerald-200/30 blur-3xl" />
+        <div className="pointer-events-none absolute -left-16 bottom-10 h-52 w-52 rounded-full bg-slate-200/50 blur-3xl" />
+
+        <div className="relative z-10 w-full max-w-xl space-y-6">
+          <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
+            <div className="mb-5 flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-black shadow-lg shadow-emerald-900/20 ring-1 ring-slate-200 lg:hidden">
+              <Image
+                src="/KNEXPRESSGREEN.png"
+                alt="KN Express"
+                width={56}
+                height={56}
+                className="h-full w-full object-contain"
+                priority
+              />
+            </div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700/80">
+              KNEX Finance and Logistics System
+            </p>
+            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
+              Welcome back
+            </h1>
+            <p className="mt-2 max-w-lg text-sm leading-6 text-slate-500">
+              KNEX is an internal operations platform that centralizes booking requests,
+              delivery assignment, invoice lifecycle, audit logs, and reporting for
+              logistics and finance teams.
+            </p>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200/70 bg-white/90 p-6 shadow-[0_20px_60px_-36px_rgba(15,23,42,0.35)] backdrop-blur-sm sm:p-7">
+            <AuthForm />
+            <div className="mt-6 flex items-center justify-center gap-3 text-xs text-slate-400">
+              <Link className="transition hover:text-emerald-700" href="/privacy-policy">
+                Privacy Policy
+              </Link>
+              <span aria-hidden="true">·</span>
+              <Link className="transition hover:text-emerald-700" href="/terms-and-conditions">
+                Terms and Conditions
+              </Link>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200/70 bg-white/70 p-4 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.25)]">
+              <Workflow className="h-4 w-4 text-emerald-600" />
+              <p className="mt-2 text-sm font-semibold text-slate-900">What it does</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Bookings, delivery, invoices, and audit trails in one controlled workspace.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200/70 bg-white/70 p-4 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.25)]">
+              <Users className="h-4 w-4 text-emerald-600" />
+              <p className="mt-2 text-sm font-semibold text-slate-900">Who uses it</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Operations, finance, compliance, and authorized administrators.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200/70 bg-white/70 p-4 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.25)]">
+              <ShieldCheck className="h-4 w-4 text-emerald-600" />
+              <p className="mt-2 text-sm font-semibold text-slate-900">Trust</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Role-based access, security logging, and documented legal policies.
+              </p>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
   );
 }

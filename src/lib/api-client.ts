@@ -1024,6 +1024,21 @@ class ApiClient {
     return this.request(`/performance/department/${department}`);
   }
 
+  // Motivation quotes (10-minute windows)
+  async getMotivationQuote(params?: { firstName?: string; department?: string }) {
+    const search = new URLSearchParams();
+    if (params?.firstName) search.set('firstName', params.firstName);
+    if (params?.department) search.set('department', params.department);
+    const qs = search.toString();
+    return this.request<{
+      quote: string;
+      source: string;
+      windowMs: number;
+      expiresAt: number;
+      cached?: boolean;
+    }>(`/motivation/quote${qs ? `?${qs}` : ''}`, {}, false);
+  }
+
   // ========================================
   // QR PAYMENT COLLECTION SYSTEM
   // ========================================
