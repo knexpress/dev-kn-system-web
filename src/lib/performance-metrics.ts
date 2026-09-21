@@ -127,17 +127,6 @@ export const getFinancePerformanceMetrics = (data: any): PerformanceMetric[] => 
     icon: 'CreditCard'
   },
   {
-    id: 'cashFlow',
-    title: 'Cash Flow',
-    value: data?.cashFlow || 0,
-    unit: 'AED',
-    trend: data?.cashFlowTrend || 'neutral',
-    trendPercentage: data?.cashFlowTrendPercentage || 0,
-    description: 'Net cash flow this month',
-    color: data?.cashFlow >= 0 ? 'success' : 'destructive',
-    icon: 'TrendingUp'
-  },
-  {
     id: 'invoiceProcessing',
     title: 'Invoice Processing',
     value: data?.invoiceProcessingTime || 0,
@@ -423,7 +412,7 @@ export const calculateOverallScore = (metrics: PerformanceMetric[]): number => {
     let score = metric.value;
     
     // Normalize different metrics to 0-100 scale
-    if (metric.id === 'revenue' || metric.id === 'cashFlow') {
+    if (metric.id === 'revenue') {
       // For monetary values, use a percentage of target
       score = Math.min((metric.value / 100000) * 100, 100);
     } else if (metric.id === 'leads' || metric.id === 'shipments' || metric.id === 'ticketsResolved') {

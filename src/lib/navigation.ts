@@ -4,22 +4,16 @@ import {
   Package,
   FileText,
   UserCircle,
-  BarChart,
-  MessageSquare,
-  Ticket,
-  Landmark,
-  FilePlus2,
   FileCheck2,
   type LucideIcon,
-  Briefcase,
   FileSearch,
-  CreditCard,
   Truck,
   ClipboardCheck,
   XCircle,
   DollarSign,
   History,
   FileDown,
+  BookOpen,
 } from 'lucide-react';
 import type { Department, DepartmentData } from './types';
 
@@ -74,10 +68,10 @@ const allLinks: NavLink[] = [
     departments: ['Finance', 'Management', 'Auditor', 'IT'],
   },
   {
-    href: '/dashboard/cash-flow',
-    label: 'Cash Flow',
-    icon: Landmark,
-    departments: ['Finance', 'Auditor', 'IT'],
+    href: '/dashboard/accounting',
+    label: 'Accounting',
+    icon: BookOpen,
+    departments: ['Finance', 'Management', 'Auditor', 'IT'],
   },
   {
     href: '/dashboard/price-brackets',
@@ -126,18 +120,6 @@ const allLinks: NavLink[] = [
     label: 'Rejected Requests',
     icon: XCircle,
     departments: ['Sales', 'Operations', 'IT'],
-  },
-  {
-    href: '/dashboard/chat',
-    label: 'Chat',
-    icon: MessageSquare,
-    departments: ['Sales', 'Operations', 'Finance', 'HR', 'Management', 'IT', 'Auditor'],
-  },
-  {
-    href: '/dashboard/tickets',
-    label: 'Internal Requests',
-    icon: Briefcase,
-    departments: ['Sales', 'Operations', 'Finance', 'HR', 'Management', 'IT', 'Auditor'],
   },
 ];
 

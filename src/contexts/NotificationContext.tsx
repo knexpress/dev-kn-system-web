@@ -6,8 +6,6 @@ import { secureLog } from '@/lib/secure-logger';
 
 interface NotificationCounts {
   invoices: number;
-  chat: number;
-  tickets: number;
   invoiceRequests: number;
   requests: number;
 }
@@ -39,8 +37,6 @@ interface NotificationProviderProps {
 export const NotificationProvider: React.FC<NotificationProviderProps> = ({ children }) => {
   const [counts, setCounts] = useState<NotificationCounts>({
     invoices: 0,
-    chat: 0,
-    tickets: 0,
     invoiceRequests: 0,
     requests: 0,
   });

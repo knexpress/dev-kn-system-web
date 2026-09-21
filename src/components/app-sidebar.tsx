@@ -31,10 +31,8 @@ export default function AppSidebar() {
       '/dashboard/invoice-requests': 'invoice_requests',
       '/dashboard/requests': 'requests',
       '/dashboard/delivery-assignments': 'delivery_assignments',
-      '/dashboard/tickets': 'tickets',
       '/dashboard/collections': 'collections',
       '/dashboard/jobs': 'jobs',
-      '/dashboard/cash-flow': 'cash_flow',
       '/dashboard/reports/audit': 'reports',
     };
     return map[href];

@@ -434,11 +434,6 @@ class ApiClient {
     });
   }
 
-  // Tickets
-  async getTickets() {
-    return this.request('/tickets');
-  }
-
   // Activity last-updated (for per-tab new indicators)
   // This endpoint is optional - gracefully handles 404 if not implemented
   async getActivityLastUpdated() {
@@ -472,50 +467,6 @@ class ApiClient {
     return this.request(`/bookings/search-awb?awb=${encodeURIComponent(awb.trim())}`, {}, useCache, 10000); // Cache for 10 seconds
   }
 
-  async createTicket(ticketData: any) {
-    return this.request('/tickets', {
-      method: 'POST',
-      body: JSON.stringify(ticketData),
-    });
-  }
-
-  async updateTicketStatus(id: string, statusData: any) {
-    return this.request(`/tickets/${id}/status`, {
-      method: 'PUT',
-      body: JSON.stringify(statusData),
-    });
-  }
-
-  // Internal Requests
-  async getInternalRequests() {
-    return this.request('/internal-requests');
-  }
-
-  async createInternalRequest(internalRequestData: any) {
-    return this.request('/internal-requests', {
-      method: 'POST',
-      body: JSON.stringify(internalRequestData),
-    });
-  }
-
-  async updateInternalRequestStatus(id: string, statusData: any) {
-    return this.request(`/internal-requests/${id}/status`, {
-      method: 'PUT',
-      body: JSON.stringify(statusData),
-    });
-  }
-
-  async assignInternalRequest(id: string, assignData: any) {
-    return this.request(`/internal-requests/${id}/assign`, {
-      method: 'PUT',
-      body: JSON.stringify(assignData),
-    });
-  }
-
-  async getInternalRequestsByDepartment(departmentId: string) {
-    return this.request(`/internal-requests/department/${departmentId}`);
-  }
-
   // Reports
   async getReports() {
     return this.request('/reports');
@@ -526,22 +477,6 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(reportData),
     });
-  }
-
-  // Cash Tracker
-  async getCashTransactions() {
-    return this.request('/cash-tracker');
-  }
-
-  async createCashTransaction(transactionData: any) {
-    return this.request('/cash-tracker', {
-      method: 'POST',
-      body: JSON.stringify(transactionData),
-    });
-  }
-
-  async getCashFlowSummary() {
-    return this.request('/cash-tracker/summary');
   }
 
   // Invoice Requests
@@ -830,7 +765,7 @@ class ApiClient {
   // Notifications
   // Disabled: Notification endpoints removed
   async getNotificationCounts() {
-    return { success: true, data: { invoices: 0, chat: 0, tickets: 0, invoiceRequests: 0, requests: 0 } };
+    return { success: true, data: { invoices: 0, invoiceRequests: 0, requests: 0 } };
   }
 
   async markAsViewed(type: string, itemId: string) {
@@ -1207,166 +1142,169 @@ class ApiClient {
     });
   }
 
-  // ========================================
-  // INTER-DEPARTMENT CHAT API
-  // ========================================
-
-  // Chat Rooms
-  async getChatRooms(userId?: string, departmentId?: string) {
-    let url = '/chat/rooms';
-    const params = new URLSearchParams();
-    if (userId) params.append('user_id', userId);
-    if (departmentId) params.append('department_id', departmentId);
-    if (params.toString()) url += `?${params.toString()}`;
-    return this.request(url);
-  }
-
-  async createDirectChatRoom(userId1: string, userId2: string) {
-    return this.request('/chat/rooms/direct', {
-      method: 'POST',
-      body: JSON.stringify({ user_id_1: userId1, user_id_2: userId2 }),
-    });
-  }
-
-  async getChatRoom(roomId: string) {
-    return this.request(`/chat/rooms/${roomId}`);
-  }
-
-  async createChatRoom(roomData: {
-    name: string;
-    description?: string;
-    department_ids: string[];
-    created_by?: string;
-  }) {
-    return this.request('/chat/rooms', {
-      method: 'POST',
-      body: JSON.stringify(roomData),
-    });
-  }
-
-  async updateChatRoom(roomId: string, roomData: {
-    name?: string;
-    description?: string;
-    department_ids?: string[];
-    is_active?: boolean;
-  }) {
-    return this.request(`/chat/rooms/${roomId}`, {
-      method: 'PUT',
-      body: JSON.stringify(roomData),
-    });
-  }
-
-  async deleteChatRoom(roomId: string) {
-    return this.request(`/chat/rooms/${roomId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  // Chat Messages
-  async getChatMessages(roomId: string, limit?: number, before?: string) {
-    let url = `/chat/rooms/${roomId}/messages`;
-    const params = new URLSearchParams();
-    if (limit) params.append('limit', limit.toString());
-    if (before) params.append('before', before);
-    if (params.toString()) url += `?${params.toString()}`;
-    return this.request(url);
-  }
-
-  async sendChatMessage(roomId: string, messageData: {
-    sender_id: string;
-    message: string;
-    message_type?: 'text' | 'file' | 'image' | 'system';
-    reply_to?: string;
-  }) {
-    return this.request(`/chat/rooms/${roomId}/messages`, {
-      method: 'POST',
-      body: JSON.stringify(messageData),
-    });
-  }
-
-  async uploadChatFile(roomId: string, file: File, senderId: string, replyTo?: string) {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('sender_id', senderId);
-    formData.append('message_type', file.type.startsWith('image/') ? 'image' : 'file');
-    if (replyTo) {
-      formData.append('reply_to', replyTo);
-    }
-    
-    const url = `${this.baseUrl}/chat/rooms/${roomId}/messages/upload`;
-    const headers: Record<string, string> = {};
-    
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
-    }
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: formData,
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { success: false, error: data.error || 'File upload failed' };
-    }
-    
-    return { success: true, data };
-  }
-
-  async searchChatMessages(roomId: string, query: string, limit: number = 50) {
-    let url = `/chat/rooms/${roomId}/messages/search`;
-    const params = new URLSearchParams();
-    params.append('q', query);
-    params.append('limit', limit.toString());
-    url += `?${params.toString()}`;
-    return this.request(url);
-  }
-
-  async markMessageAsRead(messageId: string, employeeId: string) {
-    return this.request(`/chat/messages/${messageId}/read`, {
-      method: 'PUT',
-      body: JSON.stringify({ employee_id: employeeId }),
-    });
-  }
-
-  async markRoomAsRead(roomId: string, employeeId: string) {
-    return this.request(`/chat/rooms/${roomId}/read`, {
-      method: 'PUT',
-      body: JSON.stringify({ employee_id: employeeId }),
-    });
-  }
-
-  async getUnreadCount(employeeId: string, roomId?: string) {
-    let url = `/chat/unread-count?employee_id=${employeeId}`;
-    if (roomId) url += `&room_id=${roomId}`;
-    return this.request(url);
-  }
-
-  async getChatHistory(roomId: string, page?: number, limit?: number) {
-    let url = `/chat/rooms/${roomId}/history`;
-    const params = new URLSearchParams();
-    if (page) params.append('page', page.toString());
-    if (limit) params.append('limit', limit.toString());
-    if (params.toString()) url += `?${params.toString()}`;
-    return this.request(url);
-  }
-
-  async deleteChatMessage(messageId: string) {
-    return this.request(`/chat/messages/${messageId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  // Available Users for Chat
-  async getAvailableUsers(currentUserId: string) {
-    return this.request(`/chat/users?current_user_id=${currentUserId}`);
-  }
-
   // Payment Remittances
   async getPaymentRemittances() {
     return this.request('/payment-remittances');
+  }
+
+  // Accounting
+  async getAccounts() {
+    return this.request('/accounting/accounts', {}, false);
+  }
+
+  async createAccount(accountData: {
+    code: string;
+    name: string;
+    type: string;
+    subtype?: string;
+    parent_code?: string;
+    description?: string;
+    is_active?: boolean;
+    is_postable?: boolean;
+  }) {
+    return this.request('/accounting/accounts', {
+      method: 'POST',
+      body: JSON.stringify(accountData),
+    });
+  }
+
+  async getAccountLedger(code: string) {
+    return this.request(`/accounting/accounts/${encodeURIComponent(code)}/ledger`, {}, false);
+  }
+
+  async getJournals() {
+    return this.request('/accounting/journals', {}, false);
+  }
+
+  async getJournal(id: string) {
+    return this.request(`/accounting/journals/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async createJournal(
+    journalData: {
+      entry_date: string;
+      memo?: string;
+      source?: string;
+      status?: 'DRAFT' | 'POSTED';
+      source_reference?: string;
+      source_label?: string;
+      lines: Array<{
+        account_code: string;
+        debit?: number;
+        credit?: number;
+        description?: string;
+      }>;
+    },
+    documents: File[] = []
+  ) {
+    const formData = new FormData();
+    formData.append('entry_date', journalData.entry_date);
+    formData.append('memo', journalData.memo || '');
+    formData.append('source', journalData.source || 'MANUAL');
+    formData.append('status', journalData.status || 'POSTED');
+    formData.append('source_reference', journalData.source_reference || '');
+    formData.append(
+      'source_label',
+      journalData.source_label || 'Manual journal entry'
+    );
+    formData.append('lines', JSON.stringify(journalData.lines || []));
+    for (const file of documents) {
+      formData.append('documents', file);
+    }
+
+    const url = `${this.baseUrl}/accounting/journals`;
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    if (typeof window !== 'undefined') {
+      const csrfToken = getCSRFToken();
+      if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return { success: false, error: data.error || data.message || 'Failed to create journal' };
+      }
+      return { success: true, data: data.data || data };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Failed to create journal' };
+    }
+  }
+
+  async getInventoryItems() {
+    return this.request('/accounting/inventory/items', {}, false);
+  }
+
+  async getInventoryItem(sku: string) {
+    return this.request(`/accounting/inventory/items/${encodeURIComponent(sku)}`, {}, false);
+  }
+
+  async createInventoryItem(itemData: {
+    sku: string;
+    name: string;
+    unit?: string;
+    qty_on_hand?: number;
+    avg_cost?: number;
+    reorder_level?: number;
+    asset_account_code?: string;
+    cogs_account_code?: string;
+    income_account_code?: string;
+    is_active?: boolean;
+  }) {
+    return this.request('/accounting/inventory/items', {
+      method: 'POST',
+      body: JSON.stringify(itemData),
+    });
+  }
+
+  async getInventoryTransactions() {
+    return this.request('/accounting/inventory/transactions', {}, false);
+  }
+
+  async createInventoryTransaction(txnData: {
+    txn_date: string;
+    type: 'RECEIPT' | 'ISSUE' | 'ADJUSTMENT';
+    sku: string;
+    qty: number;
+    unit_cost?: number;
+    notes?: string;
+    offset_account_code?: string;
+    post_journal?: boolean;
+  }) {
+    return this.request('/accounting/inventory/transactions', {
+      method: 'POST',
+      body: JSON.stringify(txnData),
+    });
+  }
+
+  async getTrialBalance(from?: string, to?: string) {
+    const params = new URLSearchParams();
+    if (from) params.append('from', from);
+    if (to) params.append('to', to);
+    const q = params.toString();
+    return this.request(`/accounting/reports/trial-balance${q ? `?${q}` : ''}`, {}, false);
+  }
+
+  async getProfitAndLoss(from?: string, to?: string) {
+    const params = new URLSearchParams();
+    if (from) params.append('from', from);
+    if (to) params.append('to', to);
+    const q = params.toString();
+    return this.request(`/accounting/reports/profit-loss${q ? `?${q}` : ''}`, {}, false);
+  }
+
+  async getBalanceSheet(to?: string) {
+    const params = new URLSearchParams();
+    if (to) params.append('to', to);
+    const q = params.toString();
+    return this.request(`/accounting/reports/balance-sheet${q ? `?${q}` : ''}`, {}, false);
   }
 
   async getPaymentRemittance(id: string) {

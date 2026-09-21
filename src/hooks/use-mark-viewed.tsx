@@ -21,8 +21,6 @@ export const useMarkAsViewed = (itemType: string, itemId?: string) => {
     // Mark all items of a type as viewed when visiting the main page
     const routeTypeMap: { [key: string]: string } = {
       '/dashboard/invoices': 'invoice',
-      '/dashboard/chat': 'chat_message',
-      '/dashboard/tickets': 'ticket',
       '/dashboard/invoice-requests': 'invoice_request',
       '/dashboard/collections': 'collection',
       '/dashboard/requests': 'request',
@@ -42,17 +40,7 @@ export const useMarkCollectionViewed = (collectionId?: string) => {
   useMarkAsViewed('collection', collectionId);
 };
 
-// Hook for marking tickets as viewed
-export const useMarkTicketViewed = (ticketId?: string) => {
-  useMarkAsViewed('ticket', ticketId);
-};
-
 // Hook for marking invoice requests as viewed
 export const useMarkInvoiceRequestViewed = (requestId?: string) => {
   useMarkAsViewed('invoice_request', requestId);
-};
-
-// Hook for marking chat messages as viewed
-export const useMarkChatViewed = (messageId?: string) => {
-  useMarkAsViewed('chat_message', messageId);
 };

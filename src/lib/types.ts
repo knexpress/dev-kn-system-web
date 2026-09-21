@@ -76,17 +76,6 @@ export interface ReportData {
   generatedAt: string;
 }
 
-export interface CashTrackerData {
-  _id: string;
-  category: 'RECEIVABLES' | 'PAYABLES' | 'PAYROLL' | 'CAPITAL_EXPENDITURE' | 'INVESTMENT' | 'FINANCING' | 'OPERATIONAL_EXPENSE' | 'TAX' | 'OWNER_DRAW';
-  amount: number;
-  direction: 'IN' | 'OUT';
-  payment_method: 'CASH' | 'CREDIT_CARD' | 'BANK_TRANSFER' | 'CHEQUE' | 'DIGITAL_WALLET';
-  notes?: string;
-  entity_id?: string;
-  entity_type: 'clients' | 'suppliers' | 'employees' | 'assets' | 'investors' | 'N/A';
-}
-
 // Legacy types for backward compatibility
 export interface Client {
   id: string;
@@ -140,28 +129,4 @@ export interface Invoice {
   lineItems?: InvoiceLineItem[];
   taxRate?: number;
   notes?: string;
-}
-
-export type InternalRequestStatus = 'Open' | 'Resolved';
-
-export interface InternalRequest {
-    id: string;
-    title: string;
-    description: string;
-    raisedBy: string;
-    raisedByDepartment: Department;
-    targetDepartment: Department;
-    date: string;
-    status: InternalRequestStatus;
-}
-
-export type TransactionType = 'Income' | 'Expense';
-
-export interface CashFlowTransaction {
-  id: string;
-  type: TransactionType;
-  description: string;
-  amount: number;
-  taxRate: number; // as a percentage, e.g., 20 for 20%
-  date: string;
 }

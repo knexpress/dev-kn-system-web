@@ -20,7 +20,7 @@ export default function HomePage() {
             <h2 className="mb-2 text-lg font-semibold">What the System Does</h2>
             <ul className="list-disc space-y-1 pl-5 text-sm leading-6 text-muted-foreground">
               <li>Manage booking and delivery workflows end-to-end.</li>
-              <li>Track invoices, approval states, and cash flow records.</li>
+              <li>Track invoices and approval states.</li>
               <li>Maintain operational transparency with audit and activity logs.</li>
               <li>Enable role-based access for secure team collaboration.</li>
             </ul>

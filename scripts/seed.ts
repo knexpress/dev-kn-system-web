@@ -1,13 +1,6 @@
 import connectDB from '../src/lib/mongodb';
-import { Department, Employee, Client, Request, Ticket, Report, CashTracker, User } from '../src/lib/models';
+import { Department, Employee, Client, Request, Ticket, Report, User } from '../src/lib/models';
 import mongoose from 'mongoose';
-
-// Helper function to generate cash tracker ID
-function generateCashTrackerId(): string {
-  const year = new Date().getFullYear();
-  const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-  return `CT-${year}-${randomNum}`;
-}
 
 async function seedDatabase() {
   try {
@@ -21,7 +14,6 @@ async function seedDatabase() {
     await Request.deleteMany({});
     await Ticket.deleteMany({});
     await Report.deleteMany({});
-    await CashTracker.deleteMany({});
     await User.deleteMany({});
 
     console.log('Cleared existing data');
@@ -174,51 +166,6 @@ async function seedDatabase() {
     const createdReports = await Report.insertMany(reports);
     console.log('Created reports:', createdReports.length);
 
-    // Seed Cash Tracker with polymorphic pattern
-    const cashTransactions = [
-      {
-        _id: generateCashTrackerId(),
-        category: 'RECEIVABLES',
-        amount: new mongoose.Types.Decimal128('12500.00'),
-        direction: 'IN',
-        payment_method: 'BANK_TRANSFER',
-        notes: 'Payment for AWB789013',
-        entity_id: createdClients[1]._id,
-        entity_type: 'clients',
-      },
-      {
-        _id: generateCashTrackerId(),
-        category: 'PAYABLES',
-        amount: new mongoose.Types.Decimal128('2500.00'),
-        direction: 'OUT',
-        payment_method: 'BANK_TRANSFER',
-        notes: 'October office rent',
-        entity_type: 'N/A',
-      },
-      {
-        _id: generateCashTrackerId(),
-        category: 'OPERATIONAL_EXPENSE',
-        amount: new mongoose.Types.Decimal128('350.00'),
-        direction: 'OUT',
-        payment_method: 'CREDIT_CARD',
-        notes: 'Office supplies',
-        entity_type: 'N/A',
-      },
-      {
-        _id: generateCashTrackerId(),
-        category: 'PAYROLL',
-        amount: new mongoose.Types.Decimal128('5000.00'),
-        direction: 'OUT',
-        payment_method: 'BANK_TRANSFER',
-        notes: 'Monthly payroll',
-        entity_id: createdEmployees[0]._id,
-        entity_type: 'employees',
-      },
-    ];
-
-    const createdCashTransactions = await CashTracker.insertMany(cashTransactions);
-    console.log('Created cash tracker transactions:', createdCashTransactions.length);
-
     console.log('Database seeded successfully!');
     console.log('\nSummary:');
     console.log(`- Departments: ${createdDepartments.length}`);
@@ -228,7 +175,6 @@ async function seedDatabase() {
     console.log(`- Requests: ${createdRequests.length}`);
     console.log(`- Tickets: ${createdTickets.length}`);
     console.log(`- Reports: ${createdReports.length}`);
-    console.log(`- Cash Transactions: ${createdCashTransactions.length}`);
     
     process.exit(0);
   } catch (error) {

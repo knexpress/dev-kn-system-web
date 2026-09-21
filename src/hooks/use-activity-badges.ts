@@ -16,10 +16,7 @@ const TRACKED_KEYS = [
   'invoice_requests',
   'invoices',
   'delivery_assignments',
-  'tickets',
   'collections',
-  'jobs',
-  'cash_flow',
   'reports',
 ];
 
