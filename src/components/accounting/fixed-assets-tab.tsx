@@ -275,7 +275,7 @@ export default function FixedAssetsTab() {
                 Run depreciation (all)
               </Button>
             ) : null}
-            <Button type="button" className={erpPrimaryButtonClass} onClick={() => setTab('add')}>
+            <Button type="button" className={erpPrimaryButtonClass()} onClick={() => setTab('add')}>
               <Plus className="h-4 w-4" />
               Add asset
             </Button>
@@ -316,7 +316,7 @@ export default function FixedAssetsTab() {
               <ErpEmptyState message="No fixed assets yet. Add your first asset." />
             </div>
           ) : (
-            <Table className={erpTableClasses}>
+            <Table className={erpTableClasses().table}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Asset</TableHead>
@@ -365,7 +365,7 @@ export default function FixedAssetsTab() {
               <ErpEmptyState message="Asset register is empty." />
             </div>
           ) : (
-            <Table className={erpTableClasses}>
+            <Table className={erpTableClasses().table}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Asset</TableHead>
@@ -570,7 +570,7 @@ export default function FixedAssetsTab() {
           </div>
           <Button
             type="button"
-            className={erpPrimaryButtonClass}
+            className={erpPrimaryButtonClass()}
             disabled={saving}
             onClick={() => void createAsset()}
           >
@@ -587,7 +587,7 @@ export default function FixedAssetsTab() {
               <ErpEmptyState message="No depreciation runs yet." />
             </div>
           ) : (
-            <Table className={erpTableClasses}>
+            <Table className={erpTableClasses().table}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Asset</TableHead>
@@ -674,7 +674,7 @@ export default function FixedAssetsTab() {
             </Button>
             <Button
               type="button"
-              className={erpPrimaryButtonClass}
+              className={erpPrimaryButtonClass()}
               disabled={actingId === disposeAsset?._id}
               onClick={() => void dispose()}
             >

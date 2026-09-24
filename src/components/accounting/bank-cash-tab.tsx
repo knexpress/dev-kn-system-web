@@ -297,7 +297,7 @@ export default function BankCashTab() {
         actions={
           <Button
             type="button"
-            className={erpPrimaryButtonClass}
+            className={erpPrimaryButtonClass()}
             onClick={() => setAddOpen(true)}
           >
             <Plus className="h-4 w-4" />
@@ -408,7 +408,7 @@ export default function BankCashTab() {
               <ErpEmptyState message="No payments yet. Use Pay supplier to request a payment for approval." />
             ) : (
               <div className="overflow-x-auto">
-                <Table className={erpTableClasses}>
+                <Table className={erpTableClasses().table}>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Payment</TableHead>
@@ -463,7 +463,7 @@ export default function BankCashTab() {
               <ErpEmptyState message="No accounts yet. Create a bank or cash account." />
             </div>
           ) : (
-            <Table className={erpTableClasses}>
+            <Table className={erpTableClasses().table}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Code</TableHead>
@@ -594,7 +594,7 @@ export default function BankCashTab() {
           <div className="mt-5">
             <Button
               type="button"
-              className={erpPrimaryButtonClass}
+              className={erpPrimaryButtonClass()}
               disabled={submittingPay}
               onClick={() => void submitPayment()}
             >
@@ -612,7 +612,7 @@ export default function BankCashTab() {
               <ErpEmptyState message="Nothing to clear. Draft supplier payments will appear here with DRAFT journals." />
             </div>
           ) : (
-            <Table className={erpTableClasses}>
+            <Table className={erpTableClasses().table}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Payment</TableHead>
@@ -791,7 +791,7 @@ export default function BankCashTab() {
             </Button>
             <Button
               type="button"
-              className={erpPrimaryButtonClass}
+              className={erpPrimaryButtonClass()}
               disabled={savingAccount}
               onClick={() => void createAccount()}
             >

@@ -348,7 +348,7 @@ export default function PurchaseOrdersTab() {
         onRefresh={() => void load()}
         refreshing={loading}
         actions={
-          <Button type="button" className={erpPrimaryButtonClass} onClick={() => setTab('create')}>
+          <Button type="button" className={erpPrimaryButtonClass()} onClick={() => setTab('create')}>
             <Plus className="h-4 w-4" />
             New PO
           </Button>
@@ -393,7 +393,7 @@ export default function PurchaseOrdersTab() {
               <ErpEmptyState message="No purchase orders yet. Create your first PO." />
             </div>
           ) : (
-            <Table className={erpTableClasses}>
+            <Table className={erpTableClasses().table}>
               <TableHeader>
                 <TableRow>
                   <TableHead>PO</TableHead>
@@ -440,7 +440,7 @@ export default function PurchaseOrdersTab() {
               <ErpEmptyState message="No purchase orders." />
             </div>
           ) : (
-            <Table className={erpTableClasses}>
+            <Table className={erpTableClasses().table}>
               <TableHeader>
                 <TableRow>
                   <TableHead>PO</TableHead>
@@ -742,7 +742,7 @@ export default function PurchaseOrdersTab() {
             </Button>
             <Button
               type="button"
-              className={erpPrimaryButtonClass}
+              className={erpPrimaryButtonClass()}
               disabled={saving}
               onClick={() => void createPo(true)}
             >
@@ -764,7 +764,7 @@ export default function PurchaseOrdersTab() {
                 <ErpEmptyState message="No POs waiting for approval." />
               </div>
             ) : (
-              <Table className={erpTableClasses}>
+              <Table className={erpTableClasses().table}>
                 <TableHeader>
                   <TableRow>
                     <TableHead>PO</TableHead>
@@ -849,7 +849,7 @@ export default function PurchaseOrdersTab() {
                 <ErpEmptyState message="No approved POs ready to receive." />
               </div>
             ) : (
-              <Table className={erpTableClasses}>
+              <Table className={erpTableClasses().table}>
                 <TableHeader>
                   <TableRow>
                     <TableHead>PO</TableHead>
@@ -957,7 +957,7 @@ export default function PurchaseOrdersTab() {
             </Button>
             <Button
               type="button"
-              className={erpPrimaryButtonClass}
+              className={erpPrimaryButtonClass()}
               disabled={paying}
               onClick={() => void createPayment()}
             >

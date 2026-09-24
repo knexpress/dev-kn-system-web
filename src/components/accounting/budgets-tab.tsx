@@ -228,7 +228,7 @@ export default function BudgetsTab() {
         onRefresh={() => void load()}
         refreshing={loading}
         actions={
-          <Button type="button" className={erpPrimaryButtonClass} onClick={() => setTab('create')}>
+          <Button type="button" className={erpPrimaryButtonClass()} onClick={() => setTab('create')}>
             <Plus className="h-4 w-4" />
             New budget
           </Button>
@@ -316,7 +316,7 @@ export default function BudgetsTab() {
           )}
 
           <div className="overflow-x-auto rounded-3xl border border-slate-200/70 bg-white/90">
-            <Table className={erpTableClasses}>
+            <Table className={erpTableClasses().table}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Budget</TableHead>
@@ -367,7 +367,7 @@ export default function BudgetsTab() {
               <ErpEmptyState message="No budgets created." />
             </div>
           ) : (
-            <Table className={erpTableClasses}>
+            <Table className={erpTableClasses().table}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Budget</TableHead>
@@ -615,7 +615,7 @@ export default function BudgetsTab() {
 
           <Button
             type="button"
-            className={erpPrimaryButtonClass}
+            className={erpPrimaryButtonClass()}
             disabled={saving}
             onClick={() => void createBudget()}
           >
@@ -682,7 +682,7 @@ export default function BudgetsTab() {
                     <ErpEmptyState message="No lines in this budget." />
                   </div>
                 ) : (
-                  <Table className={erpTableClasses}>
+                  <Table className={erpTableClasses().table}>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Account</TableHead>

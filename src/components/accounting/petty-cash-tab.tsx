@@ -262,14 +262,14 @@ export default function PettyCashTab() {
         refreshing={loading}
         actions={
           canManage ? (
-            <Button type="button" className={erpPrimaryButtonClass} onClick={() => setFundOpen(true)}>
+            <Button type="button" className={erpPrimaryButtonClass()} onClick={() => setFundOpen(true)}>
               <Plus className="h-4 w-4" />
               Fund / journal
             </Button>
           ) : (
             <Button
               type="button"
-              className={erpPrimaryButtonClass}
+              className={erpPrimaryButtonClass()}
               onClick={() => setTab('new-voucher')}
             >
               <Plus className="h-4 w-4" />
@@ -338,7 +338,7 @@ export default function PettyCashTab() {
             {!canManage ? (
               <Button
                 type="button"
-                className={cn(erpPrimaryButtonClass, 'mt-4 w-full')}
+                className={cn(erpPrimaryButtonClass(), 'mt-4 w-full')}
                 onClick={() => setTab('replenish')}
               >
                 <RefreshCw className="h-4 w-4" />
@@ -380,7 +380,7 @@ export default function PettyCashTab() {
               <ErpEmptyState message="No vouchers posted yet." />
             </div>
           ) : (
-            <Table className={erpTableClasses}>
+            <Table className={erpTableClasses().table}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Voucher</TableHead>
@@ -500,7 +500,7 @@ export default function PettyCashTab() {
           </p>
           <Button
             type="button"
-            className={erpPrimaryButtonClass}
+            className={erpPrimaryButtonClass()}
             disabled={savingVoucher}
             onClick={() => void createVoucher()}
           >
@@ -542,7 +542,7 @@ export default function PettyCashTab() {
               </div>
               <Button
                 type="button"
-                className={erpPrimaryButtonClass}
+                className={erpPrimaryButtonClass()}
                 disabled={requesting}
                 onClick={() => void requestReplenish()}
               >
@@ -562,7 +562,7 @@ export default function PettyCashTab() {
                   <ErpEmptyState message="No pending replenishment requests." />
                 </div>
               ) : (
-                <Table className={erpTableClasses}>
+                <Table className={erpTableClasses().table}>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Request</TableHead>
@@ -634,7 +634,7 @@ export default function PettyCashTab() {
                 <ErpEmptyState message="No replenishment history yet." />
               </div>
             ) : (
-              <Table className={erpTableClasses}>
+              <Table className={erpTableClasses().table}>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Request</TableHead>
@@ -730,7 +730,7 @@ export default function PettyCashTab() {
             </Button>
             <Button
               type="button"
-              className={erpPrimaryButtonClass}
+              className={erpPrimaryButtonClass()}
               disabled={funding}
               onClick={() => void fundPettyCash()}
             >

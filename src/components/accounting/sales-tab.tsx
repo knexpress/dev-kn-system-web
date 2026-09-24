@@ -438,7 +438,7 @@ export default function SalesTab() {
               <Building2 className="h-4 w-4" />
               VAT traders
             </Button>
-            <Button type="button" className={erpPrimaryButtonClass} onClick={() => setTab('create')}>
+            <Button type="button" className={erpPrimaryButtonClass()} onClick={() => setTab('create')}>
               <Plus className="h-4 w-4" />
               New invoice
             </Button>
@@ -483,7 +483,7 @@ export default function SalesTab() {
                 <ErpEmptyState message="No invoices yet." />
               </div>
             ) : (
-              <Table className={erpTableClasses}>
+              <Table className={erpTableClasses().table}>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Invoice</TableHead>
@@ -552,7 +552,7 @@ export default function SalesTab() {
               <ErpEmptyState message="No sales invoices yet." />
             </div>
           ) : (
-            <Table className={erpTableClasses}>
+            <Table className={erpTableClasses().table}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Invoice</TableHead>
@@ -805,7 +805,7 @@ export default function SalesTab() {
             </Button>
             <Button
               type="button"
-              className={erpPrimaryButtonClass}
+              className={erpPrimaryButtonClass()}
               disabled={saving}
               onClick={() => void createInvoice(true)}
             >
@@ -827,7 +827,7 @@ export default function SalesTab() {
                 <ErpEmptyState message="Nothing pending." />
               </div>
             ) : (
-              <Table className={erpTableClasses}>
+              <Table className={erpTableClasses().table}>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Invoice</TableHead>
@@ -916,7 +916,7 @@ export default function SalesTab() {
                 <ErpEmptyState message="No open receivables." />
               </div>
             ) : (
-              <Table className={erpTableClasses}>
+              <Table className={erpTableClasses().table}>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Invoice</TableHead>
@@ -1091,7 +1091,7 @@ export default function SalesTab() {
               </div>
               <Button
                 type="button"
-                className={erpPrimaryButtonClass}
+                className={erpPrimaryButtonClass()}
                 disabled={savingCustomer}
                 onClick={() => void createCustomer()}
               >
@@ -1110,7 +1110,7 @@ export default function SalesTab() {
                 <ErpEmptyState message="No VAT traders registered yet." />
               </div>
             ) : (
-              <Table className={erpTableClasses}>
+              <Table className={erpTableClasses().table}>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Code</TableHead>
@@ -1212,7 +1212,7 @@ export default function SalesTab() {
             </Button>
             <Button
               type="button"
-              className={erpPrimaryButtonClass}
+              className={erpPrimaryButtonClass()}
               disabled={paying}
               onClick={() => void recordPay()}
             >

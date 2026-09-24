@@ -263,7 +263,7 @@ export default function Vat201Tab() {
             </Button>
             <Button
               type="button"
-              className={erpPrimaryButtonClass}
+              className={erpPrimaryButtonClass()}
               disabled={computing}
               onClick={() => void runCompute()}
             >
@@ -373,7 +373,7 @@ export default function Vat201Tab() {
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"
-              className={erpPrimaryButtonClass}
+              className={erpPrimaryButtonClass()}
               disabled={computing}
               onClick={() => void runCompute()}
             >
@@ -423,7 +423,7 @@ export default function Vat201Tab() {
               <ErpEmptyState message="Compute a period first." />
             </div>
           ) : (
-            <Table className={erpTableClasses}>
+            <Table className={erpTableClasses().table}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Box</TableHead>
@@ -484,7 +484,7 @@ export default function Vat201Tab() {
                 <ErpEmptyState message="No approved sales invoices in this period." />
               </div>
             ) : (
-              <Table className={erpTableClasses}>
+              <Table className={erpTableClasses().table}>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Invoice</TableHead>
@@ -532,7 +532,7 @@ export default function Vat201Tab() {
                 <ErpEmptyState message="No taxed purchase orders in this period." />
               </div>
             ) : (
-              <Table className={erpTableClasses}>
+              <Table className={erpTableClasses().table}>
                 <TableHeader>
                   <TableRow>
                     <TableHead>PO</TableHead>
@@ -573,7 +573,7 @@ export default function Vat201Tab() {
               <ErpEmptyState message="No saved VAT201 returns yet. Compute a period and save." />
             </div>
           ) : (
-            <Table className={erpTableClasses}>
+            <Table className={erpTableClasses().table}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Return</TableHead>
