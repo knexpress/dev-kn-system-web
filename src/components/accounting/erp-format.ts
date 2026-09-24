@@ -31,6 +31,13 @@ export type AccountingModule =
   | 'ledger'
   | 'inventory'
   | 'movements'
+  | 'bank-cash'
+  | 'purchase-orders'
+  | 'petty-cash'
+  | 'budgets'
+  | 'fixed-assets'
+  | 'sales'
+  | 'vat201'
   | 'reports';
 
 export type BreadcrumbItem = {
@@ -67,6 +74,41 @@ export const ACCOUNTING_ROUTES: Record<
     href: '/dashboard/accounting/movements',
     title: 'Stock Movements',
     subtitle: 'Receipts, issues, adjustments',
+  },
+  'bank-cash': {
+    href: '/dashboard/accounting/bank-cash',
+    title: 'Bank & Cash',
+    subtitle: 'Liquidity, supplier payments, approvals',
+  },
+  'purchase-orders': {
+    href: '/dashboard/accounting/purchase-orders',
+    title: 'Purchase Orders',
+    subtitle: 'Order, receive, and pay suppliers',
+  },
+  'petty-cash': {
+    href: '/dashboard/accounting/petty-cash',
+    title: 'Petty Cash',
+    subtitle: 'Float, vouchers, and replenishment',
+  },
+  budgets: {
+    href: '/dashboard/accounting/budgets',
+    title: 'Budgets',
+    subtitle: 'Plan vs actual by account',
+  },
+  'fixed-assets': {
+    href: '/dashboard/accounting/fixed-assets',
+    title: 'Fixed Assets',
+    subtitle: 'Register, depreciate, dispose',
+  },
+  sales: {
+    href: '/dashboard/accounting/sales',
+    title: 'Sales',
+    subtitle: 'Invoices, AR journals, VAT traders',
+  },
+  vat201: {
+    href: '/dashboard/accounting/vat201',
+    title: 'VAT201',
+    subtitle: 'UAE VAT return · Sales + POs',
   },
   reports: {
     href: '/dashboard/accounting/reports',

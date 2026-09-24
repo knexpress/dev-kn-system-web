@@ -2,15 +2,22 @@
 
 import type { ReactNode } from 'react';
 import {
+  Banknote,
   BookOpen,
   Boxes,
+  Building2,
+  ClipboardList,
   ChevronRight,
   FileSpreadsheet,
   FileText,
   Layers,
   Package,
+  PieChart,
+  Receipt,
   RefreshCw,
   Search,
+  ShoppingCart,
+  Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +36,13 @@ export const ACCOUNTING_MODULES: {
   { id: 'ledger', label: 'Ledger', short: 'Ledger', hint: 'Account activity', icon: BookOpen },
   { id: 'inventory', label: 'Inventory', short: 'Inventory', hint: 'SKU master', icon: Package },
   { id: 'movements', label: 'Movements', short: 'Movements', hint: 'Stock flow', icon: Boxes },
+  { id: 'bank-cash', label: 'Bank & Cash', short: 'Bank', hint: 'Pay & approve', icon: Banknote },
+  { id: 'purchase-orders', label: 'Purchase Orders', short: 'POs', hint: 'Buy & receive', icon: ClipboardList },
+  { id: 'petty-cash', label: 'Petty Cash', short: 'Petty', hint: 'Float & vouchers', icon: Wallet },
+  { id: 'budgets', label: 'Budgets', short: 'Budget', hint: 'Plan vs actual', icon: PieChart },
+  { id: 'fixed-assets', label: 'Fixed Assets', short: 'Assets', hint: 'Depreciate & dispose', icon: Building2 },
+  { id: 'sales', label: 'Sales', short: 'Sales', hint: 'Invoices & traders', icon: ShoppingCart },
+  { id: 'vat201', label: 'VAT201', short: 'VAT201', hint: 'FTA return boxes', icon: Receipt },
   { id: 'reports', label: 'Reports', short: 'Reports', hint: 'P&L · BS · TB', icon: FileSpreadsheet },
 ];
 

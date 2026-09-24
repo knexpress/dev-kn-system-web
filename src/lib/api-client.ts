@@ -1191,6 +1191,513 @@ class ApiClient {
     );
   }
 
+  async getBankCashOverview() {
+    return this.request('/accounting/bank-cash/overview', {}, false);
+  }
+
+  async getBankCashAccounts() {
+    return this.request('/accounting/bank-cash/accounts', {}, false);
+  }
+
+  async createBankCashAccount(accountData: {
+    code: string;
+    name: string;
+    account_type: string;
+    currency?: string;
+    bank_name?: string;
+    account_number_masked?: string;
+    gl_account_code: string;
+    opening_balance?: number;
+    notes?: string;
+  }) {
+    return this.request('/accounting/bank-cash/accounts', {
+      method: 'POST',
+      body: JSON.stringify(accountData),
+    });
+  }
+
+  async getSupplierPayments(status?: string) {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/accounting/bank-cash/payments${q}`, {}, false);
+  }
+
+  async createSupplierPayment(payload: {
+    payment_date?: string;
+    supplier_name: string;
+    supplier_reference?: string;
+    description?: string;
+    amount: number;
+    bank_cash_account_id: string;
+    debit_account_code?: string;
+    currency?: string;
+    purchase_order_id?: string;
+  }) {
+    return this.request('/accounting/bank-cash/payments', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async approveSupplierPayment(id: string) {
+    return this.request(`/accounting/bank-cash/payments/${encodeURIComponent(id)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async rejectSupplierPayment(id: string, reason?: string) {
+    return this.request(`/accounting/bank-cash/payments/${encodeURIComponent(id)}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || '' }),
+    });
+  }
+
+  async getPurchaseOrdersOverview() {
+    return this.request('/accounting/purchase-orders/overview', {}, false);
+  }
+
+  async getPurchaseOrders(status?: string) {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/accounting/purchase-orders${q}`, {}, false);
+  }
+
+  async getPurchaseOrder(id: string) {
+    return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async createPurchaseOrder(payload: {
+    po_date?: string;
+    expected_date?: string;
+    supplier_name: string;
+    supplier_reference?: string;
+    currency?: string;
+    tax_amount?: number;
+    notes?: string;
+    debit_account_code?: string;
+    credit_account_code?: string;
+    submit?: boolean;
+    lines: Array<{
+      description: string;
+      sku?: string;
+      quantity: number;
+      unit_cost: number;
+    }>;
+  }) {
+    return this.request('/accounting/purchase-orders', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async submitPurchaseOrder(id: string) {
+    return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async approvePurchaseOrder(id: string) {
+    return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async rejectPurchaseOrder(id: string, reason?: string) {
+    return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || '' }),
+    });
+  }
+
+  async receivePurchaseOrder(
+    id: string,
+    receipts?: Array<{ line_id: string; quantity: number }>
+  ) {
+    return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}/receive`, {
+      method: 'POST',
+      body: JSON.stringify({ receipts: receipts || [] }),
+    });
+  }
+
+  async getPettyCashOverview() {
+    return this.request('/accounting/petty-cash/overview', {}, false);
+  }
+
+  async fundPettyCash(payload: {
+    amount: number;
+    funding_account_code?: string;
+    entry_date?: string;
+    memo?: string;
+  }) {
+    return this.request('/accounting/petty-cash/fund', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getPettyCashVouchers() {
+    return this.request('/accounting/petty-cash/vouchers', {}, false);
+  }
+
+  async createPettyCashVoucher(payload: {
+    voucher_date?: string;
+    payee: string;
+    category?: string;
+    description?: string;
+    amount: number;
+    expense_account_code?: string;
+  }) {
+    return this.request('/accounting/petty-cash/vouchers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getPettyCashReplenishments(status?: string) {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/accounting/petty-cash/replenishments${q}`, {}, false);
+  }
+
+  async requestPettyCashReplenishment(payload: {
+    requested_amount: number;
+    reason?: string;
+  }) {
+    return this.request('/accounting/petty-cash/replenishments', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async approvePettyCashReplenishment(
+    id: string,
+    payload?: { approved_amount?: number; funding_account_code?: string }
+  ) {
+    return this.request(
+      `/accounting/petty-cash/replenishments/${encodeURIComponent(id)}/approve`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload || {}),
+      }
+    );
+  }
+
+  async rejectPettyCashReplenishment(id: string, reason?: string) {
+    return this.request(
+      `/accounting/petty-cash/replenishments/${encodeURIComponent(id)}/reject`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason || '' }),
+      }
+    );
+  }
+
+  async getBudgetsOverview() {
+    return this.request('/accounting/budgets/overview', {}, false);
+  }
+
+  async getBudgets(status?: string) {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/accounting/budgets${q}`, {}, false);
+  }
+
+  async getBudget(id: string) {
+    return this.request(`/accounting/budgets/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async createBudget(payload: {
+    name: string;
+    code: string;
+    fiscal_year?: number;
+    period_type?: string;
+    start_date?: string;
+    end_date?: string;
+    notes?: string;
+    currency?: string;
+    lines?: Array<{
+      account_code: string;
+      budgeted_amount: number;
+      notes?: string;
+    }>;
+  }) {
+    return this.request('/accounting/budgets', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateBudget(id: string, payload: Record<string, unknown>) {
+    return this.request(`/accounting/budgets/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async activateBudget(id: string) {
+    return this.request(`/accounting/budgets/${encodeURIComponent(id)}/activate`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async closeBudget(id: string) {
+    return this.request(`/accounting/budgets/${encodeURIComponent(id)}/close`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async getFixedAssetsOverview() {
+    return this.request('/accounting/fixed-assets/overview', {}, false);
+  }
+
+  async getFixedAssets(status?: string) {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/accounting/fixed-assets${q}`, {}, false);
+  }
+
+  async getFixedAsset(id: string) {
+    return this.request(`/accounting/fixed-assets/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async createFixedAsset(payload: {
+    asset_tag: string;
+    name: string;
+    category?: string;
+    location?: string;
+    purchase_date?: string;
+    in_service_date?: string;
+    acquisition_cost: number;
+    salvage_value?: number;
+    useful_life_months: number;
+    funding_account_code?: string;
+    post_acquisition_journal?: boolean;
+    notes?: string;
+  }) {
+    return this.request('/accounting/fixed-assets', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async depreciateFixedAsset(id: string, period_date?: string) {
+    return this.request(`/accounting/fixed-assets/${encodeURIComponent(id)}/depreciate`, {
+      method: 'POST',
+      body: JSON.stringify({ period_date }),
+    });
+  }
+
+  async depreciateAllFixedAssets(period_date?: string) {
+    return this.request('/accounting/fixed-assets/depreciate-all', {
+      method: 'POST',
+      body: JSON.stringify({ period_date }),
+    });
+  }
+
+  async disposeFixedAsset(
+    id: string,
+    payload: {
+      proceeds?: number;
+      disposal_date?: string;
+      proceeds_account_code?: string;
+      gain_loss_account_code?: string;
+    }
+  ) {
+    return this.request(`/accounting/fixed-assets/${encodeURIComponent(id)}/dispose`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getSalesOverview() {
+    return this.request('/accounting/sales/overview', {}, false);
+  }
+
+  async getSalesCustomers(opts?: { vat_traders?: boolean; active?: boolean }) {
+    const params = new URLSearchParams();
+    if (opts?.vat_traders) params.set('vat_traders', 'true');
+    if (opts?.active === false) params.set('active', 'false');
+    const q = params.toString();
+    return this.request(`/accounting/sales/customers${q ? `?${q}` : ''}`, {}, false);
+  }
+
+  async createSalesCustomer(payload: {
+    code?: string;
+    legal_name: string;
+    trade_name?: string;
+    vat_trn?: string;
+    is_vat_registered?: boolean;
+    is_official_trader?: boolean;
+    contact_name?: string;
+    email?: string;
+    phone?: string;
+    address_line1?: string;
+    address_line2?: string;
+    city?: string;
+    emirate?: string;
+    country?: string;
+    payment_terms_days?: number;
+    credit_limit?: number;
+    notes?: string;
+  }) {
+    return this.request('/accounting/sales/customers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateSalesCustomer(
+    id: string,
+    payload: Partial<{
+      legal_name: string;
+      trade_name: string;
+      vat_trn: string;
+      is_vat_registered: boolean;
+      is_official_trader: boolean;
+      contact_name: string;
+      email: string;
+      phone: string;
+      address_line1: string;
+      address_line2: string;
+      city: string;
+      emirate: string;
+      country: string;
+      payment_terms_days: number;
+      credit_limit: number;
+      notes: string;
+      is_active: boolean;
+    }>
+  ) {
+    return this.request(`/accounting/sales/customers/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getSalesInvoices(status?: string) {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/accounting/sales/invoices${q}`, {}, false);
+  }
+
+  async getSalesInvoice(id: string) {
+    return this.request(`/accounting/sales/invoices/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async createSalesInvoice(payload: {
+    invoice_date?: string;
+    due_date?: string;
+    customer_id?: string;
+    customer_name?: string;
+    currency?: string;
+    notes?: string;
+    ar_account_code?: string;
+    revenue_account_code?: string;
+    vat_account_code?: string;
+    submit?: boolean;
+    lines: Array<{
+      description: string;
+      sku?: string;
+      quantity: number;
+      unit_price: number;
+      vat_rate?: number;
+    }>;
+  }) {
+    return this.request('/accounting/sales/invoices', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async submitSalesInvoice(id: string) {
+    return this.request(`/accounting/sales/invoices/${encodeURIComponent(id)}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async approveSalesInvoice(id: string) {
+    return this.request(`/accounting/sales/invoices/${encodeURIComponent(id)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async rejectSalesInvoice(id: string, reason?: string) {
+    return this.request(`/accounting/sales/invoices/${encodeURIComponent(id)}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async paySalesInvoice(
+    id: string,
+    payload: {
+      amount?: number;
+      payment_date?: string;
+      bank_cash_account_id?: string;
+      receipt_account_code?: string;
+      notes?: string;
+    }
+  ) {
+    return this.request(`/accounting/sales/invoices/${encodeURIComponent(id)}/pay`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getVat201Overview() {
+    return this.request('/accounting/vat201/overview', {}, false);
+  }
+
+  async computeVat201(from: string, to: string) {
+    const q = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+    return this.request(`/accounting/vat201/compute${q}`, {}, false);
+  }
+
+  async getVat201Returns() {
+    return this.request('/accounting/vat201/returns', {}, false);
+  }
+
+  async getVat201Return(id: string) {
+    return this.request(`/accounting/vat201/returns/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async createVat201Return(payload: {
+    period_start: string;
+    period_end: string;
+    period_label?: string;
+    notes?: string;
+  }) {
+    return this.request('/accounting/vat201/returns', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async refreshVat201Return(id: string) {
+    return this.request(`/accounting/vat201/returns/${encodeURIComponent(id)}/refresh`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async fileVat201Return(id: string, notes?: string) {
+    return this.request(`/accounting/vat201/returns/${encodeURIComponent(id)}/file`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+  }
+
+  async settleVat201Return(
+    id: string,
+    payload?: { settlement_date?: string; bank_account_code?: string }
+  ) {
+    return this.request(`/accounting/vat201/returns/${encodeURIComponent(id)}/settle`, {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    });
+  }
+
   async getJournals() {
     return this.request('/accounting/journals', {}, false);
   }

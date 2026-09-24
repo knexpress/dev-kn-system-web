@@ -15,6 +15,8 @@ const WIDGET_ACCENTS = [
   'from-cyan-500 to-teal-600',
   'from-emerald-500 to-teal-600',
   'from-amber-500 to-orange-600',
+  'from-violet-500 to-indigo-600',
+  'from-fuchsia-500 to-pink-600',
   'from-rose-500 to-pink-600',
   'from-slate-600 to-slate-800',
 ];
