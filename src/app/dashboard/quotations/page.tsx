@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -23,12 +23,13 @@ import {
 } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { apiClient } from '@/lib/api-client';
-import { PlusCircle, Printer, Trash2 } from 'lucide-react';
+import { Download, Pencil, PlusCircle, Printer, Trash2 } from 'lucide-react';
 
 type RouteCode = 'PH_TO_UAE' | 'UAE_TO_PH';
 
 type QuoteItem = {
   id: string;
+  boxNumber: string;
   name: string;
   quantity: number;
 };
@@ -36,6 +37,9 @@ type QuoteItem = {
 type SavedQuotation = {
   _id: string;
   quotation_number: string;
+  sender_name?: string;
+  sender_phone?: string;
+  sender_address?: string;
   customer_name: string;
   customer_phone: string;
   customer_address: string;
@@ -44,11 +48,11 @@ type SavedQuotation = {
   volumetric_weight_kg: number;
   chargeable_weight_kg: number;
   weight_type: 'ACTUAL' | 'VOLUMETRIC';
-  items: { name: string; quantity: number }[];
+  items: { box_number?: string; name: string; quantity: number }[];
   rate_per_kg: number;
   rate_bracket?: string;
   shipping_amount: number;
-  pickup_location?: 'INSIDE_DUBAI' | 'OUTSIDE_DUBAI';
+  pickup_location?: 'INSIDE_DUBAI' | 'OUTSIDE_DUBAI' | 'DROP_OFF';
   pickup_charge?: number;
   pickup_vat?: number;
   delivery_charge?: number;
@@ -59,54 +63,10 @@ type SavedQuotation = {
   createdAt?: string;
 };
 
-type WeightBracket = {
-  min: number;
-  max: number | null;
-  rate: number;
-  label: string;
-};
-
 const ROUTE_LABELS: Record<RouteCode, string> = {
   PH_TO_UAE: 'Philippines to UAE',
   UAE_TO_PH: 'UAE to Philippines',
 };
-
-const QUOTE_BRACKETS: Record<RouteCode, WeightBracket[]> = {
-  PH_TO_UAE: [
-    { min: 1, max: 15, rate: 39, label: '1-15 KG' },
-    { min: 16, max: 29, rate: 38, label: '16-29 KG' },
-    { min: 30, max: 69, rate: 36, label: '30-69 KG' },
-    { min: 70, max: 199, rate: 34, label: '70-199 KG' },
-    { min: 200, max: 299, rate: 31, label: '200-299 KG' },
-    { min: 300, max: null, rate: 30, label: '300+ KG' },
-  ],
-  UAE_TO_PH: [
-    { min: 1, max: 15, rate: 39, label: '1-15 KG' },
-    { min: 16, max: 29, rate: 38, label: '16-29 KG' },
-    { min: 30, max: 69, rate: 36, label: '30-69 KG' },
-    { min: 70, max: 99, rate: 34, label: '70-99 KG' },
-    { min: 100, max: 199, rate: 31, label: '100-199 KG' },
-    { min: 200, max: null, rate: 30, label: '200+ KG' },
-    { min: 1000, max: null, rate: 28, label: '1 TON UP' },
-  ],
-};
-
-function matchBracket(weight: number, brackets: WeightBracket[]) {
-  const available = brackets.filter((bracket) => bracket.label !== 'SPECIAL RATE');
-  const closed = available.filter((bracket) => bracket.max !== null).sort((a, b) => a.min - b.min);
-  const openEnded = available.filter((bracket) => bracket.max === null).sort((a, b) => b.min - a.min);
-
-  for (const bracket of closed) {
-    if (bracket.max !== null && weight >= bracket.min && weight <= bracket.max) return bracket;
-  }
-  for (const bracket of openEnded) {
-    if (weight >= bracket.min) return bracket;
-  }
-  if (!available.length) return null;
-  const lowest = available.reduce((best, current) => (current.min < best.min ? current : best), available[0]);
-  if (weight < lowest.min) return lowest;
-  return openEnded[0] || closed[closed.length - 1] || available[0];
-}
 
 function money(value: number) {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -118,18 +78,29 @@ export default function QuotationsPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [printTarget, setPrintTarget] = useState<SavedQuotation | null>(null);
+  const [downloadQueued, setDownloadQueued] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [senderName, setSenderName] = useState('');
+  const [senderPhone, setSenderPhone] = useState('');
+  const [senderAddress, setSenderAddress] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
   const [route, setRoute] = useState<RouteCode | ''>('');
   const [actualWeight, setActualWeight] = useState('');
   const [volumetricWeight, setVolumetricWeight] = useState('');
+  const [ratePerKg, setRatePerKg] = useState('');
   const [notes, setNotes] = useState('');
-  const [pickupLocation, setPickupLocation] = useState<'INSIDE_DUBAI' | 'OUTSIDE_DUBAI' | ''>('');
+  const [pickupLocation, setPickupLocation] = useState<'INSIDE_DUBAI' | 'OUTSIDE_DUBAI' | 'DROP_OFF' | ''>('');
   const [deliveryCharge, setDeliveryCharge] = useState('');
   const [insuranceCharge, setInsuranceCharge] = useState('');
-  const [items, setItems] = useState<QuoteItem[]>([{ id: '1', name: '', quantity: 1 }]);
+  const [items, setItems] = useState<QuoteItem[]>([{ id: '1', boxNumber: '1', name: '', quantity: 1 }]);
+  const [numberQuery, setNumberQuery] = useState('');
+  const [senderQuery, setSenderQuery] = useState('');
+  const [receiverQuery, setReceiverQuery] = useState('');
+  const [routeQuery, setRouteQuery] = useState<'ALL' | RouteCode>('ALL');
 
   const loadQuotations = useCallback(async () => {
     setLoading(true);
@@ -146,15 +117,23 @@ export default function QuotationsPage() {
     loadQuotations();
   }, [loadQuotations]);
 
+  const filteredQuotations = quotations.filter((quote) => {
+    const number = (quote.quotation_number || '').toLowerCase();
+    const sender = `${quote.sender_name || ''} ${quote.sender_phone || ''}`.toLowerCase();
+    const receiver = `${quote.customer_name || ''} ${quote.customer_phone || ''}`.toLowerCase();
+    if (numberQuery.trim() && !number.includes(numberQuery.trim().toLowerCase())) return false;
+    if (senderQuery.trim() && !sender.includes(senderQuery.trim().toLowerCase())) return false;
+    if (receiverQuery.trim() && !receiver.includes(receiverQuery.trim().toLowerCase())) return false;
+    if (routeQuery !== 'ALL' && quote.route !== routeQuery) return false;
+    return true;
+  });
+
   const actual = parseFloat(actualWeight) || 0;
   const volumetric = parseFloat(volumetricWeight) || 0;
   const chargeable = actual > 0 || volumetric > 0 ? Math.max(actual, volumetric) : 0;
   const weightType = actual >= volumetric ? 'ACTUAL' : 'VOLUMETRIC';
-  const bracket = useMemo(
-    () => (chargeable > 0 && route ? matchBracket(chargeable, QUOTE_BRACKETS[route]) : null),
-    [chargeable, route]
-  );
-  const shippingAmount = bracket ? Math.round(chargeable * bracket.rate * 100) / 100 : 0;
+  const rate = Math.max(parseFloat(ratePerKg) || 0, 0);
+  const shippingAmount = chargeable > 0 && rate > 0 ? Math.round(chargeable * rate * 100) / 100 : 0;
   const pickupCharge = pickupLocation === 'INSIDE_DUBAI' ? 20 : pickupLocation === 'OUTSIDE_DUBAI' ? 25.71 : 0;
   const pickupVat = Math.round(pickupCharge * 0.05 * 100) / 100;
   const delivery = Math.max(parseFloat(deliveryCharge) || 0, 0);
@@ -162,17 +141,51 @@ export default function QuotationsPage() {
   const finalAmount = Math.round((shippingAmount + pickupCharge + pickupVat + delivery + insurance) * 100) / 100;
 
   const resetForm = () => {
+    setSenderName('');
+    setSenderPhone('');
+    setSenderAddress('');
     setCustomerName('');
     setCustomerPhone('');
     setCustomerAddress('');
     setRoute('');
     setActualWeight('');
     setVolumetricWeight('');
+    setRatePerKg('');
     setNotes('');
     setPickupLocation('');
     setDeliveryCharge('');
     setInsuranceCharge('');
-    setItems([{ id: '1', name: '', quantity: 1 }]);
+    setItems([{ id: '1', boxNumber: '1', name: '', quantity: 1 }]);
+    setEditingId(null);
+  };
+
+  const startEdit = (quote: SavedQuotation) => {
+    setEditingId(quote._id);
+    setSenderName(quote.sender_name || '');
+    setSenderPhone(quote.sender_phone || '');
+    setSenderAddress(quote.sender_address || '');
+    setCustomerName(quote.customer_name || '');
+    setCustomerPhone(quote.customer_phone || '');
+    setCustomerAddress(quote.customer_address || '');
+    setRoute(quote.route || '');
+    setActualWeight(String(quote.actual_weight_kg ?? ''));
+    setVolumetricWeight(String(quote.volumetric_weight_kg ?? ''));
+    setRatePerKg(String(quote.rate_per_kg ?? ''));
+    setNotes(quote.notes || '');
+    setPickupLocation(quote.pickup_location || '');
+    setDeliveryCharge(quote.delivery_charge ? String(quote.delivery_charge) : '');
+    setInsuranceCharge(quote.insurance_charge ? String(quote.insurance_charge) : '');
+    setItems(
+      (quote.items || []).length
+        ? quote.items.map((item, index) => ({
+            id: `${quote._id}-${index}`,
+            boxNumber: item.box_number || String(index + 1),
+            name: item.name,
+            quantity: item.quantity,
+          }))
+        : [{ id: '1', boxNumber: '1', name: '', quantity: 1 }]
+    );
+    setShowForm(true);
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -186,33 +199,52 @@ export default function QuotationsPage() {
       toast({ variant: 'destructive', title: 'Weights required', description: 'Enter both actual and volumetric weight in kg.' });
       return;
     }
+    if (rate <= 0) {
+      toast({ variant: 'destructive', title: 'Rate required', description: 'Enter the rate per kg.' });
+      return;
+    }
     if (!validItems.length) {
       toast({ variant: 'destructive', title: 'Items required', description: 'Add at least one item.' });
       return;
     }
     if (!pickupLocation) {
-      toast({ variant: 'destructive', title: 'Pickup required', description: 'Choose inside Dubai or outside Dubai.' });
+      toast({ variant: 'destructive', title: 'Pickup required', description: 'Choose inside Dubai, outside Dubai, or drop off.' });
       return;
     }
 
-    setSubmitting(true);
-    const result = await apiClient.createQuotation({
+    const payload = {
+      sender_name: senderName.trim(),
+      sender_phone: senderPhone.trim(),
+      sender_address: senderAddress.trim(),
       customer_name: customerName.trim(),
       customer_phone: customerPhone.trim(),
       customer_address: customerAddress.trim(),
       route,
       actual_weight_kg: actual,
       volumetric_weight_kg: volumetric,
-      items: validItems.map((item) => ({ name: item.name.trim(), quantity: item.quantity })),
+      rate_per_kg: rate,
+      items: validItems.map((item, index) => ({
+        box_number: item.boxNumber.trim() || String(index + 1),
+        name: item.name.trim(),
+        quantity: item.quantity,
+      })),
       pickup_location: pickupLocation,
       delivery_charge: delivery,
       insurance_charge: insurance,
       notes: notes.trim(),
-    });
+    };
+
+    setSubmitting(true);
+    const result = editingId
+      ? await apiClient.updateQuotation(editingId, payload)
+      : await apiClient.createQuotation(payload);
     setSubmitting(false);
 
     if (result.success) {
-      toast({ title: 'Quotation saved', description: 'Saved for the client on this page only.' });
+      toast({
+        title: editingId ? 'Quotation updated' : 'Quotation saved',
+        description: 'Saved for the client on this page only.',
+      });
       setShowForm(false);
       resetForm();
       loadQuotations();
@@ -220,6 +252,38 @@ export default function QuotationsPage() {
       toast({ variant: 'destructive', title: 'Could not save', description: result.error || 'Failed to create quotation' });
     }
   };
+
+  const downloadQuotationPdf = async () => {
+    const element = document.getElementById('quotation-sheet');
+    if (!element || !printTarget) return;
+    setDownloadingPdf(true);
+    try {
+      const html2pdfModule = await import('html2pdf.js');
+      const html2pdf = html2pdfModule.default || html2pdfModule;
+      const opt = {
+        margin: [6, 6, 6, 6] as [number, number, number, number],
+        filename: `${printTarget.quotation_number || 'quotation'}.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false, letterRendering: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
+        pagebreak: { mode: 'css' as const },
+      };
+      await html2pdf().set(opt).from(element).save();
+    } catch {
+      toast({ variant: 'destructive', title: 'Download failed', description: 'Could not save the quotation PDF.' });
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!downloadQueued || !printTarget) return;
+    const timer = window.setTimeout(() => {
+      setDownloadQueued(false);
+      downloadQuotationPdf().then(() => setPrintTarget(null));
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [downloadQueued, printTarget]);
 
   const handleDelete = async (id: string) => {
     const result = await apiClient.deleteQuotation(id);
@@ -240,7 +304,7 @@ export default function QuotationsPage() {
             Client quotations only. They stay on this page and are not used anywhere else.
           </p>
         </div>
-        <Button onClick={() => setShowForm(true)}>
+        <Button onClick={() => { resetForm(); setShowForm(true); }}>
           <PlusCircle className="mr-2 h-4 w-4" />
           New Quotation
         </Button>
@@ -249,13 +313,28 @@ export default function QuotationsPage() {
       {showForm && (
         <Card>
           <CardHeader>
-            <CardTitle>New manual quotation</CardTitle>
+            <CardTitle>{editingId ? 'Edit quotation' : 'New manual quotation'}</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Customer</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Sender</h3>
+                  <div>
+                    <Label htmlFor="sender_name">Name *</Label>
+                    <Input id="sender_name" value={senderName} onChange={(e) => setSenderName(e.target.value)} required />
+                  </div>
+                  <div>
+                    <Label htmlFor="sender_phone">Phone *</Label>
+                    <Input id="sender_phone" type="tel" value={senderPhone} onChange={(e) => setSenderPhone(e.target.value)} required />
+                  </div>
+                  <div>
+                    <Label htmlFor="sender_address">Address *</Label>
+                    <Textarea id="sender_address" value={senderAddress} onChange={(e) => setSenderAddress(e.target.value)} required rows={2} />
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Receiver</h3>
                   <div>
                     <Label htmlFor="customer_name">Name *</Label>
                     <Input id="customer_name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} required />
@@ -264,10 +343,10 @@ export default function QuotationsPage() {
                     <Label htmlFor="customer_phone">Phone *</Label>
                     <Input id="customer_phone" type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} required />
                   </div>
-                </div>
-                <div>
-                  <Label htmlFor="customer_address">Address *</Label>
-                  <Textarea id="customer_address" value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} required rows={2} />
+                  <div>
+                    <Label htmlFor="customer_address">Address *</Label>
+                    <Textarea id="customer_address" value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} required rows={2} />
+                  </div>
                 </div>
               </div>
 
@@ -289,7 +368,7 @@ export default function QuotationsPage() {
 
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">Weight (kg)</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <Label htmlFor="actual_weight">Actual weight (kg) *</Label>
                     <Input id="actual_weight" type="number" min="0.01" step="0.01" value={actualWeight} onChange={(e) => setActualWeight(e.target.value)} required />
@@ -298,21 +377,21 @@ export default function QuotationsPage() {
                     <Label htmlFor="volumetric_weight">Volumetric weight (kg) *</Label>
                     <Input id="volumetric_weight" type="number" min="0.01" step="0.01" value={volumetricWeight} onChange={(e) => setVolumetricWeight(e.target.value)} required />
                   </div>
+                  <div>
+                    <Label htmlFor="rate_per_kg">Rate per kg (AED) *</Label>
+                    <Input id="rate_per_kg" type="number" min="0.01" step="0.01" placeholder="Enter rate" value={ratePerKg} onChange={(e) => setRatePerKg(e.target.value)} required />
+                  </div>
                 </div>
-                <div className="rounded-lg border bg-muted/40 p-4 text-sm grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="rounded-lg border bg-muted/40 p-4 text-sm grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <p className="text-muted-foreground">Chargeable weight</p>
                     <p className="font-semibold">{chargeable > 0 ? `${chargeable.toFixed(2)} kg` : '—'}</p>
                     <p className="text-xs text-muted-foreground">{chargeable > 0 ? weightType : 'Higher of actual and volumetric'}</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">Rate</p>
-                    <p className="font-semibold">{bracket ? `AED ${money(bracket.rate)} / kg` : '—'}</p>
-                    <p className="text-xs text-muted-foreground">{bracket?.label || 'Select a route and enter both weights'}</p>
-                  </div>
-                  <div>
                     <p className="text-muted-foreground">Quoted shipping</p>
-                    <p className="font-semibold">{bracket ? `AED ${money(shippingAmount)}` : '—'}</p>
+                    <p className="font-semibold">{shippingAmount > 0 ? `AED ${money(shippingAmount)}` : '—'}</p>
+                    <p className="text-xs text-muted-foreground">Chargeable weight × the rate you enter</p>
                   </div>
                 </div>
               </div>
@@ -324,7 +403,7 @@ export default function QuotationsPage() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => setItems([...items, { id: Date.now().toString(), name: '', quantity: 1 }])}
+                    onClick={() => setItems([...items, { id: Date.now().toString(), boxNumber: String(items.length + 1), name: '', quantity: 1 }])}
                   >
                     <PlusCircle className="mr-2 h-4 w-4" />
                     Add item
@@ -332,7 +411,20 @@ export default function QuotationsPage() {
                 </div>
                 {items.map((item, index) => (
                   <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                    <div className="md:col-span-6">
+                    <div className="md:col-span-1">
+                      <Label>S.No</Label>
+                      <Input value={String(index + 1)} readOnly />
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label>Box number *</Label>
+                      <Input
+                        value={item.boxNumber}
+                        placeholder={String(index + 1)}
+                        onChange={(e) => setItems(items.map((row) => row.id === item.id ? { ...row, boxNumber: e.target.value } : row))}
+                        required
+                      />
+                    </div>
+                    <div className="md:col-span-5">
                       <Label>Item {index + 1} *</Label>
                       <Input
                         value={item.name}
@@ -341,7 +433,7 @@ export default function QuotationsPage() {
                         required
                       />
                     </div>
-                    <div className="md:col-span-3">
+                    <div className="md:col-span-2">
                       <Label>Quantity *</Label>
                       <Input
                         type="number"
@@ -351,7 +443,7 @@ export default function QuotationsPage() {
                         required
                       />
                     </div>
-                    <div className="md:col-span-3">
+                    <div className="md:col-span-2">
                       {items.length > 1 && (
                         <Button type="button" variant="outline" onClick={() => setItems(items.filter((row) => row.id !== item.id))}>
                           <Trash2 className="mr-2 h-4 w-4" />
@@ -368,13 +460,14 @@ export default function QuotationsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <Label>Pickup *</Label>
-                    <Select value={pickupLocation} onValueChange={(value) => setPickupLocation(value as 'INSIDE_DUBAI' | 'OUTSIDE_DUBAI')}>
+                    <Select value={pickupLocation} onValueChange={(value) => setPickupLocation(value as 'INSIDE_DUBAI' | 'OUTSIDE_DUBAI' | 'DROP_OFF')}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Inside or outside Dubai" />
+                        <SelectValue placeholder="Inside Dubai, outside Dubai, or drop off" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="INSIDE_DUBAI">Inside Dubai — 20.00 AED</SelectItem>
                         <SelectItem value="OUTSIDE_DUBAI">Outside Dubai — 25.71 AED</SelectItem>
+                        <SelectItem value="DROP_OFF">Drop off — 0.00 AED</SelectItem>
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground mt-1">VAT 5% is added on the pickup charge only.</p>
@@ -408,7 +501,7 @@ export default function QuotationsPage() {
                   Cancel
                 </Button>
                 <Button type="submit" disabled={submitting}>
-                  {submitting ? 'Saving...' : 'Save quotation'}
+                  {submitting ? 'Saving...' : editingId ? 'Save changes' : 'Save quotation'}
                 </Button>
               </div>
             </form>
@@ -420,17 +513,47 @@ export default function QuotationsPage() {
         <CardHeader>
           <CardTitle>Saved quotations</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-4">
+            <div>
+              <Label htmlFor="search_number">Number</Label>
+              <Input id="search_number" value={numberQuery} onChange={(e) => setNumberQuery(e.target.value)} placeholder="Quotation number" />
+            </div>
+            <div>
+              <Label htmlFor="search_sender">Sender</Label>
+              <Input id="search_sender" value={senderQuery} onChange={(e) => setSenderQuery(e.target.value)} placeholder="Name or phone" />
+            </div>
+            <div>
+              <Label htmlFor="search_receiver">Receiver</Label>
+              <Input id="search_receiver" value={receiverQuery} onChange={(e) => setReceiverQuery(e.target.value)} placeholder="Name or phone" />
+            </div>
+            <div>
+              <Label>Route</Label>
+              <Select value={routeQuery} onValueChange={(value) => setRouteQuery(value as 'ALL' | RouteCode)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All routes" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All routes</SelectItem>
+                  <SelectItem value="PH_TO_UAE">Philippines to UAE</SelectItem>
+                  <SelectItem value="UAE_TO_PH">UAE to Philippines</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading quotations...</p>
           ) : quotations.length === 0 ? (
             <p className="text-sm text-muted-foreground">No quotations yet.</p>
+          ) : filteredQuotations.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No quotations match this search.</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Number</TableHead>
-                  <TableHead>Customer</TableHead>
+                  <TableHead>Sender</TableHead>
+                  <TableHead>Receiver</TableHead>
                   <TableHead>Route</TableHead>
                   <TableHead>Chargeable</TableHead>
                   <TableHead>Amount</TableHead>
@@ -438,9 +561,13 @@ export default function QuotationsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {quotations.map((quote) => (
+                {filteredQuotations.map((quote) => (
                   <TableRow key={quote._id}>
                     <TableCell className="font-medium">{quote.quotation_number}</TableCell>
+                    <TableCell>
+                      <div>{quote.sender_name || '—'}</div>
+                      <div className="text-xs text-muted-foreground">{quote.sender_phone}</div>
+                    </TableCell>
                     <TableCell>
                       <div>{quote.customer_name}</div>
                       <div className="text-xs text-muted-foreground">{quote.customer_phone}</div>
@@ -449,6 +576,14 @@ export default function QuotationsPage() {
                     <TableCell>{Number(quote.chargeable_weight_kg).toFixed(2)} kg</TableCell>
                     <TableCell>AED {money(Number(quote.total_amount ?? quote.shipping_amount))}</TableCell>
                     <TableCell className="text-right space-x-2">
+                      <Button size="sm" variant="outline" onClick={() => startEdit(quote)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Edit
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => { setPrintTarget(quote); setDownloadQueued(true); }} disabled={downloadingPdf}>
+                        <Download className="mr-2 h-4 w-4" />
+                        PDF
+                      </Button>
                       <Button size="sm" variant="outline" onClick={() => setPrintTarget(quote)}>
                         <Printer className="mr-2 h-4 w-4" />
                         Print
@@ -466,169 +601,181 @@ export default function QuotationsPage() {
       </Card>
 
       {printTarget && (
-        <div id="quotation-print" className="fixed inset-0 z-50 overflow-y-auto bg-white text-black">
+        <div id="quotation-print" className="fixed inset-0 z-50 overflow-y-auto bg-neutral-200 text-black">
           <style>{`
+            @page { size: A4 portrait; margin: 8mm; }
+            .quote-sheet { width: 190mm; font-family: Arial, Helvetica, sans-serif; line-height: 1.45; }
+            .quote-sheet, .quote-sheet * { font-family: Arial, Helvetica, sans-serif; letter-spacing: 0; }
+            .quote-sheet p, .quote-sheet h1, .quote-sheet h2, .quote-sheet h3, .quote-sheet h4 { margin: 0; line-height: 1.45; }
+            .quote-sheet table { font-size: 11px; border-collapse: collapse; width: 100%; }
+            .quote-sheet th, .quote-sheet td { padding: 5px 8px; vertical-align: top; line-height: 1.45; }
             @media print {
+              html, body { background: white !important; }
               body * { visibility: hidden; }
               #quotation-print, #quotation-print * { visibility: visible; }
-              #quotation-print { position: absolute; inset: 0; overflow: visible; }
+              #quotation-print { position: absolute; left: 0; top: 0; width: 100%; background: white !important; overflow: visible; }
+              .no-print { display: none !important; }
+              .quote-sheet { width: 100%; box-shadow: none !important; margin: 0 !important; page-break-after: avoid; }
             }
           `}</style>
-          <div className="print:hidden flex items-center justify-end gap-2 border-b bg-white px-6 py-3">
+          <div className="no-print sticky top-0 z-10 flex items-center justify-end gap-2 border-b bg-white px-6 py-3">
             <Button variant="outline" onClick={() => setPrintTarget(null)}>Close</Button>
+            <Button variant="outline" onClick={() => downloadQuotationPdf()} disabled={downloadingPdf}>
+              <Download className="mr-2 h-4 w-4" />
+              {downloadingPdf ? 'Downloading...' : 'Download PDF'}
+            </Button>
             <Button onClick={() => window.print()}>
               <Printer className="mr-2 h-4 w-4" />
               Print
             </Button>
           </div>
-          <div className="max-w-4xl mx-auto bg-white p-8 shadow-lg">
-            <div className="flex justify-between items-start mb-8">
-              <div className="flex items-start space-x-4">
-                <div className="bg-green-600 text-white px-5 py-4 rounded-lg">
-                  <div className="text-3xl font-bold tracking-wide">KNEX</div>
-                </div>
-                <div>
-                  <h1 className="text-2xl font-bold text-green-600 mb-1">Knex Delivery Services L.L.C.</h1>
-                  <p className="text-sm text-green-600 mb-2">www.knexpress.ae</p>
-                  <p className="text-sm text-gray-700">Dubai, United Arab Emirates</p>
-                  <p className="text-xs text-gray-600 mt-1">TRN: 104131637100003</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <h2 className="text-3xl font-bold text-black mb-4">QUOTATION</h2>
-                <div className="space-y-1 text-sm">
-                  <p><span className="font-semibold">QUOTATION #</span> {printTarget.quotation_number}</p>
-                  <p><span className="font-semibold">ROUTE</span> {ROUTE_LABELS[printTarget.route] || printTarget.route}</p>
-                </div>
-              </div>
-            </div>
+          <div id="quotation-sheet" className="quote-sheet mx-auto my-6 bg-white px-6 py-5 shadow-lg text-[12px] text-black">
+            <table className="mb-4" style={{ border: 'none' }}>
+              <tbody>
+                <tr>
+                  <td style={{ width: '58%', border: 'none', padding: '0 12px 0 0' }}>
+                    <h1 className="text-lg font-bold text-green-600">Knex Delivery Services L.L.C.</h1>
+                    <p className="text-green-600">www.knexpress.ae</p>
+                    <p>Dubai, United Arab Emirates</p>
+                    <p className="text-[11px] text-gray-600">TRN: 104131637100003</p>
+                  </td>
+                  <td style={{ width: '42%', border: 'none', padding: 0, textAlign: 'right' }}>
+                    <h2 className="text-2xl font-bold">QUOTATION</h2>
+                    <p style={{ marginTop: 6 }}><span className="font-semibold">QUOTATION #</span> {printTarget.quotation_number}</p>
+                    <p><span className="font-semibold">ROUTE</span> {ROUTE_LABELS[printTarget.route] || printTarget.route}</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-              <div>
-                <h3 className="text-lg font-bold text-black mb-4 uppercase">SENDER INFORMATION</h3>
-                <div className="space-y-1 text-sm">
-                  <p className="font-semibold text-base text-gray-900">Knex Delivery Services L.L.C.</p>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">
-                    {printTarget.createdAt
-                      ? new Date(printTarget.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-                      : ''}
-                  </p>
-                  <p className="leading-relaxed">Dubai, United Arab Emirates</p>
-                  <p>www.knexpress.ae</p>
-                </div>
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-black mb-4 uppercase">RECEIVER INFORMATION</h3>
-                <div className="space-y-2">
-                  <p className="font-semibold text-lg">{printTarget.customer_name}</p>
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{printTarget.customer_address}</p>
-                  <p className="text-sm">{printTarget.customer_phone}</p>
-                </div>
-              </div>
-            </div>
+            <table className="mb-4" style={{ border: 'none' }}>
+              <tbody>
+                <tr>
+                  <td style={{ width: '50%', border: 'none', padding: '0 16px 0 0' }}>
+                    <h3 className="font-bold uppercase" style={{ marginBottom: 6 }}>Sender information</h3>
+                    <p className="font-semibold">{printTarget.sender_name || '—'}</p>
+                    <p className="text-[11px] uppercase text-gray-500">
+                      {printTarget.createdAt
+                        ? new Date(printTarget.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                        : ''}
+                    </p>
+                    <p className="whitespace-pre-wrap">{printTarget.sender_address}</p>
+                    <p>{printTarget.sender_phone}</p>
+                  </td>
+                  <td style={{ width: '50%', border: 'none', padding: 0, textAlign: 'right' }}>
+                    <h3 className="font-bold uppercase" style={{ marginBottom: 6 }}>Receiver information</h3>
+                    <p className="font-semibold">{printTarget.customer_name || '—'}</p>
+                    <p className="whitespace-pre-wrap">{printTarget.customer_address}</p>
+                    <p>{printTarget.customer_phone}</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
 
-            <div className="mb-6">
-              <table className="w-full border-collapse border border-gray-300">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="border border-gray-300 px-4 py-2 text-left font-semibold">No of Boxes</th>
-                    <th className="border border-gray-300 px-4 py-2 text-left font-semibold">Weight</th>
-                    <th className="border border-gray-300 px-4 py-2 text-left font-semibold">Rate</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="border border-gray-300 px-4 py-2">
-                      {printTarget.items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0) || 1}
-                    </td>
-                    <td className="border border-gray-300 px-4 py-2">
-                      <div>
-                        <span className="font-semibold">{Number(printTarget.chargeable_weight_kg).toFixed(2)} kg</span>
-                        <div className="text-xs text-gray-600">
-                          Weight Base: {printTarget.weight_type === 'ACTUAL' ? 'Actual Weight' : 'Volumetric Weight'}
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          Actual {Number(printTarget.actual_weight_kg).toFixed(2)} kg · Volumetric {Number(printTarget.volumetric_weight_kg).toFixed(2)} kg
-                        </div>
-                      </div>
-                    </td>
-                    <td className="border border-gray-300 px-4 py-2">{Number(printTarget.rate_per_kg).toFixed(2)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <table className="border border-gray-300 mb-4">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="border border-gray-300 text-left font-semibold" style={{ width: '22%' }}>No of Boxes</th>
+                  <th className="border border-gray-300 text-left font-semibold">Weight</th>
+                  <th className="border border-gray-300 text-left font-semibold" style={{ width: '18%' }}>Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="border border-gray-300">{printTarget.items.length}</td>
+                  <td className="border border-gray-300">
+                    <div className="font-semibold">{Number(printTarget.chargeable_weight_kg).toFixed(2)} kg</div>
+                    <div className="text-[11px] text-gray-600">
+                      Weight Base: {printTarget.weight_type === 'ACTUAL' ? 'Actual Weight' : 'Volumetric Weight'}
+                    </div>
+                    <div className="text-[11px] text-gray-600">
+                      Actual {Number(printTarget.actual_weight_kg).toFixed(2)} kg · Volumetric {Number(printTarget.volumetric_weight_kg).toFixed(2)} kg
+                    </div>
+                  </td>
+                  <td className="border border-gray-300">{Number(printTarget.rate_per_kg).toFixed(2)}</td>
+                </tr>
+              </tbody>
+            </table>
 
-            <div className="flex justify-end mb-8">
-              <div className="w-80">
-                <table className="w-full border-collapse border border-gray-300">
-                  <tbody>
-                    <tr>
-                      <td className="border border-gray-300 px-4 py-2 text-left">Shipping Charge</td>
-                      <td className="border border-gray-300 px-4 py-2 text-right">{Number(printTarget.shipping_amount).toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="border border-gray-300 px-4 py-2 text-left">
-                        Pickup Charge {printTarget.pickup_location === 'OUTSIDE_DUBAI' ? '(Outside Dubai)' : printTarget.pickup_location === 'INSIDE_DUBAI' ? '(Inside Dubai)' : ''}
-                      </td>
-                      <td className="border border-gray-300 px-4 py-2 text-right">{Number(printTarget.pickup_charge || 0).toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="border border-gray-300 px-4 py-2 text-left">VAT 5% on Pickup</td>
-                      <td className="border border-gray-300 px-4 py-2 text-right">{Number(printTarget.pickup_vat || 0).toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="border border-gray-300 px-4 py-2 text-left">Delivery Charge</td>
-                      <td className="border border-gray-300 px-4 py-2 text-right">{Number(printTarget.delivery_charge || 0).toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="border border-gray-300 px-4 py-2 text-left">Insurance Charge</td>
-                      <td className="border border-gray-300 px-4 py-2 text-right">{Number(printTarget.insurance_charge || 0).toFixed(2)}</td>
-                    </tr>
-                    <tr className="bg-gray-100">
-                      <td className="border border-gray-300 px-4 py-2 text-left font-bold">Final Price</td>
-                      <td className="border border-gray-300 px-4 py-2 text-right font-bold">
-                        {Number(printTarget.total_amount ?? printTarget.shipping_amount).toFixed(2)} AED
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <table style={{ border: 'none', marginBottom: 16 }}>
+              <tbody>
+                <tr>
+                  <td style={{ border: 'none', width: '42%' }} />
+                  <td style={{ border: 'none', width: '58%', padding: 0 }}>
+                    <table className="border border-gray-300">
+                      <tbody>
+                        <tr>
+                          <td className="border border-gray-300">Shipping Charge</td>
+                          <td className="border border-gray-300 text-right" style={{ width: '32%' }}>{Number(printTarget.shipping_amount).toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                          <td className="border border-gray-300">
+                            Pickup Charge {printTarget.pickup_location === 'OUTSIDE_DUBAI' ? '(Outside Dubai)' : printTarget.pickup_location === 'INSIDE_DUBAI' ? '(Inside Dubai)' : '(Drop off)'}
+                          </td>
+                          <td className="border border-gray-300 text-right">{Number(printTarget.pickup_charge || 0).toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                          <td className="border border-gray-300">VAT 5% on Pickup</td>
+                          <td className="border border-gray-300 text-right">{Number(printTarget.pickup_vat || 0).toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                          <td className="border border-gray-300">Delivery Charge</td>
+                          <td className="border border-gray-300 text-right">{Number(printTarget.delivery_charge || 0).toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                          <td className="border border-gray-300">Insurance Charge</td>
+                          <td className="border border-gray-300 text-right">{Number(printTarget.insurance_charge || 0).toFixed(2)}</td>
+                        </tr>
+                        <tr className="bg-gray-100">
+                          <td className="border border-gray-300 font-bold">Total Amount</td>
+                          <td className="border border-gray-300 text-right font-bold">{Number(printTarget.total_amount ?? printTarget.shipping_amount).toFixed(2)} AED</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div>
-                <h4 className="font-semibold mb-2">REMARKS:</h4>
-                <div className="space-y-1 text-sm">
-                  <p>ITEMS: {printTarget.items.map((item) => `${item.name} x${item.quantity}`).join(', ')}</p>
-                  {printTarget.notes ? <p>{printTarget.notes}</p> : null}
-                </div>
-              </div>
-              <div className="text-right">
-                <h4 className="font-semibold mb-2">TERMS AND CONDITIONS:</h4>
-                <p className="text-sm">Client quotation only. VAT 5% applies to the pickup charge only.</p>
-              </div>
-            </div>
+            <table className="mb-3" style={{ border: 'none' }}>
+              <tbody>
+                <tr>
+                  <td style={{ width: '50%', border: 'none', padding: '0 12px 0 0' }}>
+                    <h4 className="font-semibold" style={{ marginBottom: 4 }}>REMARKS:</h4>
+                    <p>BOX# {printTarget.items.map((item, index) => item.box_number || String(index + 1)).join(', ')}</p>
+                    <p>ITEMS: {printTarget.items.map((item) => `${item.name} x${item.quantity}`).join(', ')}</p>
+                    {printTarget.notes ? <p>{printTarget.notes}</p> : null}
+                  </td>
+                  <td style={{ width: '50%', border: 'none', padding: 0, textAlign: 'right' }}>
+                    <h4 className="font-semibold" style={{ marginBottom: 4 }}>TERMS AND CONDITIONS:</h4>
+                    <p>Client quotation only.</p>
+                    <p>VAT 5% applies to the pickup charge only.</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
 
-            <div className="mt-8 border border-gray-300 break-inside-avoid">
-              <div className="bg-gray-50 border-b border-gray-300 px-4 py-2 font-semibold">BANK DETAILS</div>
-              <div className="grid grid-cols-2 text-sm">
-                <div className="p-4 border-r border-gray-300">
-                  <h4 className="font-semibold mb-2">PH BANK DETAILS</h4>
-                  <p>BANCO DE ORO (BDO UNIBANK)</p>
-                  <p>KNEXPRESS DELIVERY SERVICES</p>
-                  <p>004718016361</p>
-                </div>
-                <div className="p-4">
-                  <h4 className="font-semibold mb-2">UAE BANK DETAILS</h4>
-                  <p>Bank: RAK BANK (National Bank of Ras Al Khaimah)</p>
-                  <p>Account Name: KNEX DELIVERY SERVICES LLC</p>
-                  <p>Card Number: 5467 5077 4522 5002</p>
-                  <p>IBAN Number: AE26 0400 0003 7322 0098 001</p>
-                  <p>Account Number: 0373220098001</p>
-                  <p>Swift Code: NRAKAEAK</p>
-                </div>
-              </div>
-            </div>
+            <table className="text-[11px]" style={{ border: 'none', borderTop: '1px solid #d1d5db' }}>
+              <tbody>
+                <tr>
+                  <td style={{ width: '46%', border: 'none', padding: '8px 12px 0 0' }}>
+                    <p className="font-semibold">PH BANK DETAILS</p>
+                    <p>BANCO DE ORO (BDO UNIBANK)</p>
+                    <p>KNEXPRESS DELIVERY SERVICES</p>
+                    <p>004718016361</p>
+                  </td>
+                  <td style={{ width: '54%', border: 'none', padding: '8px 0 0 0', textAlign: 'right' }}>
+                    <p className="font-semibold">UAE BANK DETAILS</p>
+                    <p>RAK BANK (National Bank of Ras Al Khaimah)</p>
+                    <p>KNEX DELIVERY SERVICES LLC</p>
+                    <p>Card 5467 5077 4522 5002</p>
+                    <p>IBAN AE26 0400 0003 7322 0098 001</p>
+                    <p>Account 0373220098001</p>
+                    <p>Swift NRAKAEAK</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       )}
