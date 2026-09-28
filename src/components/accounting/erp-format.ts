@@ -38,6 +38,7 @@ export type AccountingModule =
   | 'fixed-assets'
   | 'sales'
   | 'vat201'
+  | 'e-invoicing'
   | 'reports';
 
 export type BreadcrumbItem = {
@@ -109,6 +110,11 @@ export const ACCOUNTING_ROUTES: Record<
     href: '/dashboard/accounting/vat201',
     title: 'VAT201',
     subtitle: 'UAE VAT return · Sales + POs',
+  },
+  'e-invoicing': {
+    href: '/dashboard/accounting/e-invoicing',
+    title: 'E-Invoicing',
+    subtitle: 'UAE PINT AE e-invoices via ASP',
   },
   reports: {
     href: '/dashboard/accounting/reports',

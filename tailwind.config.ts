@@ -1,4 +1,5 @@
 import type {Config} from 'tailwindcss';
+import { themePlugin } from './tailwind.theme';
 
 export default {
   darkMode: ['class'],
@@ -10,8 +11,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        body: ['Inter', 'sans-serif'],
-        headline: ['Inter', 'sans-serif'],
+        body: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
+        headline: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
         code: ['monospace'],
       },
       colors: {
@@ -95,5 +96,5 @@ export default {
       },
     },
   },
-  plugins: [require('tailwindcss-animate')],
+  plugins: [require('tailwindcss-animate'), themePlugin],
 } satisfies Config;

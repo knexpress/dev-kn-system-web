@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import type { Department, DepartmentData } from './types';
 
-interface NavLink {
+export interface NavLink {
   href: string;
   label: string;
   icon: LucideIcon;
@@ -129,6 +129,24 @@ const allLinks: NavLink[] = [
     departments: ['Sales', 'Operations', 'IT'],
   },
 ];
+
+/** Maps a nav href to the activity key used by useActivityBadges */
+const ACTIVITY_KEYS: Record<string, string> = {
+  '/dashboard/invoices': 'invoices',
+  '/dashboard/invoice-requests': 'invoice_requests',
+  '/dashboard/requests': 'requests',
+  '/dashboard/delivery-assignments': 'delivery_assignments',
+  '/dashboard/collections': 'collections',
+  '/dashboard/jobs': 'jobs',
+  '/dashboard/reports/audit': 'reports',
+};
+
+export const activityKeyForHref = (href: string): string | undefined => ACTIVITY_KEYS[href];
+
+export const isNavLinkActive = (pathname: string, href: string) => {
+  if (href === '/dashboard') return pathname === '/dashboard';
+  return pathname === href || pathname.startsWith(`${href}/`);
+};
 
 export const getNavigationLinks = (department: DepartmentData | null) => {
   if (!department) return [];

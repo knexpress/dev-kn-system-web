@@ -108,26 +108,25 @@ export function MotivationQuote({ firstName, department, className }: Motivation
   return (
     <div
       className={cn(
-        'no-print relative overflow-hidden rounded-2xl border border-emerald-200/60 bg-gradient-to-r from-emerald-50/80 via-white to-sky-50/50 px-5 py-4 sm:px-6',
+        'no-print relative overflow-hidden rounded-[28px] bg-brand-500 px-6 py-6 text-white shadow-[0_24px_48px_-24px_rgba(91,78,245,0.8)]',
         className
       )}
     >
-      <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-emerald-200/25 blur-2xl" />
-      <div className="relative flex items-start gap-3">
-        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600/10 text-emerald-700 ring-1 ring-emerald-600/15">
+      <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-white/10" />
+      <div className="pointer-events-none absolute -bottom-16 left-1/3 h-32 w-32 rounded-full bg-white/5" />
+      <div className="relative flex h-full flex-col items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20">
           <Sparkles className="h-4 w-4" />
         </div>
-        <div className="min-w-0 space-y-1">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700/80">
+        <div className="min-w-0 space-y-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70">
             Motivation
           </p>
           {loading && !quote ? (
-            <p className="text-sm text-slate-400">Loading your spark for this hour…</p>
+            <p className="text-sm text-white/70">Loading your spark for this hour…</p>
           ) : (
-            <p className="text-sm leading-6 text-slate-700 sm:text-[15px]">
-              <span className="text-emerald-700/70">“</span>
-              {quote}
-              <span className="text-emerald-700/70">”</span>
+            <p className="text-[15px] font-semibold leading-6 text-white">
+              “{quote}”
             </p>
           )}
         </div>

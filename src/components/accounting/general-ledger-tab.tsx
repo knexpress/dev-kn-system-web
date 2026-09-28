@@ -91,6 +91,12 @@ export default function GeneralLedgerTab({
   }, []);
 
   useEffect(() => {
+    if (!accountCode && !selectedAccountCode && accounts.length > 0) {
+      setAccountCode(accounts[0].code);
+    }
+  }, [accounts, accountCode, selectedAccountCode]);
+
+  useEffect(() => {
     if (mode === 'ledger' && accountCode) loadLedger(accountCode);
   }, [accountCode, mode]);
 

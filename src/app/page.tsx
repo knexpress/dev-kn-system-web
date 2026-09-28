@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { AuthForm } from '@/components/auth-form';
-import { LoginBrandPanel } from '@/components/login-brand-panel';
+import { LoginOrbit } from '@/components/login-orbit';
+import { ThemeControls } from '@/components/theme/theme-controls';
 import { Loader2, ShieldCheck, Workflow, Users } from 'lucide-react';
 
 export default function HomePage() {
@@ -28,16 +29,14 @@ export default function HomePage() {
   }
 
   return (
-    <div className="grid min-h-screen w-full lg:grid-cols-[1.05fr_0.95fr]">
-      <LoginBrandPanel />
+    <div className="relative min-h-screen w-full overflow-x-hidden bg-[#F7F6F4] dark:bg-canvas">
+      <LoginOrbit />
+      <ThemeControls className="absolute right-4 top-4 z-20 rounded-full bg-white/70 p-0.5 shadow-sm ring-1 ring-slate-200/70 backdrop-blur-md sm:right-6 sm:top-6" />
 
-      <main className="relative flex items-center justify-center overflow-y-auto bg-gradient-to-br from-white via-emerald-50/30 to-slate-50 px-5 py-10 sm:px-8 lg:px-10">
-        <div className="pointer-events-none absolute -right-20 top-10 h-64 w-64 rounded-full bg-emerald-200/30 blur-3xl" />
-        <div className="pointer-events-none absolute -left-16 bottom-10 h-52 w-52 rounded-full bg-slate-200/50 blur-3xl" />
-
-        <div className="relative z-10 w-full max-w-xl space-y-6">
-          <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
-            <div className="mb-5 flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-black shadow-lg shadow-emerald-900/20 ring-1 ring-slate-200 lg:hidden">
+      <main className="relative z-10 flex min-h-screen items-center justify-center px-5 py-10 sm:px-8 lg:px-10">
+        <div className="w-full max-w-xl space-y-6">
+          <div className="flex flex-col items-center text-center">
+            <div className="mb-5 flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-black shadow-lg shadow-emerald-900/20 ring-1 ring-slate-200">
               <Image
                 src="/KNEXPRESSGREEN.png"
                 alt="KN Express"

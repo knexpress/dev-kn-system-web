@@ -49,17 +49,17 @@ export function UserNav({ variant = 'default' }: UserNavProps) {
           className={cn(
             'relative rounded-full p-0',
             variant === 'sidebar'
-              ? 'h-10 w-10 ring-1 ring-white/15 hover:bg-white/10'
-              : 'h-8 w-8'
+              ? 'h-10 w-10 ring-4 ring-white hover:bg-transparent'
+              : 'h-9 w-9 hover:bg-transparent'
           )}
         >
-          <Avatar className={cn(variant === 'sidebar' ? 'h-10 w-10' : 'h-8 w-8')}>
+          <Avatar className={cn(variant === 'sidebar' ? 'h-10 w-10' : 'h-9 w-9')}>
             <AvatarFallback
               className={cn(
-                'font-semibold',
+                'text-xs font-bold',
                 variant === 'sidebar'
-                  ? 'bg-emerald-500 text-white'
-                  : 'bg-slate-100 text-slate-800'
+                  ? 'bg-brand-500 text-white'
+                  : 'bg-gradient-to-br from-brand-400 to-brand-600 text-white'
               )}
             >
               {getInitials(userProfile.full_name)}
@@ -67,7 +67,7 @@ export function UserNav({ variant = 'default' }: UserNavProps) {
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56 rounded-2xl border-slate-200/80" align="start" forceMount>
+      <DropdownMenuContent className="w-56 rounded-2xl border-slate-200/80" align="end" forceMount>
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium leading-none text-slate-900">

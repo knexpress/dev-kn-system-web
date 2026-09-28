@@ -3,16 +3,31 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
+import { useActivityBadges } from '@/hooks/use-activity-badges';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { Loader2 } from 'lucide-react';
-import {
-  SidebarProvider,
-  Sidebar,
-  SidebarInset,
-} from '@/components/ui/sidebar';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import AppSidebar from '@/components/app-sidebar';
 import AppHeader from '@/components/app-header';
 import { ChangePasswordModal } from '@/components/change-password-modal';
+
+function DashboardFrame({ children }: { children: React.ReactNode }) {
+  const { hasNew, markSeen } = useActivityBadges();
+
+  return (
+    <TooltipProvider delayDuration={80}>
+      <div className="flex min-h-svh w-full bg-canvas">
+        <AppSidebar hasNew={hasNew} markSeen={markSeen} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <AppHeader hasNew={hasNew} markSeen={markSeen} />
+          <main className="w-full min-w-0 flex-1 overflow-x-hidden px-4 pb-10 pt-2 sm:px-6 lg:px-8">
+            <div className="mx-auto max-w-[1600px] space-y-6">{children}</div>
+          </main>
+        </div>
+      </div>
+    </TooltipProvider>
+  );
+}
 
 export default function DashboardLayout({
   children,
@@ -31,8 +46,8 @@ export default function DashboardLayout({
 
   if (loading || !userProfile) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-slate-50">
-        <Loader2 className="h-10 w-10 animate-spin text-emerald-600" />
+      <div className="flex h-screen w-full items-center justify-center bg-canvas">
+        <Loader2 className="h-10 w-10 animate-spin text-brand-500" />
       </div>
     );
   }
@@ -47,22 +62,7 @@ export default function DashboardLayout({
 
   return (
     <NotificationProvider>
-      <SidebarProvider defaultOpen={true}>
-        <Sidebar collapsible="offcanvas">
-          <AppSidebar />
-        </Sidebar>
-        <SidebarInset className="flex flex-col w-full min-w-0">
-          <AppHeader />
-          <main 
-            className="flex-1 overflow-y-auto overflow-x-hidden p-6 md:p-8 lg:p-10 w-full min-w-0 scrollbar-hide bg-gradient-to-br from-slate-50 via-emerald-50/20 to-white"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-          >
-              <div className="max-w-[1600px] mx-auto space-y-6">
-                {children}
-              </div>
-          </main>
-        </SidebarInset>
-      </SidebarProvider>
+      <DashboardFrame>{children}</DashboardFrame>
       <ChangePasswordModal 
         open={requiresPasswordChange} 
         onPasswordChanged={handlePasswordChanged}

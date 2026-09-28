@@ -1688,6 +1688,99 @@ class ApiClient {
     });
   }
 
+  async getEInvoicingOverview() {
+    return this.request('/accounting/einvoicing/overview', {}, false);
+  }
+
+  async getEInvoiceEligible() {
+    return this.request('/accounting/einvoicing/eligible', {}, false);
+  }
+
+  async getEInvoices(opts?: { status?: string; q?: string }) {
+    const params = new URLSearchParams();
+    if (opts?.status) params.set('status', opts.status);
+    if (opts?.q) params.set('q', opts.q);
+    const qs = params.toString();
+    return this.request(`/accounting/einvoicing/documents${qs ? `?${qs}` : ''}`, {}, false);
+  }
+
+  async getEInvoice(id: string) {
+    return this.request(`/accounting/einvoicing/documents/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async generateEInvoice(salesInvoiceId: string) {
+    return this.request('/accounting/einvoicing/documents', {
+      method: 'POST',
+      body: JSON.stringify({ sales_invoice_id: salesInvoiceId }),
+    });
+  }
+
+  async generateAllEInvoices() {
+    return this.request('/accounting/einvoicing/generate-all', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async revalidateEInvoice(id: string) {
+    return this.request(`/accounting/einvoicing/documents/${encodeURIComponent(id)}/revalidate`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async submitEInvoice(id: string) {
+    return this.request(`/accounting/einvoicing/documents/${encodeURIComponent(id)}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async updateEInvoiceStatus(
+    id: string,
+    payload: { status: 'DELIVERED' | 'ACCEPTED' | 'REJECTED'; note?: string; asp_reference?: string }
+  ) {
+    return this.request(`/accounting/einvoicing/documents/${encodeURIComponent(id)}/status`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async cancelEInvoice(id: string, note?: string) {
+    return this.request(`/accounting/einvoicing/documents/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    });
+  }
+
+  /** Downloads the UBL XML with the auth header and saves it via the browser */
+  async downloadEInvoiceXml(id: string, filename: string) {
+    const headers: Record<string, string> = {};
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/accounting/einvoicing/documents/${encodeURIComponent(id)}/xml`,
+        { headers }
+      );
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        return { success: false, error: data.error || 'Failed to download XML' };
+      }
+      const blob = await response.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Failed to download XML' };
+    }
+  }
+
   async settleVat201Return(
     id: string,
     payload?: { settlement_date?: string; bank_account_code?: string }

@@ -2715,7 +2715,7 @@ export default function InvoicePage() {
             </div>
 
             {/* Invoice Template */}
-            <div id="invoice-content">
+            <div id="invoice-content" className="theme-light">
                 {invoiceData && invoiceData.invoiceNumber ? (
                     invoiceType === 'tax' ? (
                         <TaxInvoiceTemplate key={`tax-${refreshKey}`} data={taxInvoiceData} />

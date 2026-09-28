@@ -93,7 +93,7 @@ export default function BookingPrintView({ booking, onClose }: BookingPrintViewP
   }, [onClose]);
 
   return (
-    <div ref={printRef} className="print-container p-8 max-w-4xl mx-auto bg-white">
+    <div ref={printRef} className="theme-light print-container p-8 max-w-4xl mx-auto bg-white">
       <style jsx global>{`
         @media print {
           body * {

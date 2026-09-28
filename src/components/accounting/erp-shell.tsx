@@ -8,6 +8,7 @@ import {
   Building2,
   ClipboardList,
   ChevronRight,
+  FileCode,
   FileSpreadsheet,
   FileText,
   Layers,
@@ -43,6 +44,7 @@ export const ACCOUNTING_MODULES: {
   { id: 'fixed-assets', label: 'Fixed Assets', short: 'Assets', hint: 'Depreciate & dispose', icon: Building2 },
   { id: 'sales', label: 'Sales', short: 'Sales', hint: 'Invoices & traders', icon: ShoppingCart },
   { id: 'vat201', label: 'VAT201', short: 'VAT201', hint: 'FTA return boxes', icon: Receipt },
+  { id: 'e-invoicing', label: 'E-Invoicing', short: 'E-Invoice', hint: 'PINT AE via ASP', icon: FileCode },
   { id: 'reports', label: 'Reports', short: 'Reports', hint: 'P&L · BS · TB', icon: FileSpreadsheet },
 ];
 
@@ -81,8 +83,8 @@ export function ErpModuleRail({ active, onChange }: ErpModuleRailProps) {
                     className={cn(
                       'flex h-9 w-9 items-center justify-center rounded-xl transition-colors',
                       isActive
-                        ? 'bg-sky-500 text-white shadow-sm shadow-sky-500/30'
-                        : 'bg-slate-100 text-slate-500 group-hover:bg-sky-50 group-hover:text-sky-600'
+                        ? 'bg-brand-500 text-white shadow-sm shadow-brand-500/30'
+                        : 'bg-slate-100 text-slate-500 group-hover:bg-brand-50 group-hover:text-brand-600'
                     )}
                   >
                     <Icon className="h-4 w-4" />
@@ -113,7 +115,7 @@ export function ErpModuleRail({ active, onChange }: ErpModuleRailProps) {
                 className={cn(
                   'inline-flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-xs font-medium transition-all',
                   isActive
-                    ? 'bg-sky-500 text-white shadow-md shadow-sky-500/25'
+                    ? 'bg-brand-500 text-white shadow-md shadow-brand-500/25'
                     : 'bg-white/80 text-slate-600 ring-1 ring-slate-200/80 hover:bg-white'
                 )}
               >
@@ -144,7 +146,7 @@ export function ErpBreadcrumb({ items, onNavigate }: ErpBreadcrumbProps) {
             className={cn(
               'rounded-full px-2.5 py-1 text-xs',
               isLast
-                ? 'bg-sky-50 font-medium text-sky-700 ring-1 ring-sky-100'
+                ? 'bg-brand-50 font-medium text-brand-700 ring-1 ring-brand-100'
                 : 'text-slate-500'
             )}
           >
@@ -159,14 +161,14 @@ export function ErpBreadcrumb({ items, onNavigate }: ErpBreadcrumbProps) {
             ) : item.href ? (
               <a
                 href={item.href}
-                className="rounded-full px-2.5 py-1 text-xs text-slate-500 transition-colors hover:bg-white hover:text-sky-700"
+                className="rounded-full px-2.5 py-1 text-xs text-slate-500 transition-colors hover:bg-white hover:text-brand-700"
               >
                 {item.label}
               </a>
             ) : onNavigate ? (
               <button
                 type="button"
-                className="rounded-full px-2.5 py-1 text-xs text-slate-500 transition-colors hover:bg-white hover:text-sky-700"
+                className="rounded-full px-2.5 py-1 text-xs text-slate-500 transition-colors hover:bg-white hover:text-brand-700"
                 onClick={() => onNavigate(item, i)}
               >
                 {item.label}
@@ -208,7 +210,7 @@ export function ErpToolbar({
     <div className="px-5 pt-5 pb-4 sm:px-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0 space-y-1">
-          <h2 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
+          <h2 className="text-xl font-bold tracking-tight text-slate-900 sm:text-[22px]">
             {title}
           </h2>
           {description && (
@@ -223,7 +225,7 @@ export function ErpToolbar({
                 value={search ?? ''}
                 onChange={(e) => onSearchChange(e.target.value)}
                 placeholder={searchPlaceholder}
-                className="h-10 w-[180px] rounded-xl border-slate-200/80 bg-slate-50/80 pl-9 text-sm shadow-none focus-visible:bg-white sm:w-[220px]"
+                className="h-10 w-[180px] rounded-full border-slate-200/80 bg-canvas pl-9 text-sm shadow-none focus-visible:bg-white sm:w-[220px]"
               />
             </div>
           )}
@@ -252,27 +254,68 @@ type StatItem = {
   hint?: string;
 };
 
+const STAT_GRID_COLS: Record<number, string> = {
+  1: 'lg:grid-cols-1',
+  2: 'lg:grid-cols-2',
+  3: 'lg:grid-cols-3',
+  4: 'lg:grid-cols-4',
+};
+
 export function ErpStatStrip({ items }: { items: StatItem[] }) {
   if (!items.length) return null;
   return (
-    <div className="grid grid-cols-2 gap-3 px-5 pb-4 sm:grid-cols-3 sm:px-6 lg:grid-cols-5">
-      {items.map((item, idx) => (
-        <div
-          key={item.label}
-          className={cn(
-            'rounded-2xl border border-white/80 bg-gradient-to-br from-white to-slate-50/80 p-3.5 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.35)]',
-            idx === 0 && 'from-sky-50 to-white ring-1 ring-sky-100/80'
-          )}
-        >
-          <p className="text-[11px] font-medium tracking-wide text-slate-400">{item.label}</p>
-          <p className="mt-1.5 font-semibold tabular-nums tracking-tight text-slate-900 text-[15px] sm:text-base">
-            {item.value}
-          </p>
-          {item.hint && <p className="mt-0.5 text-[11px] text-slate-400">{item.hint}</p>}
-        </div>
-      ))}
+    <div
+      className={cn(
+        'grid grid-cols-2 gap-3 px-5 pb-4 sm:grid-cols-3 sm:px-6',
+        STAT_GRID_COLS[items.length] || 'lg:grid-cols-5'
+      )}
+    >
+      {items.map((item, idx) => {
+        const featured = idx === 0;
+        return (
+          <div
+            key={item.label}
+            className={cn(
+              'relative overflow-hidden rounded-[22px] p-4',
+              featured
+                ? 'bg-brand-500 text-white shadow-[0_18px_36px_-18px_rgba(91,78,245,0.75)]'
+                : 'border border-slate-100 bg-canvas/70'
+            )}
+          >
+            {featured && (
+              <span className="pointer-events-none absolute -right-6 -top-8 h-20 w-20 rounded-full bg-white/10" />
+            )}
+            <p
+              className={cn(
+                'text-[11px] font-semibold tracking-wide',
+                featured ? 'text-white/75' : 'text-slate-400'
+              )}
+            >
+              {item.label}
+            </p>
+            <p
+              className={cn(
+                'mt-1.5 text-base font-bold tabular-nums tracking-tight sm:text-lg',
+                featured ? 'text-white' : 'text-slate-900'
+              )}
+            >
+              {item.value}
+            </p>
+            {item.hint && (
+              <p className={cn('mt-0.5 text-[11px]', featured ? 'text-white/70' : 'text-slate-400')}>
+                {item.hint}
+              </p>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
+}
+
+/** Padded content area below the toolbar and stat strip on module pages */
+export function ErpModuleBody({ children }: { children: ReactNode }) {
+  return <div className="space-y-5 px-5 pb-6 sm:px-6">{children}</div>;
 }
 
 type ErpGridProps = {
@@ -285,7 +328,7 @@ export function ErpGrid({ children, className, maxHeight = 'min(58vh, 620px)' }:
   return (
     <div className={cn('px-5 pb-5 sm:px-6', className)}>
       <div
-        className="overflow-auto rounded-2xl border border-slate-200/70 bg-white shadow-[0_12px_40px_-24px_rgba(15,23,42,0.35)]"
+        className="overflow-auto rounded-[22px] border border-slate-100 bg-white"
         style={{ maxHeight }}
       >
         <div className="min-w-[640px]">{children}</div>
@@ -299,7 +342,7 @@ export function erpTableClasses() {
     table: 'text-sm',
     head: 'h-11 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400 bg-slate-50/90 sticky top-0 z-10 border-b border-slate-100',
     cell: 'px-4 py-3 align-middle',
-    row: 'border-b border-slate-100/80 transition-colors hover:bg-sky-50/40 data-[clickable=true]:cursor-pointer',
+    row: 'border-b border-slate-100/80 transition-colors hover:bg-brand-50/50 data-[clickable=true]:cursor-pointer',
     rowAlt: '',
   };
 }
@@ -413,7 +456,7 @@ export function ErpMetaGrid({
 
 /** Soft primary action styling for ERP toolbars */
 export function erpPrimaryButtonClass() {
-  return 'h-10 rounded-xl bg-sky-500 px-4 text-sm font-medium text-white shadow-md shadow-sky-500/25 hover:bg-sky-600';
+  return 'h-10 rounded-xl bg-brand-500 px-4 text-sm font-semibold text-white shadow-md shadow-brand-500/30 hover:bg-brand-600';
 }
 
 export function erpOutlineControlClass() {

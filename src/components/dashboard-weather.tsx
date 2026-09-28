@@ -3,9 +3,12 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, CloudSun, Loader2, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { profileWeather, WeatherScene } from '@/components/weather-scene';
+import { cn } from '@/lib/utils';
 
 type WeatherState = {
   weather: string;
+  code: string;
   tempC: number | null;
   city?: string;
 };
@@ -98,6 +101,7 @@ export default function DashboardWeather({ variant = 'compact' }: DashboardWeath
 
           setWeather({
             weather: toWeatherLabel(result.data?.weather),
+            code: String(result.data?.weather || ''),
             tempC: typeof result.data?.tempC === 'number' ? result.data.tempC : null,
             city: result.data?.city,
           });
@@ -144,7 +148,7 @@ export default function DashboardWeather({ variant = 'compact' }: DashboardWeath
       <div
         className={
           isLarge
-            ? 'flex items-center gap-3 rounded-lg border border-border/60 bg-background/70 p-4 text-sm text-muted-foreground'
+            ? 'flex h-full min-h-[220px] items-center justify-center gap-3 rounded-[28px] border border-slate-100 bg-white p-6 text-sm text-muted-foreground'
             : 'hidden md:flex items-center gap-2 text-xs text-muted-foreground'
         }
       >
@@ -159,7 +163,7 @@ export default function DashboardWeather({ variant = 'compact' }: DashboardWeath
       <div
         className={
           isLarge
-            ? 'flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-100/60 p-4 text-sm text-amber-800'
+            ? 'flex h-full min-h-[220px] items-center justify-between gap-3 rounded-[28px] border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800'
             : 'flex items-center gap-2 text-xs text-amber-700 bg-amber-100/60 border border-amber-300 rounded-md px-2 py-1'
         }
       >
@@ -184,23 +188,61 @@ export default function DashboardWeather({ variant = 'compact' }: DashboardWeath
     return null;
   }
 
+  if (isLarge) {
+    const profile = profileWeather(weather.code, weather.tempC);
+    return (
+      <div
+        className={cn(
+          'relative isolate flex h-full min-h-[220px] overflow-hidden rounded-[28px] bg-gradient-to-br p-6 text-white shadow-[0_24px_48px_-24px_rgba(43,38,120,0.6)]',
+          profile.gradient
+        )}
+      >
+        <WeatherScene profile={profile} />
+        <div className="relative z-10 flex flex-1 flex-col justify-between gap-6">
+          <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white/90 ring-1 ring-white/20 backdrop-blur-sm">
+            <MapPin className="h-3.5 w-3.5" />
+            {weather.city || 'Your location'}
+          </span>
+          <div>
+            {weather.tempC !== null && (
+              <p className="text-6xl font-extrabold leading-none tracking-tight drop-shadow-sm">
+                {Math.round(weather.tempC)}°
+                <span className="ml-1 align-top text-2xl font-bold text-white/80">C</span>
+              </p>
+            )}
+            <p className="mt-2 text-lg font-bold drop-shadow-sm">{weather.weather}</p>
+            <div className="mt-2 flex items-center gap-2">
+              <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[11px] font-semibold ring-1 ring-white/25 backdrop-blur-sm">
+                {profile.intensityLabel}
+              </span>
+              <span className="flex gap-1" aria-label={`Intensity ${profile.intensity} of 3`}>
+                {[1, 2, 3].map((level) => (
+                  <span
+                    key={level}
+                    className={cn(
+                      'h-1.5 w-4 rounded-full',
+                      level <= profile.intensity ? 'bg-white' : 'bg-white/30'
+                    )}
+                  />
+                ))}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      className={
-        isLarge
-          ? 'flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 p-4'
-          : 'hidden md:flex items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-3 py-1.5'
-      }
-    >
+    <div className="hidden md:flex items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-3 py-1.5">
       <CloudSun className="h-4 w-4 text-primary" />
-      <div className={isLarge ? 'flex items-center gap-3 text-sm' : 'flex items-center gap-2 text-xs'}>
-        <span className="font-medium text-foreground">
-          {isLarge ? 'Current weather:' : ''}
-          {isLarge ? ` ${weather.weather}` : weather.weather}
-        </span>
-        {weather.tempC !== null && <span className="text-muted-foreground">{weather.tempC}C</span>}
+      <div className="flex items-center gap-2 text-xs">
+        <span className="font-medium text-foreground">{weather.weather}</span>
+        {weather.tempC !== null && (
+          <span className="text-muted-foreground">{Math.round(weather.tempC)}°C</span>
+        )}
         {weather.city && (
-          <span className="inline-flex items-center gap-1 text-muted-foreground">
+          <span className="hidden lg:inline-flex items-center gap-1 text-muted-foreground">
             <MapPin className="h-3 w-3" />
             {weather.city}
           </span>

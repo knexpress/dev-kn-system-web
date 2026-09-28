@@ -601,7 +601,7 @@ export default function QuotationsPage() {
       </Card>
 
       {printTarget && (
-        <div id="quotation-print" className="fixed inset-0 z-50 overflow-y-auto bg-neutral-200 text-black">
+        <div id="quotation-print" className="theme-light fixed inset-0 z-50 overflow-y-auto bg-neutral-200 text-black">
           <style>{`
             @page { size: A4 portrait; margin: 8mm; }
             .quote-sheet { width: 190mm; font-family: Arial, Helvetica, sans-serif; line-height: 1.45; }
