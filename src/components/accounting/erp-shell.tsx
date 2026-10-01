@@ -38,7 +38,7 @@ export const ACCOUNTING_MODULES: {
   { id: 'inventory', label: 'Inventory', short: 'Inventory', hint: 'SKU master', icon: Package },
   { id: 'movements', label: 'Movements', short: 'Movements', hint: 'Stock flow', icon: Boxes },
   { id: 'bank-cash', label: 'Bank & Cash', short: 'Bank', hint: 'Pay & approve', icon: Banknote },
-  { id: 'purchase-orders', label: 'Purchase Orders', short: 'POs', hint: 'Buy & receive', icon: ClipboardList },
+  { id: 'purchase-orders', label: 'Purchases', short: 'Purchases', hint: 'Invoices & POs', icon: ClipboardList },
   { id: 'petty-cash', label: 'Petty Cash', short: 'Petty', hint: 'Float & vouchers', icon: Wallet },
   { id: 'budgets', label: 'Budgets', short: 'Budget', hint: 'Plan vs actual', icon: PieChart },
   { id: 'fixed-assets', label: 'Fixed Assets', short: 'Assets', hint: 'Depreciate & dispose', icon: Building2 },

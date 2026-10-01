@@ -9,6 +9,20 @@ import { storeAuthToken, getAuthToken, removeAuthToken } from './security/secure
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
+export type SupplierPayload = {
+  name: string;
+  trn?: string;
+  contact_person?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  bank_name?: string;
+  iban?: string;
+  account_number?: string;
+  payment_terms_days?: number;
+  notes?: string;
+};
+
 class ApiClient {
   private baseUrl: string;
   private token: string | null = null;
@@ -1252,6 +1266,17 @@ class ApiClient {
     });
   }
 
+  async reverseSupplierPayment(id: string, reason?: string) {
+    return this.request(`/accounting/bank-cash/payments/${encodeURIComponent(id)}/reverse`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || '' }),
+    });
+  }
+
+  async getPayablesSummary() {
+    return this.request('/accounting/payables/summary', {}, false);
+  }
+
   async getPurchaseOrdersOverview() {
     return this.request('/accounting/purchase-orders/overview', {}, false);
   }
@@ -1265,11 +1290,36 @@ class ApiClient {
     return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}`, {}, false);
   }
 
+  async getSuppliers(q?: string) {
+    const query = q ? `?q=${encodeURIComponent(q)}` : '';
+    return this.request(`/accounting/suppliers${query}`, {}, false);
+  }
+
+  async createSupplier(payload: SupplierPayload) {
+    return this.request('/accounting/suppliers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateSupplier(id: string, payload: Partial<SupplierPayload> & { is_active?: boolean }) {
+    return this.request(`/accounting/suppliers/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async createPurchaseOrder(payload: {
     po_date?: string;
     expected_date?: string;
-    supplier_name: string;
+    supplier_id?: string;
+    supplier?: SupplierPayload;
+    supplier_name?: string;
     supplier_reference?: string;
+    supplier_invoice_no?: string;
+    supplier_invoice_date?: string;
+    due_date?: string;
+    receive_later?: boolean;
     currency?: string;
     tax_amount?: number;
     notes?: string;
@@ -1305,6 +1355,13 @@ class ApiClient {
 
   async rejectPurchaseOrder(id: string, reason?: string) {
     return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || '' }),
+    });
+  }
+
+  async cancelPurchaseOrder(id: string, reason?: string) {
+    return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}/cancel`, {
       method: 'POST',
       body: JSON.stringify({ reason: reason || '' }),
     });
@@ -1694,6 +1751,24 @@ class ApiClient {
 
   async getEInvoiceEligible() {
     return this.request('/accounting/einvoicing/eligible', {}, false);
+  }
+
+  async getFinanceInvoiceGlStatus() {
+    return this.request('/accounting/finance-invoices/gl-status', {}, false);
+  }
+
+  async postFinanceInvoiceJournal(id: string) {
+    return this.request(`/accounting/finance-invoices/${encodeURIComponent(id)}/post-journal`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async postPendingFinanceInvoiceJournals(opts?: { since?: string; limit?: number }) {
+    return this.request('/accounting/finance-invoices/post-pending', {
+      method: 'POST',
+      body: JSON.stringify(opts || {}),
+    });
   }
 
   async getEInvoices(opts?: { status?: string; q?: string }) {

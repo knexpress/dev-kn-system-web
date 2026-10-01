@@ -11,8 +11,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus } from 'lucide-react';
+import { Plus, RotateCcw } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { useToast } from '@/hooks/use-toast';
 import NewJournalEntryDialog from './new-journal-entry-dialog';
 import JournalEntryDetailDialog from './journal-entry-detail-dialog';
 import {
@@ -52,6 +53,12 @@ export default function GeneralLedgerTab({
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [invoiceGl, setInvoiceGl] = useState<{ summary: Record<string, number>; failed: any[] }>({
+    summary: {},
+    failed: [],
+  });
+  const [retrying, setRetrying] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (selectedAccountCode) setAccountCode(selectedAccountCode);
@@ -60,16 +67,42 @@ export default function GeneralLedgerTab({
   const loadAccountsAndJournals = async () => {
     setLoadingJournals(true);
     try {
-      const [accRes, jouRes] = await Promise.all([
+      const [accRes, jouRes, glRes] = await Promise.all([
         apiClient.getAccounts(),
         apiClient.getJournals(),
+        apiClient.getFinanceInvoiceGlStatus(),
       ]);
       if (accRes.success && Array.isArray(accRes.data)) setAccounts(accRes.data);
       if (jouRes.success && Array.isArray(jouRes.data)) setJournals(jouRes.data);
+      if (glRes.success && glRes.data) setInvoiceGl(glRes.data as any);
     } finally {
       setLoadingJournals(false);
     }
   };
+
+  const retryFailedInvoiceJournals = async () => {
+    setRetrying(true);
+    try {
+      const result: any = await apiClient.postPendingFinanceInvoiceJournals();
+      if (!result.success) {
+        toast({ variant: 'destructive', title: 'Retry failed', description: result.error || 'Could not post journals' });
+        return;
+      }
+      const { posted = [], failed = [] } = result.data || {};
+      toast({
+        variant: failed.length ? 'destructive' : 'default',
+        title: `${posted.length} invoice journal${posted.length === 1 ? '' : 's'} posted`,
+        description: failed.length
+          ? `${failed.length} still failing: ${failed[0]?.error || 'unknown error'}`
+          : 'All finance invoices are now in the ledger.',
+      });
+      await loadAccountsAndJournals();
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  const failedInvoiceCount = invoiceGl.summary.FAILED || 0;
 
   const loadLedger = async (code: string) => {
     if (!code) {
@@ -151,8 +184,14 @@ export default function GeneralLedgerTab({
         label: 'Sources',
         value: new Set(journals.map((j) => j.source)).size,
       },
+      {
+        label: 'Finance Invoices Posted',
+        value: failedInvoiceCount
+          ? `${invoiceGl.summary.POSTED || 0} · ${failedInvoiceCount} failed`
+          : invoiceGl.summary.POSTED || 0,
+      },
     ];
-  }, [journals, filteredJournals.length]);
+  }, [journals, filteredJournals.length, invoiceGl, failedInvoiceCount]);
 
   const filteredLedgerRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -324,10 +363,24 @@ export default function GeneralLedgerTab({
           </>
         }
         actions={
-          <Button className={erpPrimaryButtonClass()} onClick={() => setNewEntryOpen(true)}>
-            <Plus className="mr-1.5 h-4 w-4" />
-            New Entry
-          </Button>
+          <>
+            {failedInvoiceCount > 0 && (
+              <Button
+                variant="outline"
+                className={cn(erpOutlineControlClass(), 'border-rose-200 text-rose-700')}
+                onClick={retryFailedInvoiceJournals}
+                disabled={retrying}
+                title={invoiceGl.failed[0]?.gl_sync?.last_error}
+              >
+                <RotateCcw className={cn('mr-1.5 h-3.5 w-3.5', retrying && 'animate-spin')} />
+                Retry {failedInvoiceCount} invoice JE{failedInvoiceCount === 1 ? '' : 's'}
+              </Button>
+            )}
+            <Button className={erpPrimaryButtonClass()} onClick={() => setNewEntryOpen(true)}>
+              <Plus className="mr-1.5 h-4 w-4" />
+              New Entry
+            </Button>
+          </>
         }
       />
       <ErpStatStrip items={journalStats} />

@@ -2464,10 +2464,20 @@ export default function InvoiceRequestsPage() {
           // Update shipment_status_history in booking
           await updateBookingShipmentStatusHistory(selectedRequestForInvoice as any, 'COMPLETED');
           
+          const gl = (invoiceResult as any).gl as { status?: string; journal_no?: string; error?: string } | undefined;
           toast({
             title: 'Success',
-            description: 'Invoice created with QR code and request completed successfully',
+            description: `Invoice created with QR code and request completed successfully${
+              gl?.status === 'POSTED' && gl.journal_no ? ` · Finance JE ${gl.journal_no} posted` : ''
+            }`,
           });
+          if (gl?.status === 'FAILED') {
+            toast({
+              variant: 'destructive',
+              title: 'Journal entry not posted',
+              description: `The invoice was saved, but the finance journal entry failed: ${gl.error || 'Unknown error'}. Retry it from Accounting.`,
+            });
+          }
           
           // Get invoice ID and redirect to invoice page
           const invoiceDataResult = invoiceResult.data as any;

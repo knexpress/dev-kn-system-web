@@ -6,9 +6,9 @@ import PurchaseOrdersTab from '@/components/accounting/purchase-orders-tab';
 export default function PurchaseOrdersPage() {
   return (
     <AccountingSubpageShell
-      title="Purchase Orders"
-      subtitle="Create, approve, receive, and pay purchase orders."
-      crumbs={[{ id: 'purchase-orders', label: 'Purchase Orders' }]}
+      title="Purchases"
+      subtitle="Enter supplier invoices and POs, approve them, and manage suppliers."
+      crumbs={[{ id: 'purchase-orders', label: 'Purchases' }]}
     >
       <PurchaseOrdersTab />
     </AccountingSubpageShell>

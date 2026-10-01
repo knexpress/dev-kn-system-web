@@ -166,11 +166,13 @@ export default function InvoicesPage() {
                 : await apiClient.remitInvoiceUnified(invoiceId);
             
             if (result.success) {
+                const gl = (result as any).gl;
+                const receiptJe: string | undefined = (gl?.receipts ?? gl)?.posted?.[0];
                 toast({
                     title: 'Success',
-                    description: currentStatus === 'UNPAID' 
+                    description: `${currentStatus === 'UNPAID' 
                         ? 'Invoice marked as collected successfully'
-                        : 'Invoice marked as remitted successfully',
+                        : 'Invoice marked as remitted successfully'}${receiptJe ? ` · Finance JE ${receiptJe} posted` : ''}`,
                 });
                 const updatedResult = await apiClient.getInvoicesUnified({
                     page: currentPage,

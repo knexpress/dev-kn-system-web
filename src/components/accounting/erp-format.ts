@@ -83,8 +83,8 @@ export const ACCOUNTING_ROUTES: Record<
   },
   'purchase-orders': {
     href: '/dashboard/accounting/purchase-orders',
-    title: 'Purchase Orders',
-    subtitle: 'Order, receive, and pay suppliers',
+    title: 'Purchases',
+    subtitle: 'Supplier invoices, POs, and suppliers',
   },
   'petty-cash': {
     href: '/dashboard/accounting/petty-cash',
