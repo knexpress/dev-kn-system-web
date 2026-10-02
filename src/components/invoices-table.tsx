@@ -14,7 +14,8 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, TrendingUp, FileSpreadsheet, X } from 'lucide-react';
+import { Eye, TrendingUp, FileSpreadsheet, X, Wallet } from 'lucide-react';
+import { invoiceBalance } from '@/components/record-payment-dialog';
 import * as XLSX from 'xlsx';
 import { apiClient } from '@/lib/api-client';
 import { secureLog } from '@/lib/secure-logger';
@@ -30,9 +31,10 @@ interface InvoicesTableProps {
     department: Department | null;
     onRemit?: (invoiceId: string) => void;
     onCancel?: (invoiceId: string) => void;
+    onRecordPayment?: (invoice: any) => void;
 }
 
-export default function InvoicesTable({ invoices, department, onRemit, onCancel }: InvoicesTableProps) {
+export default function InvoicesTable({ invoices, department, onRemit, onCancel, onRecordPayment }: InvoicesTableProps) {
     const { toast } = useToast();
     const [isExporting, setIsExporting] = useState(false);
     const t = erpTableClasses();
@@ -895,6 +897,15 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel 
                                 >
                                     {invoice.status}
                                 </Badge>
+                                {(() => {
+                                    const { paid, balance } = invoiceBalance(invoice);
+                                    if (paid <= 0 || balance <= 0.009 || invoice.status === 'CANCELLED') return null;
+                                    return (
+                                        <div className="mt-1 text-[11px] leading-tight text-amber-700">
+                                            Partially paid · bal AED {balance.toFixed(2)}
+                                        </div>
+                                    );
+                                })()}
                             </TableCell>
                             <TableCell className={cn(t.cell, 'text-right')}>
                                 <div className="flex gap-2 justify-end">
@@ -915,7 +926,29 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel 
                                             Remit
                                         </Button>
                                     )}
-                                    {onRemit && invoice.status === 'UNPAID' && (
+                                    {onRecordPayment && ['UNPAID', 'OVERDUE'].includes(invoice.status) && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-10 rounded-xl bg-sky-600 text-white hover:bg-sky-700"
+                                            onClick={() => onRecordPayment(invoice)}
+                                        >
+                                            <Wallet className="mr-2 h-4 w-4" />
+                                            Record payment
+                                        </Button>
+                                    )}
+                                    {onRecordPayment && !['UNPAID', 'OVERDUE'].includes(invoice.status) && (invoice.payments?.length ?? 0) > 0 && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className={erpOutlineControlClass()}
+                                            onClick={() => onRecordPayment(invoice)}
+                                        >
+                                            <Wallet className="mr-2 h-4 w-4" />
+                                            Payments
+                                        </Button>
+                                    )}
+                                    {!onRecordPayment && onRemit && invoice.status === 'UNPAID' && (
                                         <Button 
                                             variant="outline" 
                                             size="sm"

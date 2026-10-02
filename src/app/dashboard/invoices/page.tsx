@@ -1,6 +1,7 @@
 'use client';
 
 import InvoicesTable from "@/components/invoices-table";
+import { RecordPaymentDialog } from "@/components/record-payment-dialog";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useNotifications } from '@/contexts/NotificationContext';
@@ -46,6 +47,7 @@ export default function InvoicesPage() {
         pages: number;
     } | null>(null);
     const itemsPerPage = 50;
+    const [paymentInvoice, setPaymentInvoice] = useState<any | null>(null);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -202,6 +204,13 @@ export default function InvoicesPage() {
         }
     };
 
+    const handlePaymentUpdated = (updated: any) => {
+        if (!updated?._id) return;
+        apiClient.invalidateCache('/invoices-unified');
+        setInvoices((prev) => prev.map((inv) => (inv._id === updated._id ? { ...inv, ...updated } : inv)));
+        setPaymentInvoice((current: any) => (current?._id === updated._id ? { ...current, ...updated } : current));
+    };
+
     const handleCancelInvoice = async (invoiceId: string) => {
         try {
             if (!invoiceId) {
@@ -327,6 +336,14 @@ export default function InvoicesPage() {
                     department={department?.name as any}
                     onRemit={handleRemitInvoice}
                     onCancel={handleCancelInvoice}
+                    onRecordPayment={setPaymentInvoice}
+                />
+
+                <RecordPaymentDialog
+                    invoice={paymentInvoice}
+                    open={Boolean(paymentInvoice)}
+                    onOpenChange={(open) => !open && setPaymentInvoice(null)}
+                    onUpdated={handlePaymentUpdated}
                 />
 
                 {!loading && pagination && pagination.pages > 1 && (

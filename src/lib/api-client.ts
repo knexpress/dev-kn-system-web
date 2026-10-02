@@ -9,6 +9,8 @@ import { storeAuthToken, getAuthToken, removeAuthToken } from './security/secure
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
+export type InvoicePaymentMode = 'TABBY' | 'CARD' | 'CASH' | 'BANK_TRANSFER';
+
 export type SupplierPayload = {
   name: string;
   trn?: string;
@@ -955,6 +957,29 @@ class ApiClient {
   async remitInvoiceUnified(id: string) {
     return this.request(`/invoices-unified/${id}/remit`, {
       method: 'PATCH',
+    });
+  }
+
+  async recordInvoicePayment(
+    id: string,
+    payload: {
+      mode: InvoicePaymentMode;
+      payment_type: 'FULL' | 'PARTIAL';
+      amount_collected: number;
+      reference?: string;
+      collected_at?: string;
+    }
+  ) {
+    return this.request(`/invoices-unified/${id}/payments`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async voidInvoicePayment(id: string, paymentId: string, reason?: string) {
+    return this.request(`/invoices-unified/${id}/payments/${paymentId}/void`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || '' }),
     });
   }
 

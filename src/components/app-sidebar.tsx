@@ -10,7 +10,7 @@ import {
   getNavigationLinks,
   isNavLinkActive,
 } from '@/lib/navigation';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipPortal, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 export type ActivityBadgeProps = {
@@ -247,13 +247,15 @@ export default function AppSidebar({ hasNew, markSeen }: ActivityBadgeProps) {
                             )}
                           </Link>
                         </TooltipTrigger>
-                        <TooltipContent
-                          side="right"
-                          sideOffset={12}
-                          className="rounded-xl border-0 bg-slate-900 px-3 py-1.5 text-xs font-medium text-white"
-                        >
-                          {link.label}
-                        </TooltipContent>
+                        <TooltipPortal>
+                          <TooltipContent
+                            side="right"
+                            sideOffset={14}
+                            className="z-[100] rounded-xl border-0 bg-slate-900 px-3 py-1.5 text-xs font-medium text-white shadow-lg"
+                          >
+                            {link.label}
+                          </TooltipContent>
+                        </TooltipPortal>
                       </Tooltip>
                     </div>
                   </li>
