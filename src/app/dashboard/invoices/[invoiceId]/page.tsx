@@ -10,7 +10,9 @@ import { isPhToUaeService, isUaeToPhService } from '@/lib/invoice-request-utils'
 import { parseDecimal } from '@/lib/invoice-utils';
 import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, FileText, Receipt, AlertCircle, Download, Printer, FileSpreadsheet, Database } from 'lucide-react';
+import { ArrowLeft, FileText, Receipt, AlertCircle, Download, Printer, FileSpreadsheet, Database, FileDiff } from 'lucide-react';
+import { InvoiceNoteDialog } from '@/components/invoice-notes/invoice-note-dialog';
+import { invoiceBalance } from '@/components/record-payment-dialog';
 import * as XLSX from 'xlsx';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -53,6 +55,7 @@ export default function InvoicePage() {
     const [showCodEditDialog, setShowCodEditDialog] = useState(false);
     const [showTaxEditDialog, setShowTaxEditDialog] = useState(false);
     const [showRequestDataDialog, setShowRequestDataDialog] = useState(false);
+    const [showNoteDialog, setShowNoteDialog] = useState(false);
     const [requestDataSources, setRequestDataSources] = useState<{
         invoice: any | null;
         invoiceRequest: any | null;
@@ -2710,9 +2713,57 @@ export default function InvoicePage() {
                             <Database className="h-4 w-4 mr-2" />
                             View Request Data
                         </Button>
+                        {invoice && invoice.status !== 'CANCELLED' && (
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowNoteDialog(true)}
+                                className={erpOutlineControlClass()}
+                            >
+                                <FileDiff className="h-4 w-4 mr-2" />
+                                Credit / Debit Note
+                            </Button>
+                        )}
                     </div>
                 </div>
+                {invoice && (Number(invoice.credit_notes_total) > 0 || Number(invoice.debit_notes_total) > 0) && (() => {
+                    const { total, paid, balance } = invoiceBalance(invoice);
+                    return (
+                        <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                            <span>
+                                Invoice total <span className="font-semibold text-slate-900">AED {parseDecimal(invoice.total_amount).toFixed(2)}</span>
+                            </span>
+                            {Number(invoice.credit_notes_total) > 0 && (
+                                <span>
+                                    Credit notes <span className="font-semibold text-sky-700">−AED {Number(invoice.credit_notes_total).toFixed(2)}</span>
+                                </span>
+                            )}
+                            {Number(invoice.debit_notes_total) > 0 && (
+                                <span>
+                                    Debit notes <span className="font-semibold text-violet-700">+AED {Number(invoice.debit_notes_total).toFixed(2)}</span>
+                                </span>
+                            )}
+                            <span>
+                                Amount due <span className="font-semibold text-slate-900">AED {total.toFixed(2)}</span>
+                            </span>
+                            <span>
+                                Paid <span className="font-semibold text-slate-900">AED {paid.toFixed(2)}</span>
+                            </span>
+                            <span>
+                                Balance <span className={cn('font-semibold', balance > 0.009 ? 'text-rose-600' : 'text-emerald-600')}>AED {balance.toFixed(2)}</span>
+                            </span>
+                            <button type="button" className="font-semibold text-brand-600 hover:underline" onClick={() => setShowNoteDialog(true)}>
+                                View notes
+                            </button>
+                        </div>
+                    );
+                })()}
             </div>
+
+            <InvoiceNoteDialog
+                invoice={invoice}
+                open={showNoteDialog}
+                onOpenChange={setShowNoteDialog}
+            />
 
             {/* Invoice Template */}
             <div id="invoice-content" className="theme-light">

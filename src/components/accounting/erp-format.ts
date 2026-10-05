@@ -39,6 +39,7 @@ export type AccountingModule =
   | 'sales'
   | 'vat201'
   | 'e-invoicing'
+  | 'invoice-notes'
   | 'reports';
 
 export type BreadcrumbItem = {
@@ -115,6 +116,11 @@ export const ACCOUNTING_ROUTES: Record<
     href: '/dashboard/accounting/e-invoicing',
     title: 'E-Invoicing',
     subtitle: 'UAE PINT AE e-invoices via ASP',
+  },
+  'invoice-notes': {
+    href: '/dashboard/accounting/invoice-notes',
+    title: 'Credit & Debit Notes',
+    subtitle: 'Adjustments to finance invoices',
   },
   reports: {
     href: '/dashboard/accounting/reports',

@@ -9,6 +9,7 @@ import {
   ClipboardList,
   ChevronRight,
   FileCode,
+  FileDiff,
   FileSpreadsheet,
   FileText,
   Layers,
@@ -45,6 +46,7 @@ export const ACCOUNTING_MODULES: {
   { id: 'sales', label: 'Sales', short: 'Sales', hint: 'Invoices & traders', icon: ShoppingCart },
   { id: 'vat201', label: 'VAT201', short: 'VAT201', hint: 'FTA return boxes', icon: Receipt },
   { id: 'e-invoicing', label: 'E-Invoicing', short: 'E-Invoice', hint: 'PINT AE via ASP', icon: FileCode },
+  { id: 'invoice-notes', label: 'Credit & Debit Notes', short: 'Notes', hint: 'Invoice adjustments', icon: FileDiff },
   { id: 'reports', label: 'Reports', short: 'Reports', hint: 'P&L · BS · TB', icon: FileSpreadsheet },
 ];
 

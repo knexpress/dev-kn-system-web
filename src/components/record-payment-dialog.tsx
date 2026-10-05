@@ -45,10 +45,28 @@ export function activeInvoicePayments(invoice: any): any[] {
   return (invoice?.payments || []).filter((p: any) => p.status !== 'VOID');
 }
 
+/** Amount due after credit / debit notes; the backend sends payment_summary with every invoice. */
 export function invoiceBalance(invoice: any) {
-  const total = num(invoice?.total_amount);
-  const paid = round2(activeInvoicePayments(invoice).reduce((s, p) => s + num(p.amount_applied), 0));
-  return { total, paid, balance: round2(Math.max(0, total - paid)) };
+  const summary = invoice?.payment_summary;
+  if (summary && Number.isFinite(Number(summary.total))) {
+    return {
+      total: num(summary.total),
+      paid: num(summary.paid),
+      balance: num(summary.balance),
+      credit: num(summary.credit),
+    };
+  }
+  const total = round2(
+    num(invoice?.total_amount) - num(invoice?.credit_notes_total) + num(invoice?.debit_notes_total)
+  );
+  const paid = round2(
+    activeInvoicePayments(invoice).reduce((s, p) => s + num(p.amount_applied), 0) - num(invoice?.refunds_total)
+  );
+  return { total, paid, balance: round2(Math.max(0, total - paid)), credit: round2(Math.max(0, paid - total)) };
+}
+
+export function invoiceHasNotes(invoice: any) {
+  return num(invoice?.credit_notes_total) > 0 || num(invoice?.debit_notes_total) > 0;
 }
 
 type Props = {
@@ -166,7 +184,7 @@ export function RecordPaymentDialog({ invoice, open, onOpenChange, onUpdated }: 
         <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
           <div className="grid grid-cols-3 gap-2 rounded-2xl bg-slate-50 p-3 text-sm">
             <div>
-              <p className="text-xs text-slate-500">Invoice total</p>
+              <p className="text-xs text-slate-500">{invoiceHasNotes(invoice) ? 'Amount due (after notes)' : 'Invoice total'}</p>
               <p className="font-semibold text-slate-900">{aed(total)}</p>
             </div>
             <div>

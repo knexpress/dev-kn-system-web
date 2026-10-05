@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, TrendingUp, FileSpreadsheet, X, Wallet } from 'lucide-react';
+import { Eye, TrendingUp, FileSpreadsheet, X, Wallet, FileDiff } from 'lucide-react';
 import { invoiceBalance } from '@/components/record-payment-dialog';
 import * as XLSX from 'xlsx';
 import { apiClient } from '@/lib/api-client';
@@ -32,9 +32,10 @@ interface InvoicesTableProps {
     onRemit?: (invoiceId: string) => void;
     onCancel?: (invoiceId: string) => void;
     onRecordPayment?: (invoice: any) => void;
+    onRaiseNote?: (invoice: any) => void;
 }
 
-export default function InvoicesTable({ invoices, department, onRemit, onCancel, onRecordPayment }: InvoicesTableProps) {
+export default function InvoicesTable({ invoices, department, onRemit, onCancel, onRecordPayment, onRaiseNote }: InvoicesTableProps) {
     const { toast } = useToast();
     const [isExporting, setIsExporting] = useState(false);
     const t = erpTableClasses();
@@ -902,10 +903,17 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel,
                                     if (paid <= 0 || balance <= 0.009 || invoice.status === 'CANCELLED') return null;
                                     return (
                                         <div className="mt-1 text-[11px] leading-tight text-amber-700">
-                                            Partially paid · bal AED {balance.toFixed(2)}
+                                            {['PAID', 'REMITTED'].includes(invoice.status) ? 'Debit note due' : 'Partially paid'} · bal AED {balance.toFixed(2)}
                                         </div>
                                     );
                                 })()}
+                                {(Number(invoice.credit_notes_total) > 0 || Number(invoice.debit_notes_total) > 0) && (
+                                    <div className="mt-1 text-[11px] leading-tight text-slate-500">
+                                        {Number(invoice.credit_notes_total) > 0 && `CN −${Number(invoice.credit_notes_total).toFixed(2)}`}
+                                        {Number(invoice.credit_notes_total) > 0 && Number(invoice.debit_notes_total) > 0 && ' · '}
+                                        {Number(invoice.debit_notes_total) > 0 && `DN +${Number(invoice.debit_notes_total).toFixed(2)}`}
+                                    </div>
+                                )}
                             </TableCell>
                             <TableCell className={cn(t.cell, 'text-right')}>
                                 <div className="flex gap-2 justify-end">
@@ -926,7 +934,7 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel,
                                             Remit
                                         </Button>
                                     )}
-                                    {onRecordPayment && ['UNPAID', 'OVERDUE'].includes(invoice.status) && (
+                                    {onRecordPayment && (['UNPAID', 'OVERDUE'].includes(invoice.status) || (['PAID', 'REMITTED'].includes(invoice.status) && invoiceBalance(invoice).balance > 0.009)) && (
                                         <Button
                                             variant="outline"
                                             size="sm"
@@ -937,7 +945,7 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel,
                                             Record payment
                                         </Button>
                                     )}
-                                    {onRecordPayment && !['UNPAID', 'OVERDUE'].includes(invoice.status) && (invoice.payments?.length ?? 0) > 0 && (
+                                    {onRecordPayment && !['UNPAID', 'OVERDUE'].includes(invoice.status) && !(['PAID', 'REMITTED'].includes(invoice.status) && invoiceBalance(invoice).balance > 0.009) && (invoice.payments?.length ?? 0) > 0 && (
                                         <Button
                                             variant="outline"
                                             size="sm"
@@ -957,6 +965,18 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel,
                                         >
                                             <TrendingUp className="mr-2 h-4 w-4" />
                                             Mark Collected
+                                        </Button>
+                                    )}
+                                    {onRaiseNote && invoice.status !== 'CANCELLED' && invoice.gl_sync?.status === 'POSTED' && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className={erpOutlineControlClass()}
+                                            onClick={() => onRaiseNote(invoice)}
+                                            title="Credit / debit note"
+                                        >
+                                            <FileDiff className="mr-2 h-4 w-4" />
+                                            Note
                                         </Button>
                                     )}
                                     {onCancel && invoice.status !== 'CANCELLED' && invoice.status !== 'REMITTED' && (

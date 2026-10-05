@@ -2,6 +2,7 @@
 
 import InvoicesTable from "@/components/invoices-table";
 import { RecordPaymentDialog } from "@/components/record-payment-dialog";
+import { InvoiceNoteDialog } from "@/components/invoice-notes/invoice-note-dialog";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useNotifications } from '@/contexts/NotificationContext';
@@ -48,6 +49,7 @@ export default function InvoicesPage() {
     } | null>(null);
     const itemsPerPage = 50;
     const [paymentInvoice, setPaymentInvoice] = useState<any | null>(null);
+    const [noteInvoice, setNoteInvoice] = useState<any | null>(null);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -337,6 +339,7 @@ export default function InvoicesPage() {
                     onRemit={handleRemitInvoice}
                     onCancel={handleCancelInvoice}
                     onRecordPayment={setPaymentInvoice}
+                    onRaiseNote={setNoteInvoice}
                 />
 
                 <RecordPaymentDialog
@@ -344,6 +347,12 @@ export default function InvoicesPage() {
                     open={Boolean(paymentInvoice)}
                     onOpenChange={(open) => !open && setPaymentInvoice(null)}
                     onUpdated={handlePaymentUpdated}
+                />
+
+                <InvoiceNoteDialog
+                    invoice={noteInvoice}
+                    open={Boolean(noteInvoice)}
+                    onOpenChange={(open) => !open && setNoteInvoice(null)}
                 />
 
                 {!loading && pagination && pagination.pages > 1 && (

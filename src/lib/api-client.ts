@@ -11,6 +11,77 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/a
 
 export type InvoicePaymentMode = 'TABBY' | 'CARD' | 'CASH' | 'BANK_TRANSFER';
 
+export type InvoiceNoteType = 'CREDIT' | 'DEBIT';
+export type InvoiceNoteStatus = 'PENDING_APPROVAL' | 'POSTED' | 'REJECTED' | 'VOID';
+export type InvoiceNoteCategory = 'SHIPPING' | 'PICKUP' | 'DELIVERY' | 'INSURANCE';
+export type InvoiceNoteReason =
+  | 'PRICING_ERROR'
+  | 'WEIGHT_CORRECTION'
+  | 'SERVICE_CANCELLED'
+  | 'DISCOUNT'
+  | 'DAMAGE_OR_LOSS'
+  | 'ADDITIONAL_SERVICE'
+  | 'OTHER';
+
+export type InvoiceNoteLine = {
+  category: InvoiceNoteCategory;
+  description?: string;
+  amount: number;
+  vat_rate: 0 | 5;
+  vat_amount?: number;
+  total?: number;
+};
+
+export type InvoiceNote = {
+  _id: string;
+  note_no: string;
+  note_type: InvoiceNoteType;
+  note_date: string;
+  invoice_id: string;
+  invoice_no: string;
+  invoice_date?: string;
+  invoice_total?: number;
+  awb_number?: string;
+  customer_name?: string;
+  customer_trn?: string;
+  service_code?: string;
+  reason_code: InvoiceNoteReason;
+  reason: string;
+  lines: Required<InvoiceNoteLine>[];
+  subtotal: number;
+  vat_amount: number;
+  total_amount: number;
+  status: InvoiceNoteStatus;
+  journal_no?: string;
+  refund_mode?: InvoicePaymentMode;
+  refund_reference?: string;
+  refund_amount?: number;
+  refund_journal_no?: string;
+  created_by_name?: string;
+  createdAt?: string;
+  approved_by_name?: string;
+  approved_at?: string;
+  rejected_by_name?: string;
+  rejected_at?: string;
+  rejection_reason?: string;
+  voided_by_name?: string;
+  voided_at?: string;
+  void_reason?: string;
+  void_journal_no?: string;
+  void_refund_journal_no?: string;
+};
+
+export type InvoiceNotePayload = {
+  invoice_id: string;
+  note_type: InvoiceNoteType;
+  reason_code: InvoiceNoteReason;
+  reason: string;
+  note_date?: string;
+  lines: InvoiceNoteLine[];
+  refund_mode?: InvoicePaymentMode;
+  refund_reference?: string;
+};
+
 export type SupplierPayload = {
   name: string;
   trn?: string;
@@ -981,6 +1052,52 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ reason: reason || '' }),
     });
+  }
+
+  async getInvoiceNotes(opts?: { type?: InvoiceNoteType | ''; status?: InvoiceNoteStatus | ''; search?: string }) {
+    const params = new URLSearchParams();
+    if (opts?.type) params.set('type', opts.type);
+    if (opts?.status) params.set('status', opts.status);
+    if (opts?.search) params.set('search', opts.search);
+    const qs = params.toString();
+    return this.request(`/invoice-notes${qs ? `?${qs}` : ''}`, {}, false);
+  }
+
+  async getInvoiceNotesForInvoice(invoiceId: string) {
+    return this.request(`/invoice-notes/invoice/${encodeURIComponent(invoiceId)}`, {}, false);
+  }
+
+  async getInvoiceNote(id: string) {
+    return this.request(`/invoice-notes/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async createInvoiceNote(payload: InvoiceNotePayload) {
+    return this.request('/invoice-notes', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async approveInvoiceNote(id: string, payload?: { refund_mode?: InvoicePaymentMode; refund_reference?: string }) {
+    const result = await this.request(`/invoice-notes/${encodeURIComponent(id)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    });
+    this.invalidateCache('/invoices-unified');
+    return result;
+  }
+
+  async rejectInvoiceNote(id: string, reason: string) {
+    return this.request(`/invoice-notes/${encodeURIComponent(id)}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async voidInvoiceNote(id: string, reason: string) {
+    const result = await this.request(`/invoice-notes/${encodeURIComponent(id)}/void`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+    this.invalidateCache('/invoices-unified');
+    return result;
   }
 
   async cancelInvoiceUnified(id: string, reason?: string) {
