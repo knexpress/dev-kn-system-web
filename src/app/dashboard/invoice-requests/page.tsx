@@ -46,6 +46,9 @@ const SalesBookingForm = dynamic(() => import('@/components/sales-booking-form')
 const VerificationForm = dynamic(() => import('@/components/verification-form'), {
   ssr: false
 });
+const QuotationRequestDialog = dynamic(() => import('@/components/quotation-request-dialog'), {
+  ssr: false
+});
 
 export default function InvoiceRequestsPage() {
   const [invoiceRequests, setInvoiceRequests] = useState<any[]>([]);
@@ -86,6 +89,7 @@ export default function InvoiceRequestsPage() {
   const [deliveryBaseAmount, setDeliveryBaseAmount] = useState('20'); // Base delivery amount for PH_TO_UAE (default 20)
   const [totalKgInput, setTotalKgInput] = useState(''); // Total kilograms input for Finance (PH TO UAE)
   const [selectedRequestForReverify, setSelectedRequestForReverify] = useState<any>(null);
+  const [selectedRequestForQuotation, setSelectedRequestForQuotation] = useState<any>(null);
   const router = useRouter();
   const getRequestServiceCode = (request?: any) =>
     request?.service_code ||
@@ -100,6 +104,9 @@ export default function InvoiceRequestsPage() {
   const [insuranceManualAmount, setInsuranceManualAmount] = useState('');
   const [isSpecialCustomer, setIsSpecialCustomer] = useState(false); // Special customer checkbox
   const [specialRate, setSpecialRate] = useState(''); // Special rate input (float)
+  const [quoteRatePerKg, setQuoteRatePerKg] = useState(''); // Rate carried from Finance's quotation (editable)
+  const [prepaidMode, setPrepaidMode] = useState(''); // UAE→PH quoted: how the customer already paid
+  const [prepaidReference, setPrepaidReference] = useState('');
   
   // Helper function to check if shipment is flomic
   const isFlomicShipment = (request?: any): boolean => {
@@ -453,7 +460,7 @@ export default function InvoiceRequestsPage() {
         break;
       
       case 'Operations':
-        // Operations can see SUBMITTED, IN_PROGRESS, and VERIFIED requests
+        // Operations can see SUBMITTED, QUOTATION_REQUEST, IN_PROGRESS, and VERIFIED requests
         // Also show requests without status (might be new/incomplete data)
         filtered = safeInvoiceRequests.filter(request => {
           const status = request.status;
@@ -462,6 +469,7 @@ export default function InvoiceRequestsPage() {
             return true;
           }
           const matches = status === 'SUBMITTED' || 
+                         status === 'QUOTATION_REQUEST' ||
                          status === 'IN_PROGRESS' || 
                          status === 'VERIFIED';
           return matches;
@@ -613,7 +621,9 @@ export default function InvoiceRequestsPage() {
     // Minimal verification data (only what's displayed)
     'verification.insured', 'verification.declared_value',
     // Request reference (minimal)
-    'request_id._id', 'request_id.status', 'request_id.tracking_code'
+    'request_id._id', 'request_id.status', 'request_id.tracking_code',
+    // Quotation request step (weights/boxes/items sent to Finance)
+    'quotation_request'
   ];
   
   // Full fields for detailed views (when opening modals/dialogs)
@@ -954,6 +964,8 @@ export default function InvoiceRequestsPage() {
         return 'bg-gray-500 text-white';
       case 'SUBMITTED':
         return 'bg-blue-500 text-white';
+      case 'QUOTATION_REQUEST':
+        return 'bg-orange-500 text-white';
       case 'IN_PROGRESS':
         return 'bg-yellow-500 text-white';
       case 'VERIFIED':
@@ -1187,13 +1199,16 @@ export default function InvoiceRequestsPage() {
     try {
       // Find the request to get booking_id
       const request = invoiceRequests.find(r => r._id === id);
+      // 'start' = SUBMITTED → QUOTATION_REQUEST (no EMPOST). Finance moves it to IN_PROGRESS from Quotations.
+      const isStatusMove = action === 'start';
+      const nextStatus = 'QUOTATION_REQUEST';
       
       // Optimistic UI update - immediately update the local state
-      if (action === 'start') {
+      if (isStatusMove) {
         setInvoiceRequests(prevRequests => 
           prevRequests.map(request => 
             request._id === id 
-              ? { ...request, status: 'IN_PROGRESS' }
+              ? { ...request, status: nextStatus }
               : request
           )
         );
@@ -1201,29 +1216,35 @@ export default function InvoiceRequestsPage() {
       
       let result;
       if (action === 'start') {
-        result = await apiClient.updateInvoiceRequestStatus(id, { status: 'IN_PROGRESS' });
-        // Update shipment_status_history in booking
-        if (request) {
-          await updateBookingShipmentStatusHistory(request, 'IN_PROGRESS');
-        }
+        result = await apiClient.startQuotationRequest(id);
       } else if (action === 'complete') {
         result = await apiClient.updateInvoiceRequestStatus(id, { status: 'IN_PROGRESS' });
         await apiClient.updateDeliveryStatus(id, { delivery_status: 'DELIVERED' });
       }
       
+      if (result && !result.success && result.error) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: result.error,
+        });
+      }
+
       if (result?.success) {
         toast({
           title: 'Success',
-          description: 'Request updated successfully',
+          description: action === 'start'
+            ? 'Moved to Quotation Request. Click "Process Quotation" to enter weights and items.'
+            : 'Request updated successfully',
         });
         apiClient.invalidateCache('/invoice-requests');
         
-        // When status changes to IN_PROGRESS, reset to page 1 and use current filter
-        // This ensures the updated item appears in the IN_PROGRESS filter immediately
-        if (action === 'start') {
+        // When status changes, reset to page 1 and use current filter
+        // This ensures the updated item appears in the new status filter immediately
+        if (isStatusMove) {
           setCurrentPage(1); // Reset to first page to show the new item
-          // Use current statusFilter (or 'IN_PROGRESS' if filter is 'all' or empty)
-          const filterToUse = statusFilter && statusFilter !== 'all' ? statusFilter : 'IN_PROGRESS';
+          // Use current statusFilter (or the new status if filter is 'all' or empty)
+          const filterToUse = statusFilter && statusFilter !== 'all' ? statusFilter : nextStatus;
           
           // Wait a bit longer to ensure backend has fully processed the update
           // This prevents race conditions and ensures the item appears in the correct filter
@@ -1238,7 +1259,7 @@ export default function InvoiceRequestsPage() {
         }
       } else {
         // Revert optimistic update on error
-        if (action === 'start') {
+        if (isStatusMove) {
           fetchInvoiceRequests(currentPage, false);
         }
       }
@@ -1252,6 +1273,53 @@ export default function InvoiceRequestsPage() {
         title: 'Error',
         description: 'Failed to update request',
       });
+    }
+  };
+
+  const getInvoiceQuote = (request: any) =>
+    request?.quotation_request?.stage === 'QUOTED' ? request.quotation_request : null;
+
+  const toPlainNumber = (value: any): number => {
+    if (value === null || value === undefined || value === '') return 0;
+    if (typeof value === 'object' && value.$numberDecimal) return parseFloat(value.$numberDecimal) || 0;
+    return parseFloat(String(value)) || 0;
+  };
+
+  const getVerificationRate = (request: any): number =>
+    toPlainNumber(request?.verification?.calculated_rate) || toPlainNumber(request?.verification?.amount);
+
+  // UAE→PH quoted requests are paid before the invoice: no driver collection, invoice is settled on creation
+  const isPrepaidQuotedRequest = (request: any): boolean =>
+    Boolean(getInvoiceQuote(request)) && isUaeToPhService(getRequestServiceCode(request));
+
+  // Carries Finance's quoted rate and charges into the invoice dialog; every field stays editable
+  const applyQuotationDefaults = (request: any) => {
+    setPrepaidMode('');
+    setPrepaidReference('');
+    const quote = getInvoiceQuote(request);
+    if (!quote) {
+      setQuoteRatePerKg('');
+      return;
+    }
+    const rate = Number(quote.quotation_rate_per_kg) || getVerificationRate(request);
+    setQuoteRatePerKg(rate > 0 ? rate.toFixed(2) : '');
+
+    const pickup = Number(quote.quotation_pickup_charge) || 0;
+    const delivery = Number(quote.quotation_delivery_charge) || 0;
+    const insurance = Number(quote.quotation_insurance_charge) || 0;
+    if (pickup > 0) setPickupCharge(String(pickup));
+    if (isPhToUaeService(getRequestServiceCode(request))) {
+      // PH -> UAE delivery is base + 5 AED per extra box; the quoted delivery becomes the base
+      if (delivery > 0) {
+        setHasDelivery(true);
+        setDeliveryBaseAmount(String(delivery));
+      }
+    } else {
+      if (delivery > 0) setDeliveryCharge(String(delivery));
+      if (insurance > 0) {
+        setHasInsurance(true);
+        setInsuranceManualAmount(String(insurance));
+      }
     }
   };
 
@@ -1369,6 +1437,7 @@ export default function InvoiceRequestsPage() {
         // Reset special customer fields
         setIsSpecialCustomer(false);
         setSpecialRate('');
+        applyQuotationDefaults(request);
       } else {
         const apiError = 'error' in result ? result.error : undefined;
         // Fallback to cached request if API fails
@@ -1418,6 +1487,7 @@ export default function InvoiceRequestsPage() {
           // Reset special customer fields
           setIsSpecialCustomer(false);
           setSpecialRate('');
+          applyQuotationDefaults(request);
         } else {
           toast({
             variant: 'destructive',
@@ -1654,6 +1724,35 @@ export default function InvoiceRequestsPage() {
               Start Processing
             </Button>
           )}
+          {request.status === 'QUOTATION_REQUEST' && (() => {
+            const stage = request.quotation_request?.stage || 'PENDING_DETAILS';
+            if (stage === 'QUOTED') {
+              return (
+                <>
+                  <Badge variant="outline" className="border-green-500 text-green-700">
+                    Quoted {request.quotation_request?.quotation_number || ''} · waiting for Finance to send
+                  </Badge>
+                </>
+              );
+            }
+            if (stage === 'REQUESTED') {
+              return (
+                <>
+                  <Badge variant="outline" className="border-orange-500 text-orange-700">
+                    Awaiting Finance quotation
+                  </Badge>
+                  <Button size="sm" variant="outline" onClick={() => setSelectedRequestForQuotation(request)}>
+                    Edit Quotation Details
+                  </Button>
+                </>
+              );
+            }
+            return (
+              <Button size="sm" onClick={() => setSelectedRequestForQuotation(request)}>
+                Process Quotation
+              </Button>
+            );
+          })()}
           {request.status === 'VERIFIED' && (
             <Button
               size="sm"
@@ -1839,7 +1938,47 @@ export default function InvoiceRequestsPage() {
     // For PH TO UAE, total_kg is automatically read from verification.total_kg in database
     // No user input required - it's fetched from backend when dialog opens
 
+    // Quoted requests: the (possibly edited) quoted rate must be saved on the verification,
+    // because invoice creation recalculates shipping from verification.calculated_rate
+    const invoiceQuote = getInvoiceQuote(selectedRequestForInvoice);
+    let quotedRateOverride: number | undefined;
+    if (invoiceQuote && !isSpecialCustomer) {
+      const parsedQuoteRate = parseFloat(quoteRatePerKg);
+      if (!Number.isFinite(parsedQuoteRate) || parsedQuoteRate <= 0) {
+        toast({
+          variant: 'destructive',
+          title: 'Rate Required',
+          description: 'Enter a rate per kg greater than 0 for this quoted request.',
+        });
+        return;
+      }
+      quotedRateOverride = Math.round(parsedQuoteRate * 100) / 100;
+    }
+
+    const prepaid = isPrepaidQuotedRequest(selectedRequestForInvoice);
+    if (prepaid && !prepaidMode) {
+      toast({
+        variant: 'destructive',
+        title: 'Payment Mode Required',
+        description: 'Choose how the customer paid: Cash, Bank transfer, Card payment or Tabby.',
+      });
+      return;
+    }
+
     try {
+      if (quotedRateOverride !== undefined &&
+          Math.abs(quotedRateOverride - getVerificationRate(selectedRequestForInvoice)) > 0.001) {
+        const rateResult = await apiClient.updateInvoiceRate((selectedRequestForInvoice as any)._id, quotedRateOverride);
+        if (!rateResult.success) {
+          toast({
+            variant: 'destructive',
+            title: 'Rate Update Failed',
+            description: rateResult.error || 'Could not save the rate per kg. Invoice was not generated.',
+          });
+          return;
+        }
+      }
+
       const serviceCode = getRequestServiceCode(selectedRequestForInvoice);
       const isUaeToPh = isUaeToPhService(serviceCode);
       const taxRateForRequest = getAutoTaxRate(selectedRequestForInvoice);
@@ -1911,7 +2050,8 @@ export default function InvoiceRequestsPage() {
           hasDelivery: isPhToUaeSelected && !isDeliveryDisabled ? hasDelivery : false, // Only for PH TO UAE, disabled if weight >= 15kg
           deliveryBaseAmount: isPhToUaeSelected && !isDeliveryDisabled && hasDelivery ? parseFloat(deliveryBaseAmount) || 20 : undefined, // Base delivery amount for PH_TO_UAE
           customerTRN: customerTRN || undefined, // Pass customer TRN to invoice data
-          totalKg: isPhToUaeSelected && totalKgInput ? parseFloat(totalKgInput) : undefined // Pass user-entered total kg for PH TO UAE
+          totalKg: isPhToUaeSelected && totalKgInput ? parseFloat(totalKgInput) : undefined, // Pass user-entered total kg for PH TO UAE
+          ratePerKg: quotedRateOverride,
         }
       );
       
@@ -2312,7 +2452,10 @@ export default function InvoiceRequestsPage() {
             ? baseAmountWithDelivery 
             : ((invoiceData as any).totalAmountCod || 0), // Fallback to calculated value
           total_amount_tax_invoice: (invoiceData as any).totalAmountTaxInvoice || 0 // Tax Invoice total: Delivery + Tax
-        })
+        }),
+        ...(prepaid && {
+          prepaid_payment: { mode: prepaidMode, reference: prepaidReference.trim() || undefined },
+        }),
       });
       
       secureLog.debug('Invoice creation result', { success: invoiceResult.success });
@@ -2393,6 +2536,25 @@ export default function InvoiceRequestsPage() {
           return;
         }
         
+        const markShipmentDelivered = async () => {
+          try {
+            if (requestId) {
+              await apiClient.updateShipmentStatus(requestId, {
+              delivery_status: 'DELIVERED'
+            });
+            secureLog.success('Shipment status updated');
+            } else {
+              secureLog.warn('Skipping shipment status update: requestId is missing');
+            }
+          } catch (statusError) {
+            secureLog.error('Failed to update shipment status', statusError);
+          }
+        };
+
+        if (prepaid) {
+          // Customer already paid: no COD delivery assignment or collection entry for a driver
+          await markShipmentDelivered();
+        } else {
         const deliveryAssignmentData = {
           request_id: requestId,
           driver_id: '', // No driver assigned - anyone can collect payment
@@ -2434,18 +2596,7 @@ export default function InvoiceRequestsPage() {
           }
 
           // Update shipment status
-          try {
-            if (requestId) {
-              await apiClient.updateShipmentStatus(requestId, {
-              delivery_status: 'DELIVERED'
-            });
-            secureLog.success('Shipment status updated');
-            } else {
-              secureLog.warn('Skipping shipment status update: requestId is missing');
-            }
-          } catch (statusError) {
-            secureLog.error('Failed to update shipment status', statusError);
-          }
+          await markShipmentDelivered();
         } else {
           secureLog.error('Failed to create delivery assignment', assignmentResult?.error ?? assignmentResult);
           
@@ -2454,6 +2605,7 @@ export default function InvoiceRequestsPage() {
             title: 'Warning',
             description: `Invoice created but QR code generation failed: ${assignmentResult.error || 'Unknown error'}. You can generate QR code later.`,
           });
+        }
         }
 
         // Update invoice request status to completed (delivery status stays as is)
@@ -2465,12 +2617,20 @@ export default function InvoiceRequestsPage() {
           await updateBookingShipmentStatusHistory(selectedRequestForInvoice as any, 'COMPLETED');
           
           const gl = (invoiceResult as any).gl as { status?: string; journal_no?: string; error?: string } | undefined;
+          const paidResult = (invoiceResult as any).prepaid as { status?: string; journal_no?: string; error?: string } | undefined;
           toast({
             title: 'Success',
-            description: `Invoice created with QR code and request completed successfully${
+            description: `${prepaid ? 'Invoice created as paid' : 'Invoice created with QR code'} and request completed successfully${
               gl?.status === 'POSTED' && gl.journal_no ? ` · Finance JE ${gl.journal_no} posted` : ''
-            }`,
+            }${paidResult?.status === 'PAID' && paidResult.journal_no ? ` · Payment JE ${paidResult.journal_no}` : ''}`,
           });
+          if (paidResult?.status === 'FAILED') {
+            toast({
+              variant: 'destructive',
+              title: 'Payment not recorded',
+              description: `The invoice was saved, but the customer's payment was not recorded: ${paidResult.error || 'Unknown error'}. Record it from the invoice page.`,
+            });
+          }
           if (gl?.status === 'FAILED') {
             toast({
               variant: 'destructive',
@@ -2506,6 +2666,7 @@ export default function InvoiceRequestsPage() {
             setTotalKgInput(''); // Reset total kg input
             setIsSpecialCustomer(false);
             setSpecialRate('');
+            setQuoteRatePerKg('');
             fetchInvoiceRequests(currentPage, false); // Skip cache to get fresh data after invoice generation
           }
         }
@@ -2550,6 +2711,7 @@ export default function InvoiceRequestsPage() {
       deliveryBaseAmount?: number; // Base delivery amount for PH_TO_UAE (default 20)
       customerTRN?: string; // Customer TRN from invoice generation
       totalKg?: number; // User-entered total kilograms for PH TO UAE (overrides verification weight)
+      ratePerKg?: number; // Rate confirmed in the dialog (quoted requests); overrides verification rate
     } = {}
   ) => {
     secureLog.debug('Converting request to invoice data', { taxRateOverride, hasRequest: !!request, hasQrCodeData: !!qrCodeData, hasOptions: !!options });
@@ -2650,6 +2812,9 @@ export default function InvoiceRequestsPage() {
       rate = typeof baseRate === 'object' && baseRate.$numberDecimal ? 
         parseFloat(baseRate.$numberDecimal) : 
         parseFloat(baseRate.toString());
+    }
+    if (options.ratePerKg !== undefined && options.ratePerKg > 0) {
+      rate = options.ratePerKg;
     }
     
     const shippingCharge = weight * rate;
@@ -3205,6 +3370,7 @@ export default function InvoiceRequestsPage() {
                   <>
                     <SelectItem value="all">All Statuses</SelectItem>
                     <SelectItem value="SUBMITTED">SUBMITTED</SelectItem>
+                    <SelectItem value="QUOTATION_REQUEST">QUOTATION_REQUEST</SelectItem>
                     <SelectItem value="IN_PROGRESS">IN_PROGRESS</SelectItem>
                     <SelectItem value="VERIFIED">VERIFIED</SelectItem>
                     <SelectItem value="COMPLETED">COMPLETED</SelectItem>
@@ -3398,6 +3564,113 @@ export default function InvoiceRequestsPage() {
               </p>
             </div>
             <div className="overflow-y-auto flex-1 px-6 py-4">
+
+            {(() => {
+              const quote = getInvoiceQuote(selectedRequestForInvoice);
+              if (!quote) return null;
+              const money = (value: any) => `AED ${(Number(value) || 0).toFixed(2)}`;
+              const rate = parseFloat(quoteRatePerKg) || 0;
+              const weight = (isPhToUaeSelected && parseFloat(totalKgInput)) || requestWeight;
+              const shipping = Math.round(weight * rate * 100) / 100;
+              const quotedPickup = Number(quote.quotation_pickup_charge) || 0;
+              const quotedDelivery = Number(quote.quotation_delivery_charge) || 0;
+              const quotedInsurance = Number(quote.quotation_insurance_charge) || 0;
+              const pickupLocation = String(quote.quotation_pickup_location || '').replace(/_/g, ' ').toLowerCase();
+              return (
+                <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-sm font-semibold text-amber-900">
+                    Finance quotation {quote.quotation_number || ''}
+                  </p>
+                  <p className="text-xs text-amber-800 mb-3">
+                    {quote.quoted_by_name ? `Quoted by ${quote.quoted_by_name}` : 'Quoted'}
+                    {quote.quoted_at ? ` on ${new Date(quote.quoted_at).toLocaleString()}` : ''}.
+                    {' '}The rate and charges are pre-filled from the quote. Review and edit before generating.
+                  </p>
+
+                  <Label className="block text-sm font-medium text-gray-700 mb-1">
+                    Rate per kg (AED) *
+                  </Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={quoteRatePerKg}
+                    onChange={(e) => setQuoteRatePerKg(e.target.value)}
+                    disabled={isSpecialCustomer}
+                    className="w-full max-w-xs bg-white"
+                  />
+                  <p className="text-xs text-gray-600 mt-1">
+                    Shipping: {weight.toFixed(2)} kg × {rate.toFixed(2)} = <span className="font-semibold">{money(shipping)}</span>
+                    {Number(quote.quotation_shipping_amount) > 0 && (
+                      <> (quote: {money(quote.quotation_shipping_amount)} at {Number(quote.quotation_chargeable_weight || 0).toFixed(2)} kg)</>
+                    )}
+                  </p>
+                  {isSpecialCustomer && (
+                    <p className="text-xs text-amber-700 mt-1">The Special Customer rate below replaces this rate.</p>
+                  )}
+
+                  <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-700">
+                    <span>Quoted pickup{pickupLocation ? ` (${pickupLocation})` : ''}</span>
+                    <span className="text-right">{money(quotedPickup)}</span>
+                    <span>Quoted delivery</span>
+                    <span className="text-right">{money(quotedDelivery)}</span>
+                    <span>Quoted insurance</span>
+                    <span className="text-right">{money(quotedInsurance)}</span>
+                    <span className="font-semibold">Quote total</span>
+                    <span className="text-right font-semibold">{money(quote.quotation_total)}</span>
+                  </div>
+
+                  <div className="mt-2 space-y-1 text-xs text-amber-800">
+                    {quotedPickup > 0 && !showPickupChargeField && (
+                      <p>Quoted pickup is not applied: the booking&apos;s sender option is not &quot;pickup&quot;.</p>
+                    )}
+                    {quotedDelivery > 0 && !isPhToUaeSelected && !showDeliveryChargeField && (
+                      <p>Quoted delivery is not applied: the booking&apos;s receiver option is not &quot;delivery&quot;.</p>
+                    )}
+                    {quotedDelivery > 0 && isPhToUaeSelected && (
+                      <p>Quoted delivery is used as the base delivery amount (+5 AED per extra box on the tax invoice).</p>
+                    )}
+                    {quotedInsurance > 0 && isPhToUaeSelected && (
+                      <p>Insurance is not applied on PH → UAE invoices.</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {isPrepaidQuotedRequest(selectedRequestForInvoice) && (
+              <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3">
+                <p className="text-sm font-semibold text-emerald-900">Customer payment received *</p>
+                <p className="text-xs text-emerald-800 mb-2">
+                  UAE → PH quoted bookings are paid before the invoice. The invoice is created as paid and posts the
+                  quotation&apos;s draft journal; no driver collection is created.
+                </p>
+                <select
+                  value={prepaidMode}
+                  onChange={(e) => setPrepaidMode(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">Choose mode of payment</option>
+                  <option value="CASH">Cash</option>
+                  <option value="BANK_TRANSFER">Bank transfer</option>
+                  <option value="CARD">Card payment</option>
+                  <option value="TABBY">Tabby</option>
+                </select>
+                {(prepaidMode === 'CARD' || prepaidMode === 'TABBY') && (
+                  <p className="text-xs text-emerald-800 mt-1">
+                    The invoice total stays the same. {prepaidMode === 'CARD' ? '4%' : '10%'} of the amount before VAT is
+                    booked to Payment Gateway Revenue instead of the shipping, pickup and delivery accounts.
+                  </p>
+                )}
+                <Label className="block text-xs font-medium text-gray-700 mt-2 mb-1">Reference (optional)</Label>
+                <Input
+                  value={prepaidReference}
+                  onChange={(e) => setPrepaidReference(e.target.value)}
+                  placeholder="Receipt no., transfer ref, card slip…"
+                  className="w-full bg-white"
+                />
+              </div>
+            )}
 
             {/* Pickup Charge - Shown only if sender_delivery_option is "pickup" */}
             {showPickupChargeField && (
@@ -3655,6 +3928,7 @@ export default function InvoiceRequestsPage() {
                   setTotalKgInput(''); // Reset total kg input
                   setHasInsurance(false);
                   setInsuranceManualAmount('');
+                  setQuoteRatePerKg('');
                 }}
               >
                 Cancel
@@ -4246,6 +4520,19 @@ export default function InvoiceRequestsPage() {
         </div>
         );
       })()}
+
+      {/* Quotation request popup for Operations (QUOTATION_REQUEST step) */}
+      <QuotationRequestDialog
+        request={selectedRequestForQuotation}
+        open={!!selectedRequestForQuotation}
+        onOpenChange={(open) => {
+          if (!open) setSelectedRequestForQuotation(null);
+        }}
+        onSubmitted={() => {
+          apiClient.invalidateCache('/invoice-requests');
+          fetchInvoiceRequests(currentPage, false);
+        }}
+      />
 
       {/* Reverify Modal for Operations */}
       {selectedRequestForReverify && (

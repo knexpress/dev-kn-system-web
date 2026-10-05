@@ -2367,7 +2367,12 @@ class ApiClient {
     }, false);
   }
 
+  async getQuotation(id: string) {
+    return this.request(`/quotations/${encodeURIComponent(id)}`, {}, false);
+  }
+
   async updateQuotation(id: string, quotationData: any) {
+    this.invalidateCache('/invoice-requests');
     return this.request(`/quotations/${id}`, {
       method: 'PUT',
       body: JSON.stringify(quotationData),
@@ -2375,7 +2380,57 @@ class ApiClient {
   }
 
   async deleteQuotation(id: string) {
+    this.invalidateCache('/invoice-requests');
     return this.request(`/quotations/${id}`, { method: 'DELETE' }, false);
+  }
+
+  // Quotation request step (Operations → Finance), between SUBMITTED and IN_PROGRESS
+  async updateInvoiceRate(invoiceRequestId: string, ratePerKg: number) {
+    this.invalidateCache('/invoice-requests');
+    return this.request(`/invoice-requests/${encodeURIComponent(invoiceRequestId)}/invoice-rate`, {
+      method: 'PUT',
+      body: JSON.stringify({ rate_per_kg: ratePerKg }),
+    }, false);
+  }
+
+  async startQuotationRequest(invoiceRequestId: string) {
+    this.invalidateCache('/invoice-requests');
+    return this.request(`/invoice-requests/${encodeURIComponent(invoiceRequestId)}/quotation-request/start`, {
+      method: 'PUT',
+    }, false);
+  }
+
+  async submitQuotationRequest(
+    invoiceRequestId: string,
+    payload: {
+      actual_weight: number;
+      volumetric_weight: number;
+      number_of_boxes: number;
+      items: { box_number: string; name: string; quantity: number }[];
+      notes?: string;
+    }
+  ) {
+    this.invalidateCache('/invoice-requests');
+    return this.request(`/invoice-requests/${encodeURIComponent(invoiceRequestId)}/quotation-request`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }, false);
+  }
+
+  async getQuotationRequests(params?: { stage?: string; summary?: boolean }) {
+    const query = new URLSearchParams();
+    if (params?.stage) query.set('stage', params.stage);
+    if (params?.summary) query.set('summary', '1');
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return this.request(`/quotations/requests${suffix}`, {}, false, 0);
+  }
+
+  async generateQuotationFromRequest(invoiceRequestId: string, quotationData: any) {
+    this.invalidateCache('/invoice-requests');
+    return this.request(`/quotations/from-request/${encodeURIComponent(invoiceRequestId)}`, {
+      method: 'POST',
+      body: JSON.stringify(quotationData),
+    }, false);
   }
 
   // Price Brackets Management

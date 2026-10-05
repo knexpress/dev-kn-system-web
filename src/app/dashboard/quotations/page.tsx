@@ -21,9 +21,20 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
 import { apiClient } from '@/lib/api-client';
-import { Download, Pencil, PlusCircle, Printer, Trash2 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { ArrowRight, BellRing, ChevronDown, ChevronUp, Download, FileSignature, Pencil, PlusCircle, Printer, Send, Trash2 } from 'lucide-react';
 
 type RouteCode = 'PH_TO_UAE' | 'UAE_TO_PH';
 
@@ -60,6 +71,8 @@ type SavedQuotation = {
   total_amount?: number;
   currency?: string;
   notes?: string;
+  invoice_request_id?: string;
+  awb?: string;
   createdAt?: string;
 };
 
@@ -70,6 +83,79 @@ const ROUTE_LABELS: Record<RouteCode, string> = {
 
 function money(value: number) {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+const HIDDEN_BOOKING_KEYS = new Set([
+  '_id', '__v', 'identityDocuments', 'customerImage', 'customerImages', 'images', 'otp', 'otpVerification',
+]);
+
+function bookingOf(request: any) {
+  return request?.booking_snapshot || request?.booking_data || {};
+}
+
+function displayValue(value: any): string {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'object' && value.$numberDecimal) return String(value.$numberDecimal);
+  if (typeof value === 'object') return '';
+  const text = String(value);
+  if (text.startsWith('data:') || text.length > 300) return '';
+  return text;
+}
+
+function labelFor(key: string) {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/^./, (c) => c.toUpperCase());
+}
+
+function flatEntries(obj: any): [string, string][] {
+  if (!obj || typeof obj !== 'object') return [];
+  return Object.entries(obj)
+    .filter(([key]) => !HIDDEN_BOOKING_KEYS.has(key))
+    .map(([key, value]) => [labelFor(key), displayValue(value)] as [string, string])
+    .filter(([, value]) => value);
+}
+
+function personName(person: any) {
+  if (!person) return '';
+  return (
+    person.fullName ||
+    person.name ||
+    [person.firstName, person.lastName].filter(Boolean).join(' ')
+  );
+}
+
+function senderOf(request: any) {
+  const sender = bookingOf(request).sender || {};
+  return {
+    name: personName(sender) || request.customer_name || '',
+    phone: sender.contactNo || sender.phone || sender.phoneNumber || request.customer_phone || '',
+    address: sender.completeAddress || sender.addressLine1 || sender.address || request.origin_place || '',
+  };
+}
+
+function receiverOf(request: any) {
+  const receiver = bookingOf(request).receiver || {};
+  return {
+    name: request.receiver_name || personName(receiver) || '',
+    phone: request.receiver_phone || receiver.contactNo || receiver.phone || receiver.phoneNumber || '',
+    address: request.receiver_address || receiver.completeAddress || receiver.addressLine1 || receiver.address || request.destination_place || '',
+  };
+}
+
+function routeOf(request: any): RouteCode | '' {
+  const code = `${request.service_code || ''} ${bookingOf(request).service || ''}`.toUpperCase().replace(/-/g, '_');
+  if (code.includes('PH_TO_UAE') || code.includes('PH_TO_PINAS')) return 'PH_TO_UAE';
+  if (code.includes('UAE_TO_PH') || code.includes('UAE_TO_PINAS')) return 'UAE_TO_PH';
+  return '';
+}
+
+function canGenerateQuotation(userProfile: any) {
+  const role = String(userProfile?.role || '').toUpperCase();
+  const dept = userProfile?.department?.name;
+  return role === 'SUPERADMIN' || role === 'ADMIN' || dept === 'Finance' || dept === 'IT';
 }
 
 export default function QuotationsPage() {
@@ -101,6 +187,33 @@ export default function QuotationsPage() {
   const [senderQuery, setSenderQuery] = useState('');
   const [receiverQuery, setReceiverQuery] = useState('');
   const [routeQuery, setRouteQuery] = useState<'ALL' | RouteCode>('ALL');
+  const { userProfile } = useAuth();
+  const canQuote = canGenerateQuotation(userProfile);
+  const [quoteRequests, setQuoteRequests] = useState<any[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(true);
+  const [linkedRequest, setLinkedRequest] = useState<any | null>(null);
+  const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null);
+  const [movingRequestId, setMovingRequestId] = useState<string | null>(null);
+  const [sendTarget, setSendTarget] = useState<any | null>(null);
+
+  const loadQuoteRequests = useCallback(async () => {
+    const result = await apiClient.getQuotationRequests({ stage: 'REQUESTED,QUOTED' });
+    if (result.success && Array.isArray(result.data)) {
+      setQuoteRequests(result.data as any[]);
+    }
+    setRequestsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    loadQuoteRequests();
+    const timer = window.setInterval(loadQuoteRequests, 15000);
+    const onUpdated = () => loadQuoteRequests();
+    window.addEventListener('quotation-requests:updated', onUpdated);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('quotation-requests:updated', onUpdated);
+    };
+  }, [loadQuoteRequests]);
 
   const loadQuotations = useCallback(async () => {
     setLoading(true);
@@ -157,9 +270,93 @@ export default function QuotationsPage() {
     setInsuranceCharge('');
     setItems([{ id: '1', boxNumber: '1', name: '', quantity: 1 }]);
     setEditingId(null);
+    setLinkedRequest(null);
+  };
+
+  const startFromRequest = (request: any) => {
+    resetForm();
+    const sender = senderOf(request);
+    const receiver = receiverOf(request);
+    const qr = request.quotation_request || {};
+    setSenderName(sender.name);
+    setSenderPhone(sender.phone);
+    setSenderAddress(sender.address);
+    setCustomerName(receiver.name);
+    setCustomerPhone(receiver.phone);
+    setCustomerAddress(receiver.address);
+    setRoute(routeOf(request));
+    setActualWeight(qr.actual_weight ? String(qr.actual_weight) : '');
+    setVolumetricWeight(qr.volumetric_weight ? String(qr.volumetric_weight) : '');
+    setItems(
+      Array.isArray(qr.items) && qr.items.length
+        ? qr.items.map((item: any, index: number) => ({
+            id: `${request._id}-${index}`,
+            boxNumber: item.box_number || String(index + 1),
+            name: item.name || '',
+            quantity: Number(item.quantity) || 1,
+          }))
+        : [{ id: '1', boxNumber: '1', name: '', quantity: 1 }]
+    );
+    setNotes(qr.notes || '');
+    setLinkedRequest(request);
+    setShowForm(true);
+    window.setTimeout(() => document.getElementById('quotation-form')?.scrollIntoView({ behavior: 'smooth' }), 50);
+  };
+
+  // Same calls Operations used for the IN_PROGRESS move (status endpoint incl. EMPOST sync,
+  // then booking shipment history), so that flow is unchanged
+  const moveRequestToInProgress = async (request: any) => {
+    setMovingRequestId(request._id);
+    const result = await apiClient.updateInvoiceRequestStatus(request._id, { status: 'IN_PROGRESS' });
+    const bookingId = typeof request.booking_id === 'object' ? request.booking_id?._id : request.booking_id;
+    if (result.success && bookingId) {
+      await apiClient.updateBookingShipmentStatusHistory(String(bookingId), 'Shipment Processing');
+    }
+    setMovingRequestId(null);
+    apiClient.invalidateCache('/invoice-requests');
+    loadQuoteRequests();
+    return result;
+  };
+
+  const findLinkedQuote = async (request: any): Promise<SavedQuotation | null> => {
+    const quotationId = request.quotation_request?.quotation_id;
+    if (!quotationId) return null;
+    const loaded = quotations.find((quote) => quote._id === String(quotationId));
+    if (loaded) return loaded;
+    const result = await apiClient.getQuotation(String(quotationId));
+    if (result.success && result.data) return result.data as SavedQuotation;
+    toast({ variant: 'destructive', title: 'Quotation not found', description: result.error || 'Could not load the linked quotation.' });
+    return null;
+  };
+
+  const sendToOperations = async (request: any) => {
+    const awb = request.tracking_code || request.awb_number || request._id;
+    setSendTarget(null);
+    const result = await moveRequestToInProgress(request);
+    if (!result.success) {
+      toast({ variant: 'destructive', title: 'Could not update', description: 'Failed to move the request to IN_PROGRESS.' });
+      return;
+    }
+    const draft = (result.data as any)?.draft_journal as { status?: string; journal_no?: string; error?: string; reason?: string } | undefined;
+    toast({
+      title: 'Sent to Operations',
+      description: `AWB ${awb} is now IN_PROGRESS.${
+        draft?.status === 'DRAFT' && draft.journal_no
+          ? ` Draft journal ${draft.journal_no} raised — it posts when the invoice is generated.`
+          : ''
+      }`,
+    });
+    if (draft?.status === 'FAILED') {
+      toast({
+        variant: 'destructive',
+        title: 'Draft journal not created',
+        description: draft.error || 'The quotation journal could not be drafted. The invoice will still post its own journal.',
+      });
+    }
   };
 
   const startEdit = (quote: SavedQuotation) => {
+    setLinkedRequest(null);
     setEditingId(quote._id);
     setSenderName(quote.sender_name || '');
     setSenderPhone(quote.sender_phone || '');
@@ -234,6 +431,29 @@ export default function QuotationsPage() {
       notes: notes.trim(),
     };
 
+    if (linkedRequest && !editingId) {
+      setSubmitting(true);
+      const result = await apiClient.generateQuotationFromRequest(linkedRequest._id, payload);
+      if (!result.success) {
+        setSubmitting(false);
+        toast({ variant: 'destructive', title: 'Could not generate', description: result.error || 'Failed to generate quotation' });
+        loadQuoteRequests();
+        return;
+      }
+      const createdQuote = (result.data as any)?.quotation as SavedQuotation | undefined;
+      setSubmitting(false);
+      toast({
+        title: 'Quotation created',
+        description: `${createdQuote?.quotation_number || 'Quotation'} is ready. Download it for the customer, edit if needed, then use "Send to Operations".`,
+      });
+      setShowForm(false);
+      resetForm();
+      loadQuotations();
+      loadQuoteRequests();
+      if (createdQuote) setPrintTarget(createdQuote);
+      return;
+    }
+
     setSubmitting(true);
     const result = editingId
       ? await apiClient.updateQuotation(editingId, payload)
@@ -241,13 +461,18 @@ export default function QuotationsPage() {
     setSubmitting(false);
 
     if (result.success) {
+      const linkedUpdated = Boolean((result as any).linked_request_updated ?? (result.data as any)?.linked_request_updated);
+      const savedQuote = result.data as SavedQuotation | undefined;
       toast({
         title: editingId ? 'Quotation updated' : 'Quotation saved',
-        description: 'Saved for the client on this page only.',
+        description: savedQuote?.awb
+          ? `Prices for AWB ${savedQuote.awb} were updated${linkedUpdated ? '' : ' on the quotation only (the request is already invoiced)'}.`
+          : 'Saved for the client on this page only.',
       });
       setShowForm(false);
       resetForm();
       loadQuotations();
+      if (savedQuote?.invoice_request_id) loadQuoteRequests();
     } else {
       toast({ variant: 'destructive', title: 'Could not save', description: result.error || 'Failed to create quotation' });
     }
@@ -301,7 +526,7 @@ export default function QuotationsPage() {
         <div>
           <h1 className="text-2xl font-semibold">Quotations</h1>
           <p className="text-sm text-muted-foreground">
-            Client quotations only. They stay on this page and are not used anywhere else.
+            Client quotations, and quotation requests sent by Operations before processing.
           </p>
         </div>
         <Button onClick={() => { resetForm(); setShowForm(true); }}>
@@ -310,10 +535,185 @@ export default function QuotationsPage() {
         </Button>
       </div>
 
+      <Card className={quoteRequests.some((r) => r.quotation_request?.stage === 'REQUESTED') ? 'border-orange-400' : undefined}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BellRing className="h-5 w-5 text-orange-500" />
+            Quotation requests from Operations
+            {quoteRequests.length > 0 && (
+              <Badge className="bg-orange-500 text-white">{quoteRequests.length}</Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {requestsLoading ? (
+            <p className="text-sm text-muted-foreground">Loading requests...</p>
+          ) : quoteRequests.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No quotation requests waiting.</p>
+          ) : (
+            quoteRequests.map((request) => {
+              const qr = request.quotation_request || {};
+              const sender = senderOf(request);
+              const receiver = receiverOf(request);
+              const booking = bookingOf(request);
+              const awb = request.tracking_code || request.awb_number || request.invoice_number || '—';
+              const expanded = expandedRequestId === request._id;
+              const quoted = qr.stage === 'QUOTED';
+              const bookingItems: any[] = Array.isArray(booking.items) ? booking.items : [];
+              const otherEntries = flatEntries(booking).filter(([label]) => !['Sender', 'Receiver', 'Items', 'Boxes'].includes(label));
+
+              return (
+                <div key={request._id} className="rounded-xl border p-4 space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono font-semibold">{awb}</span>
+                        <Badge variant="outline">{ROUTE_LABELS[routeOf(request) as RouteCode] || request.service_code || 'Route not set'}</Badge>
+                        {quoted ? (
+                          <Badge className="bg-green-600 text-white">
+                            Quoted {qr.quotation_number} · AED {money(Number(qr.quotation_total || 0))} · not sent yet
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-orange-500 text-white">Awaiting quotation</Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Requested by {qr.requested_by_name || 'Operations'}
+                        {qr.requested_at ? ` · ${new Date(qr.requested_at).toLocaleString()}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setExpandedRequestId(expanded ? null : request._id)}>
+                        {expanded ? <ChevronUp className="mr-2 h-4 w-4" /> : <ChevronDown className="mr-2 h-4 w-4" />}
+                        Booking form
+                      </Button>
+                      {canQuote && !quoted && (
+                        <Button size="sm" onClick={() => startFromRequest(request)}>
+                          <FileSignature className="mr-2 h-4 w-4" />
+                          Generate Quotation
+                        </Button>
+                      )}
+                      {canQuote && quoted && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={downloadingPdf}
+                            onClick={async () => {
+                              const quote = await findLinkedQuote(request);
+                              if (quote) setPrintTarget(quote);
+                            }}
+                          >
+                            <Download className="mr-2 h-4 w-4" />
+                            Download / Print
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={async () => {
+                              const quote = await findLinkedQuote(request);
+                              if (!quote) return;
+                              startEdit(quote);
+                              window.setTimeout(() => document.getElementById('quotation-form')?.scrollIntoView({ behavior: 'smooth' }), 50);
+                            }}
+                          >
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Edit Quotation
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={movingRequestId === request._id}
+                            onClick={() => setSendTarget(request)}
+                          >
+                            <Send className="mr-2 h-4 w-4" />
+                            {movingRequestId === request._id ? 'Sending...' : 'Send to Operations'}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 text-sm md:grid-cols-4">
+                    <div>
+                      <p className="text-xs uppercase text-muted-foreground">Sender</p>
+                      <p className="font-medium">{sender.name || '—'}</p>
+                      <p className="text-muted-foreground">{sender.phone}</p>
+                      <p className="text-muted-foreground whitespace-pre-wrap">{sender.address}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase text-muted-foreground">Receiver</p>
+                      <p className="font-medium">{receiver.name || '—'}</p>
+                      <p className="text-muted-foreground">{receiver.phone}</p>
+                      <p className="text-muted-foreground whitespace-pre-wrap">{receiver.address}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase text-muted-foreground">Weights</p>
+                      <p>Actual: <span className="font-medium">{qr.actual_weight ?? '—'} kg</span></p>
+                      <p>Volumetric: <span className="font-medium">{qr.volumetric_weight ?? '—'} kg</span></p>
+                      <p>Boxes: <span className="font-medium">{qr.number_of_boxes ?? '—'}</span></p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase text-muted-foreground">Items</p>
+                      {(qr.items || []).map((item: any, index: number) => (
+                        <p key={index}>
+                          Box {item.box_number || index + 1}: <span className="font-medium">{item.name}</span> × {item.quantity}
+                        </p>
+                      ))}
+                      {qr.notes ? <p className="mt-1 text-xs text-muted-foreground">Note: {qr.notes}</p> : null}
+                    </div>
+                  </div>
+
+                  {expanded && (
+                    <div className="grid gap-4 rounded-lg bg-muted/40 p-3 text-sm md:grid-cols-3">
+                      {[
+                        { title: 'Sender (booking form)', entries: flatEntries(booking.sender) },
+                        { title: 'Receiver (booking form)', entries: flatEntries(booking.receiver) },
+                        { title: 'Shipment', entries: otherEntries },
+                      ].map((section) => (
+                        <div key={section.title}>
+                          <p className="mb-1 font-semibold">{section.title}</p>
+                          {section.entries.length ? (
+                            section.entries.map(([label, value]) => (
+                              <p key={label}>
+                                <span className="text-muted-foreground">{label}:</span> {value}
+                              </p>
+                            ))
+                          ) : (
+                            <p className="text-muted-foreground">No details</p>
+                          )}
+                        </div>
+                      ))}
+                      <div className="md:col-span-3">
+                        <p className="mb-1 font-semibold">Items (booking form)</p>
+                        {bookingItems.length ? (
+                          bookingItems.map((item, index) => (
+                            <p key={index}>
+                              {index + 1}. {item.commodity || item.name || item.description || 'Item'} × {item.qty ?? item.quantity ?? 1}
+                            </p>
+                          ))
+                        ) : (
+                          <p className="text-muted-foreground">No items on the booking form</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </CardContent>
+      </Card>
+
       {showForm && (
-        <Card>
+        <Card id="quotation-form">
           <CardHeader>
-            <CardTitle>{editingId ? 'Edit quotation' : 'New manual quotation'}</CardTitle>
+            <CardTitle>
+              {editingId
+                ? 'Edit quotation'
+                : linkedRequest
+                  ? `Quotation for AWB ${linkedRequest.tracking_code || linkedRequest.awb_number || linkedRequest._id}`
+                  : 'New manual quotation'}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -501,7 +901,13 @@ export default function QuotationsPage() {
                   Cancel
                 </Button>
                 <Button type="submit" disabled={submitting}>
-                  {submitting ? 'Saving...' : editingId ? 'Save changes' : 'Save quotation'}
+                  {submitting
+                    ? 'Saving...'
+                    : editingId
+                      ? 'Save changes'
+                      : linkedRequest
+                        ? 'Generate quotation'
+                        : 'Save quotation'}
                 </Button>
               </div>
             </form>
@@ -563,7 +969,10 @@ export default function QuotationsPage() {
               <TableBody>
                 {filteredQuotations.map((quote) => (
                   <TableRow key={quote._id}>
-                    <TableCell className="font-medium">{quote.quotation_number}</TableCell>
+                    <TableCell className="font-medium">
+                      <div>{quote.quotation_number}</div>
+                      {quote.awb ? <div className="text-xs font-normal text-muted-foreground">AWB {quote.awb}</div> : null}
+                    </TableCell>
                     <TableCell>
                       <div>{quote.sender_name || '—'}</div>
                       <div className="text-xs text-muted-foreground">{quote.sender_phone}</div>
@@ -758,13 +1167,7 @@ export default function QuotationsPage() {
             <table className="text-[11px]" style={{ border: 'none', borderTop: '1px solid #d1d5db' }}>
               <tbody>
                 <tr>
-                  <td style={{ width: '46%', border: 'none', padding: '8px 12px 0 0' }}>
-                    <p className="font-semibold">PH BANK DETAILS</p>
-                    <p>BANCO DE ORO (BDO UNIBANK)</p>
-                    <p>KNEXPRESS DELIVERY SERVICES</p>
-                    <p>004718016361</p>
-                  </td>
-                  <td style={{ width: '54%', border: 'none', padding: '8px 0 0 0', textAlign: 'right' }}>
+                  <td style={{ width: '100%', border: 'none', padding: '8px 0 0 0', textAlign: 'right' }}>
                     <p className="font-semibold">UAE BANK DETAILS</p>
                     <p>RAK BANK (National Bank of Ras Al Khaimah)</p>
                     <p>KNEX DELIVERY SERVICES LLC</p>
@@ -779,6 +1182,69 @@ export default function QuotationsPage() {
           </div>
         </div>
       )}
+
+      <AlertDialog open={Boolean(sendTarget)} onOpenChange={(open) => !open && setSendTarget(null)}>
+        <AlertDialogContent className="max-w-md">
+          {sendTarget && (() => {
+            const qr = sendTarget.quotation_request || {};
+            const awb = sendTarget.tracking_code || sendTarget.awb_number || sendTarget._id;
+            const route = routeOf(sendTarget);
+            const sender = senderOf(sendTarget);
+            const receiver = receiverOf(sendTarget);
+            return (
+              <>
+                <AlertDialogHeader>
+                  <div className="mb-1 flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <Send className="h-5 w-5" />
+                  </div>
+                  <AlertDialogTitle>Send to Operations?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Operations will pick this shipment up for processing with the quoted prices.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+
+                <div className="rounded-lg border bg-muted/40 p-4 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-mono font-semibold">{awb}</span>
+                    <Badge variant="outline">{route ? ROUTE_LABELS[route] : sendTarget.service_code || 'Route not set'}</Badge>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                    <span className="text-muted-foreground">Quotation</span>
+                    <span className="text-right font-medium">{qr.quotation_number || '—'}</span>
+                    <span className="text-muted-foreground">Sender</span>
+                    <span className="truncate text-right">{sender.name || '—'}</span>
+                    <span className="text-muted-foreground">Receiver</span>
+                    <span className="truncate text-right">{receiver.name || '—'}</span>
+                    <span className="text-muted-foreground">Quoted total</span>
+                    <span className="text-right text-base font-semibold">AED {money(Number(qr.quotation_total || 0))}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-center gap-2 text-xs font-medium">
+                  <Badge variant="secondary">QUOTATION REQUEST</Badge>
+                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                  <Badge className="bg-blue-600 text-white hover:bg-blue-600">IN PROGRESS</Badge>
+                </div>
+
+                {route === 'UAE_TO_PH' && (
+                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+                    A draft journal entry is raised from this quotation. It posts when the invoice is generated and the
+                    customer&apos;s payment is recorded.
+                  </p>
+                )}
+
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <Button onClick={() => sendToOperations(sendTarget)} disabled={movingRequestId === sendTarget._id}>
+                    <Send className="mr-2 h-4 w-4" />
+                    Send to Operations
+                  </Button>
+                </AlertDialogFooter>
+              </>
+            );
+          })()}
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

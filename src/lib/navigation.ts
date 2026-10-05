@@ -139,6 +139,7 @@ const ACTIVITY_KEYS: Record<string, string> = {
   '/dashboard/collections': 'collections',
   '/dashboard/jobs': 'jobs',
   '/dashboard/reports/audit': 'reports',
+  '/dashboard/quotations': 'quotation_requests',
 };
 
 export const activityKeyForHref = (href: string): string | undefined => ACTIVITY_KEYS[href];

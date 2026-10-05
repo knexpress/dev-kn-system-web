@@ -442,18 +442,31 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     return declaredValue ? declaredValue.toString() : '';
   };
 
+  // Ops-entered quotation measurements win over booking/previous values on first verification
+  // (reverify keeps the already-verified values so edits are not lost)
+  const getQuoteMeasurements = (req: any) => {
+    const qr = req?.quotation_request;
+    if (isReverifyMode || !qr || !(Number(qr.actual_weight) > 0)) return null;
+    return {
+      actual_weight: String(qr.actual_weight),
+      volumetric_weight: Number(qr.volumetric_weight) > 0 ? String(qr.volumetric_weight) : '',
+      number_of_boxes: Number(qr.number_of_boxes) > 0 ? Number(qr.number_of_boxes) : '',
+    };
+  };
+
   // Update verificationData when fullRequestData is loaded
   useEffect(() => {
     if (!fullRequestData) return;
     const req = fullRequestData;
+    const quote = getQuoteMeasurements(req.quotation_request ? req : request);
     setVerificationData(prev => ({
       ...prev,
       invoice_number: req.invoice_number || req.verification?.invoice_number || prev.invoice_number,
       tracking_code: req.tracking_code || req.verification?.tracking_code || prev.tracking_code,
       service_code: initialServiceCode || prev.service_code,
       amount: req.amount?.toString() || req.verification?.amount?.toString() || prev.amount,
-      actual_weight: req.weight?.toString() || req.verification?.actual_weight?.toString() || prev.actual_weight,
-      volumetric_weight: req.verification?.volumetric_weight?.toString() || prev.volumetric_weight,
+      actual_weight: quote?.actual_weight || req.weight?.toString() || req.verification?.actual_weight?.toString() || prev.actual_weight,
+      volumetric_weight: quote?.volumetric_weight || req.verification?.volumetric_weight?.toString() || prev.volumetric_weight,
       volume_cbm: req.volume_cbm?.toString() || req.verification?.volume_cbm?.toString() || prev.volume_cbm,
       receiver_address: req.receiver_address || req.verification?.receiver_address || prev.receiver_address,
       receiver_phone: req.receiver_phone || req.verification?.receiver_phone || prev.receiver_phone,
@@ -463,7 +476,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
       cargo_service: req.verification?.cargo_service || prev.cargo_service,
       sender_details_complete: req.verification?.sender_details_complete ?? prev.sender_details_complete,
       receiver_details_complete: req.verification?.receiver_details_complete ?? prev.receiver_details_complete,
-      number_of_boxes: req.verification?.number_of_boxes || prev.number_of_boxes,
+      number_of_boxes: quote?.number_of_boxes || req.verification?.number_of_boxes || prev.number_of_boxes,
       total_kg: req.verification?.total_kg?.toString() || prev.total_kg,
       verification_notes: req.verification?.verification_notes || prev.verification_notes,
       declared_value: req.verification?.declared_value?.toString() || getDeclaredValue() || prev.declared_value,
@@ -473,13 +486,14 @@ export default function VerificationForm({ request, onVerificationComplete, curr
 
   const [verificationData, setVerificationData] = useState(() => {
     const req = request;
+    const quote = getQuoteMeasurements(req);
     return {
       invoice_number: req.invoice_number || req.verification?.invoice_number || '',
       tracking_code: req.tracking_code || req.verification?.tracking_code || '',
     service_code: initialServiceCode,
       amount: req.amount?.toString() || req.verification?.amount?.toString() || '',
-      actual_weight: req.weight?.toString() || req.verification?.actual_weight?.toString() || '',
-      volumetric_weight: req.verification?.volumetric_weight?.toString() || '',
+      actual_weight: quote?.actual_weight || req.weight?.toString() || req.verification?.actual_weight?.toString() || '',
+      volumetric_weight: quote?.volumetric_weight || req.verification?.volumetric_weight?.toString() || '',
       volume_cbm: req.volume_cbm?.toString() || req.verification?.volume_cbm?.toString() || '',
       receiver_address: req.receiver_address || req.verification?.receiver_address || '',
       receiver_phone: req.receiver_phone || req.verification?.receiver_phone || '',
@@ -489,7 +503,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
       cargo_service: req.verification?.cargo_service || '',
       sender_details_complete: req.verification?.sender_details_complete || false,
       receiver_details_complete: req.verification?.receiver_details_complete || false,
-      number_of_boxes: req.verification?.number_of_boxes || '',
+      number_of_boxes: quote?.number_of_boxes || req.verification?.number_of_boxes || '',
       total_kg: req.verification?.total_kg?.toString() || '',
       verification_notes: req.verification?.verification_notes || '',
       declared_value: req.verification?.declared_value?.toString() || getDeclaredValue() || '',
@@ -625,7 +639,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
 
   // Auto-calculate amount per kg based on total_kg (user input) and route
   // CRITICAL: Weight bracket is determined by total_kg, not chargeable weight
-  const { calculatedRate, rateBracket } = useMemo(() => {
+  const { calculatedRate: bracketRate, rateBracket } = useMemo(() => {
     // Use the route from the useMemo above
     const currentRoute = route;
     
@@ -666,6 +680,20 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     });
     return { calculatedRate: 0, rateBracket: null };
   }, [verificationData.total_kg, chargeableWeight, route]);
+
+  // Finance's quoted rate (from the Quotation request step) replaces the bracket rate
+  const quotationRequest = (fullRequestData?.quotation_request || request?.quotation_request) as any;
+  const quotedRate = quotationRequest?.stage === 'QUOTED' && Number(quotationRequest?.quotation_rate_per_kg) > 0
+    ? Number(quotationRequest.quotation_rate_per_kg)
+    : 0;
+  const calculatedRate = quotedRate > 0 ? quotedRate : bracketRate;
+
+  const quoteItems: Array<{ box_number?: string; name: string; quantity: number }> = Array.isArray(quotationRequest?.items)
+    ? quotationRequest.items.filter((it: any) => it?.name)
+    : [];
+  const quotedBoxes = Number(quotationRequest?.number_of_boxes) || 0;
+  const enteredBoxes = parseInt(String(verificationData.number_of_boxes || '0'), 10) || 0;
+  const boxesMismatch = quotedBoxes > 0 && enteredBoxes > 0 && enteredBoxes !== quotedBoxes;
   
   // Compute the input value directly from calculatedRate or fallback to verificationData
   // This ensures the input always displays the correct value
@@ -695,6 +723,36 @@ export default function VerificationForm({ request, onVerificationComplete, curr
       secureLog.warn('Weight and route exist but rate is 0', { chargeableWeight, route: route?.substring(0, 20), serviceCode: (verificationData.service_code || request.service_code)?.substring(0, 30) });
     }
   }, [calculatedRate, rateBracket]);
+
+  // Same "Name (Qty: n)" format booking approval uses for listed_commodities
+  const formatQuoteItem = (item: { name: string; quantity: number }) => `${item.name} (Qty: ${item.quantity || 1})`;
+
+  // Group the quotation items into boxes 1..N (by box_number order); overflow goes into the last box
+  const buildBoxesFromQuote = (numberOfBoxes: number, dims: { length: number; width: number; height: number }, classification: string) => {
+    const groups: Array<typeof quoteItems> = [];
+    const indexByLabel = new Map<string, number>();
+    quoteItems.forEach((item) => {
+      const label = String(item.box_number || '').trim() || '1';
+      if (!indexByLabel.has(label)) {
+        indexByLabel.set(label, groups.length);
+        groups.push([]);
+      }
+      groups[indexByLabel.get(label)!].push(item);
+    });
+    const boxes: any[] = [];
+    for (let i = 0; i < numberOfBoxes; i++) {
+      const boxItems = i === numberOfBoxes - 1 ? groups.slice(i).flat() : (groups[i] || []);
+      boxes.push({
+        items: boxItems.map(formatQuoteItem).join(', '),
+        quantity: boxItems.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0) || 1,
+        length: dims.length,
+        width: dims.width,
+        height: dims.height,
+        classification,
+      });
+    }
+    return boxes;
+  };
 
   // Update weight_type automatically when values change
   useEffect(() => {
@@ -839,23 +897,33 @@ export default function VerificationForm({ request, onVerificationComplete, curr
         }
       }
 
+      const boxes = quoteItems.length > 0
+        ? buildBoxesFromQuote(
+            numberOfBoxes,
+            calculateEstimatedDimensions(chargeableWeight > 0 ? chargeableWeight / numberOfBoxes : 0),
+            verificationData.shipment_classification || 'GENERAL'
+          )
+        : estimatedBoxes;
+
       // Prepare update data
       const updateData: any = {
         ...verificationData,
         shipment_classification: verificationData.shipment_classification, // Use selected classification
         amount: finalAmount, // Use auto-calculated amount
-        boxes: estimatedBoxes, // Estimated dimensions based on chargeable weight
+        boxes, // Estimated dimensions based on chargeable weight
         total_vm: volumetricWeight, // Use volumetric weight input
         actual_weight: actualWeight,
         volumetric_weight: volumetricWeight,
         chargeable_weight: chargeableWeight,
         weight_type: determinedWeightType, // Auto-determined weight type
-        rate_bracket: rateBracket?.label || '', // Store the bracket label
+        rate_bracket: quotedRate > 0
+          ? `QUOTATION ${quotationRequest?.quotation_number || ''}`.trim()
+          : (rateBracket?.label || ''), // Store the bracket label
         calculated_rate: calculatedRate, // Store the calculated rate
         number_of_boxes: numberOfBoxes,
         total_kg: parseFloat(verificationData.total_kg) || 0, // Manual total kilograms input
         weight: chargeableWeight, // Store the chargeable weight (higher of actual or volumetric)
-        listed_commodities: '', // Empty for now since boxes are disregarded
+        listed_commodities: quoteItems.map(formatQuoteItem).join(', '),
       };
 
       // Add insurance fields for UAE_TO_PH/PINAS + insured = true in database (any classification)
@@ -1073,7 +1141,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                         <span className="font-semibold">PH to UAE</span>
                         {chargeableWeight > 0 && route === 'PH_TO_UAE' && rateBracket && (
                           <span className="text-xs text-blue-600 font-medium">
-                            Active: {rateBracket.label} → {calculatedRate} AED/kg
+                            Active: {rateBracket.label} → {bracketRate} AED/kg
                           </span>
                         )}
                       </div>
@@ -1083,7 +1151,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                         <span className="font-semibold">PH to UAE Express</span>
                         {chargeableWeight > 0 && route === 'PH_TO_UAE' && rateBracket && (
                           <span className="text-xs text-blue-600 font-medium">
-                            Active: {rateBracket.label} → {calculatedRate} AED/kg
+                            Active: {rateBracket.label} → {bracketRate} AED/kg
                           </span>
                         )}
                       </div>
@@ -1093,7 +1161,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                         <span className="font-semibold">PH to UAE Standard</span>
                         {chargeableWeight > 0 && route === 'PH_TO_UAE' && rateBracket && (
                           <span className="text-xs text-blue-600 font-medium">
-                            Active: {rateBracket.label} → {calculatedRate} AED/kg
+                            Active: {rateBracket.label} → {bracketRate} AED/kg
                           </span>
                         )}
                       </div>
@@ -1104,7 +1172,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                         <span className="font-semibold">UAE to PH</span>
                         {chargeableWeight > 0 && route === 'UAE_TO_PH' && rateBracket && (
                           <span className="text-xs text-blue-600 font-medium">
-                            Active: {rateBracket.label} → {calculatedRate} AED/kg
+                            Active: {rateBracket.label} → {bracketRate} AED/kg
                           </span>
                         )}
                       </div>
@@ -1114,7 +1182,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                         <span className="font-semibold">UAE to PH Express</span>
                         {chargeableWeight > 0 && route === 'UAE_TO_PH' && rateBracket && (
                           <span className="text-xs text-blue-600 font-medium">
-                            Active: {rateBracket.label} → {calculatedRate} AED/kg
+                            Active: {rateBracket.label} → {bracketRate} AED/kg
                           </span>
                         )}
                       </div>
@@ -1124,7 +1192,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                         <span className="font-semibold">UAE to PH Standard</span>
                         {chargeableWeight > 0 && route === 'UAE_TO_PH' && rateBracket && (
                           <span className="text-xs text-blue-600 font-medium">
-                            Active: {rateBracket.label} → {calculatedRate} AED/kg
+                            Active: {rateBracket.label} → {bracketRate} AED/kg
                           </span>
                         )}
                       </div>
@@ -1132,7 +1200,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                   </SelectContent>
                 </Select>
                 {/* Show bracket information */}
-                {route && (parseFloat(verificationData.total_kg || '0') > 0 || chargeableWeight > 0) && rateBracket && (
+                {quotedRate === 0 && route && (parseFloat(verificationData.total_kg || '0') > 0 || chargeableWeight > 0) && rateBracket && (
                   <div className="mt-2 p-2 bg-blue-50 rounded-md border border-blue-200">
                     <div className="flex items-center gap-2">
                       <CheckCircle className="h-4 w-4 text-blue-600 flex-shrink-0" />
@@ -1231,7 +1299,22 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                       </div>
                     )}
                   </div>
-                  {calculatedRate > 0 && rateBracket && (
+                  {quotedRate > 0 && (
+                    <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 p-2 rounded border border-blue-200">
+                      <CheckCircle className="h-3 w-3 flex-shrink-0" />
+                      <span>
+                        <span className="font-semibold">Quoted by Finance:</span>{' '}
+                        {quotationRequest?.quotation_number || 'Quotation'}
+                        {quotationRequest?.quoted_by_name ? ` (${quotationRequest.quoted_by_name})` : ''}
+                        <span className="mx-1">→</span>
+                        <span className="font-bold">{quotedRate.toFixed(2)} AED/kg</span>
+                        {Number(quotationRequest?.quotation_total) > 0 && (
+                          <span className="ml-2">· Quote total AED {Number(quotationRequest.quotation_total).toFixed(2)}</span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {quotedRate === 0 && calculatedRate > 0 && rateBracket && (
                     <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 p-2 rounded border border-blue-200">
                       <CheckCircle className="h-3 w-3 flex-shrink-0" />
                       <span>
@@ -1641,9 +1724,27 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                 placeholder="Enter number of boxes"
                 required
               />
-              <p className="text-xs text-muted-foreground mt-1">
-                Enter the total number of boxes manually
-              </p>
+              {quotedBoxes > 0 ? (
+                <p className={`text-xs mt-1 ${boxesMismatch ? 'text-amber-600 font-medium' : 'text-muted-foreground'}`}>
+                  {boxesMismatch
+                    ? `⚠️ Quotation request has ${quotedBoxes} box${quotedBoxes === 1 ? '' : 'es'}`
+                    : `Matches quotation request (${quotedBoxes} box${quotedBoxes === 1 ? '' : 'es'})`}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Enter the total number of boxes manually
+                </p>
+              )}
+              {quoteItems.length > 0 && (
+                <div className="mt-2 rounded border bg-muted/40 p-2 text-xs space-y-0.5">
+                  <p className="font-medium">Items from quotation request</p>
+                  {quoteItems.map((item, idx) => (
+                    <p key={idx} className="text-muted-foreground">
+                      {item.box_number ? `Box ${item.box_number}: ` : ''}{item.name} × {item.quantity || 1}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
             
             <div>

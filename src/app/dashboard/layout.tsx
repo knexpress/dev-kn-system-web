@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { useActivityBadges } from '@/hooks/use-activity-badges';
+import { useQuotationRequestAlerts } from '@/hooks/use-quotation-request-alerts';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { Loader2 } from 'lucide-react';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -12,7 +13,13 @@ import AppHeader from '@/components/app-header';
 import { ChangePasswordModal } from '@/components/change-password-modal';
 
 function DashboardFrame({ children }: { children: React.ReactNode }) {
-  const { hasNew, markSeen } = useActivityBadges();
+  const { hasNew: activityHasNew, markSeen } = useActivityBadges();
+  const { userProfile } = useAuth();
+  const { pendingCount } = useQuotationRequestAlerts(userProfile?.department?.name === 'Finance');
+  const hasNew = useMemo(
+    () => ({ ...activityHasNew, quotation_requests: pendingCount > 0 }),
+    [activityHasNew, pendingCount]
+  );
 
   return (
     <TooltipProvider delayDuration={80}>

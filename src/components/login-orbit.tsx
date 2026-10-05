@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import Image from 'next/image';
 import {
   Banknote,
   Bell,
@@ -208,6 +209,14 @@ function Ring({
 export function LoginOrbit() {
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden">
+      <Image
+        src="/Global Airfreight Operations at Dusk.png"
+        alt=""
+        fill
+        priority
+        sizes="100vw"
+        className="object-cover opacity-45 saturate-[0.85] dark:opacity-50 [mask-image:linear-gradient(to_bottom,black_0%,rgba(0,0,0,0.85)_40%,rgba(0,0,0,0.25)_75%,transparent_95%)]"
+      />
       <Ring tiles={OUTER} radius="clamp(520px, 46vw, 860px)" duration={90} clockwise={false} offset={10} />
       <Ring tiles={INNER} radius="clamp(340px, 30vw, 540px)" duration={55} clockwise offset={0} />
       <div className="absolute left-1/2 top-1/2 h-[860px] w-[820px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(247,246,244,0.96),rgba(247,246,244,0.75)_62%,rgba(247,246,244,0))] dark:bg-[radial-gradient(closest-side,rgba(14,16,22,0.94),rgba(14,16,22,0.7)_62%,rgba(14,16,22,0))]" />
