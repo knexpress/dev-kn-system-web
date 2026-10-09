@@ -24,7 +24,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, type InvoicePaymentMode } from '@/lib/api-client';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -34,7 +34,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { ArrowRight, BellRing, ChevronDown, ChevronUp, Download, FileSignature, Pencil, PlusCircle, Printer, Send, Trash2 } from 'lucide-react';
+import { ArrowRight, Ban, BellRing, ChevronDown, ChevronUp, Download, FileSignature, Pencil, PlusCircle, Printer, Send, Trash2 } from 'lucide-react';
 
 type RouteCode = 'PH_TO_UAE' | 'UAE_TO_PH';
 
@@ -195,6 +195,41 @@ export default function QuotationsPage() {
   const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null);
   const [movingRequestId, setMovingRequestId] = useState<string | null>(null);
   const [sendTarget, setSendTarget] = useState<any | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<any | null>(null);
+  const [cancelCharge, setCancelCharge] = useState(false);
+  const [cancelAmount, setCancelAmount] = useState('');
+  const [cancelVat, setCancelVat] = useState<'0' | '5'>('5');
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelPayMode, setCancelPayMode] = useState<InvoicePaymentMode | ''>('');
+  const [cancelPayRef, setCancelPayRef] = useState('');
+  const [cancelPayDate, setCancelPayDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+
+  const CANCEL_PAY_MODES: { value: InvoicePaymentMode; label: string; rate: number }[] = [
+    { value: 'CASH', label: 'Cash', rate: 0 },
+    { value: 'BANK_TRANSFER', label: 'Bank transfer', rate: 0 },
+    { value: 'CARD', label: 'Card payment', rate: 0.04 },
+    { value: 'TABBY', label: 'Tabby', rate: 0.1 },
+  ];
+
+  const resetCancelForm = () => {
+    setCancelCharge(false);
+    setCancelAmount('');
+    setCancelVat('5');
+    setCancelReason('');
+    setCancelPayMode('');
+    setCancelPayRef('');
+    const d = new Date();
+    setCancelPayDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+  };
+
+  const openCancelShipment = (request: any) => {
+    resetCancelForm();
+    setCancelTarget(request);
+  };
 
   const loadQuoteRequests = useCallback(async () => {
     const result = await apiClient.getQuotationRequests({ stage: 'REQUESTED,QUOTED' });
@@ -351,6 +386,61 @@ export default function QuotationsPage() {
         variant: 'destructive',
         title: 'Draft journal not created',
         description: draft.error || 'The quotation journal could not be drafted. The invoice will still post its own journal.',
+      });
+    }
+  };
+
+  const cancelShipment = async () => {
+    if (!cancelTarget) return;
+    const net = Math.round((parseFloat(cancelAmount) || 0) * 100) / 100;
+    if (cancelCharge) {
+      if (!(net > 0)) {
+        toast({ variant: 'destructive', title: 'Fee required', description: 'Enter the cancellation fee to charge.' });
+        return;
+      }
+      if (!cancelPayMode) {
+        toast({ variant: 'destructive', title: 'Payment method required', description: 'Choose how the customer paid the cancellation fee.' });
+        return;
+      }
+      if (!cancelPayDate) {
+        toast({ variant: 'destructive', title: 'Payment date required', description: 'Enter the date the customer paid the cancellation fee.' });
+        return;
+      }
+    }
+    setCancellingId(cancelTarget._id);
+    const result = await apiClient.cancelQuotedShipment(cancelTarget._id, {
+      charge: cancelCharge,
+      amount: cancelCharge ? net : undefined,
+      vat_rate: cancelCharge ? (cancelVat === '5' ? 5 : 0) : undefined,
+      reason: cancelReason.trim() || undefined,
+      payment: cancelCharge && cancelPayMode
+        ? { mode: cancelPayMode, reference: cancelPayRef.trim() || undefined, collected_at: cancelPayDate || undefined }
+        : undefined,
+    });
+    setCancellingId(null);
+    if (!result.success) {
+      toast({ variant: 'destructive', title: 'Could not cancel', description: result.error || 'Failed to cancel the shipment.' });
+      return;
+    }
+    const payload = result.data as any;
+    const invoiceNo = payload?.invoice?.invoice_id;
+    const pay = payload?.invoice?.payment;
+    setCancelTarget(null);
+    resetCancelForm();
+    loadQuoteRequests();
+    toast({
+      title: 'Shipment cancelled',
+      description: cancelCharge
+        ? `Invoice ${invoiceNo || ''} raised. ${
+            pay?.status === 'PAID' && pay.journal_no ? `Payment posted as ${pay.journal_no}.` : pay?.error || 'Record the payment from the invoice if it did not post.'
+          }`
+        : 'The customer was not charged.',
+    });
+    if (cancelCharge && pay?.status === 'FAILED') {
+      toast({
+        variant: 'destructive',
+        title: 'Payment not posted',
+        description: pay.error || 'The cancellation invoice was created. Record payment from the invoice page.',
       });
     }
   };
@@ -588,10 +678,22 @@ export default function QuotationsPage() {
                         Booking form
                       </Button>
                       {canQuote && !quoted && (
-                        <Button size="sm" onClick={() => startFromRequest(request)}>
-                          <FileSignature className="mr-2 h-4 w-4" />
-                          Generate Quotation
-                        </Button>
+                        <>
+                          <Button size="sm" onClick={() => startFromRequest(request)}>
+                            <FileSignature className="mr-2 h-4 w-4" />
+                            Generate Quotation
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                            disabled={cancellingId === request._id}
+                            onClick={() => openCancelShipment(request)}
+                          >
+                            <Ban className="mr-2 h-4 w-4" />
+                            Cancel shipment
+                          </Button>
+                        </>
                       )}
                       {canQuote && quoted && (
                         <>
@@ -627,6 +729,16 @@ export default function QuotationsPage() {
                           >
                             <Send className="mr-2 h-4 w-4" />
                             {movingRequestId === request._id ? 'Sending...' : 'Send to Operations'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                            disabled={cancellingId === request._id}
+                            onClick={() => openCancelShipment(request)}
+                          >
+                            <Ban className="mr-2 h-4 w-4" />
+                            Cancel shipment
                           </Button>
                         </>
                       )}
@@ -1238,6 +1350,184 @@ export default function QuotationsPage() {
                   <Button onClick={() => sendToOperations(sendTarget)} disabled={movingRequestId === sendTarget._id}>
                     <Send className="mr-2 h-4 w-4" />
                     Send to Operations
+                  </Button>
+                </AlertDialogFooter>
+              </>
+            );
+          })()}
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(cancelTarget)} onOpenChange={(open) => { if (!open) { setCancelTarget(null); resetCancelForm(); } }}>
+        <AlertDialogContent className="max-w-lg">
+          {cancelTarget && (() => {
+            const qr = cancelTarget.quotation_request || {};
+            const awb = cancelTarget.tracking_code || cancelTarget.awb_number || cancelTarget._id;
+            const route = routeOf(cancelTarget);
+            const sender = senderOf(cancelTarget);
+            const net = Math.round((parseFloat(cancelAmount) || 0) * 100) / 100;
+            const vat = cancelVat === '5' ? Math.round(net * 0.05 * 100) / 100 : 0;
+            const total = Math.round((net + vat) * 100) / 100;
+            const pay = CANCEL_PAY_MODES.find((m) => m.value === cancelPayMode);
+            return (
+              <>
+                <AlertDialogHeader>
+                  <div className="mb-1 flex h-11 w-11 items-center justify-center rounded-full bg-rose-100 text-rose-700">
+                    <Ban className="h-5 w-5" />
+                  </div>
+                  <AlertDialogTitle>Cancel this shipment?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    The booking stays cancelled and is not sent to Operations. Choose whether the customer is charged a cancellation fee.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+
+                <div className="rounded-lg border bg-muted/40 p-4 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-mono font-semibold">{awb}</span>
+                    <Badge variant="outline">{route ? ROUTE_LABELS[route] : cancelTarget.service_code || 'Route not set'}</Badge>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                    <span className="text-muted-foreground">Sender</span>
+                    <span className="truncate text-right">{sender.name || '—'}</span>
+                    {qr.quotation_number ? (
+                      <>
+                        <span className="text-muted-foreground">Quotation</span>
+                        <span className="text-right font-medium">{qr.quotation_number}</span>
+                        <span className="text-muted-foreground">Quoted total</span>
+                        <span className="text-right">AED {money(Number(qr.quotation_total || 0))}</span>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCancelCharge(false)}
+                    className={`rounded-xl border px-3 py-2.5 text-left text-sm ${
+                      !cancelCharge ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700'
+                    }`}
+                  >
+                    <p className="font-semibold">Don&apos;t charge</p>
+                    <p className={`text-xs ${!cancelCharge ? 'text-white/80' : 'text-muted-foreground'}`}>Cancel only. No invoice.</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCancelCharge(true)}
+                    className={`rounded-xl border px-3 py-2.5 text-left text-sm ${
+                      cancelCharge ? 'border-brand-500 bg-brand-500 text-white shadow-md shadow-brand-500/30' : 'border-slate-200 bg-white text-slate-700'
+                    }`}
+                  >
+                    <p className="font-semibold">Charge a fee</p>
+                    <p className={`text-xs ${cancelCharge ? 'text-white/80' : 'text-muted-foreground'}`}>Raise an invoice and record payment.</p>
+                  </button>
+                </div>
+
+                <div className="space-y-1">
+                  <Label htmlFor="cancel_reason">Reason (optional)</Label>
+                  <Textarea
+                    id="cancel_reason"
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    placeholder="e.g. Customer cancelled after quoting"
+                    rows={2}
+                  />
+                </div>
+
+                {cancelCharge && (
+                  <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/40">
+                    <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">Cancellation fee and payment</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label htmlFor="cancel_amount">Fee (AED, before VAT) *</Label>
+                        <Input
+                          id="cancel_amount"
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={cancelAmount}
+                          onChange={(e) => setCancelAmount(e.target.value)}
+                          className="bg-white"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>VAT</Label>
+                        <Select value={cancelVat} onValueChange={(value) => setCancelVat(value as '0' | '5')}>
+                          <SelectTrigger className="bg-white">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="5">5% VAT</SelectItem>
+                            <SelectItem value="0">No VAT</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm text-emerald-950 dark:text-emerald-100">
+                      <span>Net</span>
+                      <span className="text-right">AED {money(net)}</span>
+                      <span>VAT {cancelVat}%</span>
+                      <span className="text-right">AED {money(vat)}</span>
+                      <span className="font-semibold">Invoice total</span>
+                      <span className="text-right font-semibold">AED {money(total)}</span>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Mode of payment *</Label>
+                      <Select value={cancelPayMode} onValueChange={(value) => setCancelPayMode(value as InvoicePaymentMode)}>
+                        <SelectTrigger className="bg-white">
+                          <SelectValue placeholder="Choose how the customer paid" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CANCEL_PAY_MODES.map((mode) => (
+                            <SelectItem key={mode.value} value={mode.value}>{mode.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {pay && pay.rate > 0 && (
+                        <p className="text-xs text-emerald-800 dark:text-emerald-200">
+                          The invoice total stays the same. {Math.round(pay.rate * 100)}% of the amount before VAT is booked to Payment Gateway Revenue.
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="cancel_paid_at">Date paid *</Label>
+                      <Input
+                        id="cancel_paid_at"
+                        type="date"
+                        value={cancelPayDate}
+                        onChange={(e) => setCancelPayDate(e.target.value)}
+                        className="bg-white"
+                      />
+                      <p className="text-xs text-emerald-800 dark:text-emerald-200">
+                        Use the day the customer paid, including advance payments before this invoice.
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="cancel_ref">Reference (optional)</Label>
+                      <Input
+                        id="cancel_ref"
+                        value={cancelPayRef}
+                        onChange={(e) => setCancelPayRef(e.target.value)}
+                        placeholder="Receipt no., transfer ref, card slip…"
+                        className="bg-white"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={Boolean(cancellingId)}>Keep shipment</AlertDialogCancel>
+                  <Button
+                    variant={cancelCharge ? 'default' : 'destructive'}
+                    onClick={cancelShipment}
+                    disabled={Boolean(cancellingId) || (cancelCharge && (!(net > 0) || !cancelPayMode))}
+                  >
+                    <Ban className="mr-2 h-4 w-4" />
+                    {cancellingId
+                      ? 'Cancelling...'
+                      : cancelCharge
+                        ? `Cancel and invoice AED ${money(total)}`
+                        : 'Cancel without charging'}
                   </Button>
                 </AlertDialogFooter>
               </>

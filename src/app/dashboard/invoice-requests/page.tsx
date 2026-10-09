@@ -30,7 +30,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { secureLog } from '@/lib/secure-logger';
-import { getAwbNumber, isPhToUaeService, isUaeToPhService } from '@/lib/invoice-request-utils';
+import { getAwbNumber, isPhToUaeService, isUaeToPhService, canSeeQuotePricing } from '@/lib/invoice-request-utils';
 import InvoiceRequestCard from '@/components/invoice-request-card';
 import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText, ArrowRight, Phone, MapPin, AlertTriangle, Hash, Download, ChevronLeft, ChevronRight, Loader2, ArrowUp, X } from 'lucide-react';
 import {
@@ -107,6 +107,10 @@ export default function InvoiceRequestsPage() {
   const [quoteRatePerKg, setQuoteRatePerKg] = useState(''); // Rate carried from Finance's quotation (editable)
   const [prepaidMode, setPrepaidMode] = useState(''); // UAE→PH quoted: how the customer already paid
   const [prepaidReference, setPrepaidReference] = useState('');
+  const [prepaidPaidAt, setPrepaidPaidAt] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
   
   // Helper function to check if shipment is flomic
   const isFlomicShipment = (request?: any): boolean => {
@@ -1296,6 +1300,8 @@ export default function InvoiceRequestsPage() {
   const applyQuotationDefaults = (request: any) => {
     setPrepaidMode('');
     setPrepaidReference('');
+    const d = new Date();
+    setPrepaidPaidAt(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
     const quote = getInvoiceQuote(request);
     if (!quote) {
       setQuoteRatePerKg('');
@@ -1730,7 +1736,7 @@ export default function InvoiceRequestsPage() {
               return (
                 <>
                   <Badge variant="outline" className="border-green-500 text-green-700">
-                    Quoted {request.quotation_request?.quotation_number || ''} · waiting for Finance to send
+                    Quoted by Finance · waiting to be sent
                   </Badge>
                 </>
               );
@@ -1961,6 +1967,14 @@ export default function InvoiceRequestsPage() {
         variant: 'destructive',
         title: 'Payment Mode Required',
         description: 'Choose how the customer paid: Cash, Bank transfer, Card payment or Tabby.',
+      });
+      return;
+    }
+    if (prepaid && !prepaidPaidAt) {
+      toast({
+        variant: 'destructive',
+        title: 'Payment date required',
+        description: 'Enter the date the customer paid, even if they paid in advance.',
       });
       return;
     }
@@ -2454,7 +2468,11 @@ export default function InvoiceRequestsPage() {
           total_amount_tax_invoice: (invoiceData as any).totalAmountTaxInvoice || 0 // Tax Invoice total: Delivery + Tax
         }),
         ...(prepaid && {
-          prepaid_payment: { mode: prepaidMode, reference: prepaidReference.trim() || undefined },
+          prepaid_payment: {
+            mode: prepaidMode,
+            reference: prepaidReference.trim() || undefined,
+            collected_at: prepaidPaidAt || undefined,
+          },
         }),
       });
       
@@ -3662,6 +3680,16 @@ export default function InvoiceRequestsPage() {
                     booked to Payment Gateway Revenue instead of the shipping, pickup and delivery accounts.
                   </p>
                 )}
+                <Label className="block text-xs font-medium text-gray-700 mt-2 mb-1">Date paid *</Label>
+                <Input
+                  type="date"
+                  value={prepaidPaidAt}
+                  onChange={(e) => setPrepaidPaidAt(e.target.value)}
+                  className="w-full bg-white"
+                />
+                <p className="text-xs text-emerald-800 mt-1">
+                  Use the day the customer actually paid, even if that was before this invoice.
+                </p>
                 <Label className="block text-xs font-medium text-gray-700 mt-2 mb-1">Reference (optional)</Label>
                 <Input
                   value={prepaidReference}
@@ -4284,6 +4312,7 @@ export default function InvoiceRequestsPage() {
                       }
                       return null;
                     })()}
+                    {canSeeQuotePricing(userProfile) && (
                     <div>
                       <Label className="text-sm font-semibold text-gray-600">Calculated Rate (AED/kg)</Label>
                       <p className="text-base">
@@ -4299,6 +4328,7 @@ export default function InvoiceRequestsPage() {
                         })()}
                       </p>
                     </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -4324,10 +4354,12 @@ export default function InvoiceRequestsPage() {
                         <Label className="text-sm font-semibold text-gray-600">Cargo Service</Label>
                         <p className="text-base">{requestData.verification.cargo_service || 'N/A'}</p>
                       </div>
+                      {canSeeQuotePricing(userProfile) && (
                       <div>
                         <Label className="text-sm font-semibold text-gray-600">Rate Bracket</Label>
                         <p className="text-base">{requestData.verification.rate_bracket || 'N/A'}</p>
                       </div>
+                      )}
                       {requestData.verification.listed_commodities && (
                         <div className="md:col-span-2">
                           <Label className="text-sm font-semibold text-gray-600">Listed Commodities</Label>

@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { CheckCircle, FileCheck, Package } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { canSeeQuotePricing } from '@/lib/invoice-request-utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { secureLog } from '@/lib/secure-logger';
 
@@ -687,6 +688,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     ? Number(quotationRequest.quotation_rate_per_kg)
     : 0;
   const calculatedRate = quotedRate > 0 ? quotedRate : bracketRate;
+  const hidePricing = !canSeeQuotePricing(currentUser);
 
   const quoteItems: Array<{ box_number?: string; name: string; quantity: number }> = Array.isArray(quotationRequest?.items)
     ? quotationRequest.items.filter((it: any) => it?.name)
@@ -700,13 +702,13 @@ export default function VerificationForm({ request, onVerificationComplete, curr
   const inputValue = useMemo(() => {
     if (calculatedRate > 0) {
       const value = calculatedRate.toFixed(2);
-      secureLog.debug('Input value from calculated rate', { value });
+      if (!hidePricing) secureLog.debug('Input value from calculated rate', { value });
       return value;
     }
     const value = verificationData.amount || '';
-    secureLog.debug('Input value from verification data', { value: value?.substring(0, 20) });
+    if (!hidePricing) secureLog.debug('Input value from verification data', { value: value?.substring(0, 20) });
     return value;
-  }, [calculatedRate, verificationData.amount]);
+  }, [calculatedRate, verificationData.amount, hidePricing]);
 
   // Update amount per kg automatically when rate changes - always override with calculated rate
   useEffect(() => {
@@ -1271,35 +1273,52 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                 <Label htmlFor="amount">Amount per kg (AED) * (Auto-Calculated)</Label>
                 <div className="space-y-1">
                   <div className="relative">
-                    <Input
-                      id="amount"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="0.00"
-                      value={inputValue}
-                      onChange={(e) => {
-                        // Only allow editing if rate is not calculated yet
-                        if (calculatedRate === 0) {
-                          const value = e.target.value;
-                          if (value === '' || parseFloat(value) >= 0) {
-                            setVerificationData(prev => ({ ...prev, amount: value }));
+                    {hidePricing && calculatedRate > 0 ? (
+                      <Input
+                        id="amount"
+                        type="text"
+                        value="••••••"
+                        readOnly
+                        disabled
+                        autoComplete="off"
+                        className="select-none bg-slate-100 font-semibold tracking-[0.35em] text-slate-400 blur-[5px] cursor-not-allowed"
+                      />
+                    ) : (
+                      <Input
+                        id="amount"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={inputValue}
+                        onChange={(e) => {
+                          // Only allow editing if rate is not calculated yet
+                          if (calculatedRate === 0) {
+                            const value = e.target.value;
+                            if (value === '' || parseFloat(value) >= 0) {
+                              setVerificationData(prev => ({ ...prev, amount: value }));
+                            }
                           }
-                        }
-                      }}
-                      disabled={calculatedRate > 0}
-                      readOnly={calculatedRate > 0}
-                      className={calculatedRate > 0 ? 'bg-blue-50 border-blue-300 cursor-not-allowed font-semibold text-blue-900 pr-20' : ''}
-                      required
-                      key={`amount-${calculatedRate}-${chargeableWeight}`}
-                    />
+                        }}
+                        disabled={calculatedRate > 0}
+                        readOnly={calculatedRate > 0}
+                        className={calculatedRate > 0 ? 'bg-blue-50 border-blue-300 cursor-not-allowed font-semibold text-blue-900 pr-20' : ''}
+                        required
+                        key={`amount-${calculatedRate}-${chargeableWeight}`}
+                      />
+                    )}
                     {calculatedRate > 0 && (
                       <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                         <CheckCircle className="h-4 w-4 text-blue-600" />
                       </div>
                     )}
                   </div>
-                  {quotedRate > 0 && (
+                  {quotedRate > 0 && hidePricing && (
+                    <p className="rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-500">
+                      Finance has quoted this shipment. The rate is applied automatically and is hidden from Operations.
+                    </p>
+                  )}
+                  {quotedRate > 0 && !hidePricing && (
                     <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 p-2 rounded border border-blue-200">
                       <CheckCircle className="h-3 w-3 flex-shrink-0" />
                       <span>
@@ -1314,7 +1333,12 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                       </span>
                     </div>
                   )}
-                  {quotedRate === 0 && calculatedRate > 0 && rateBracket && (
+                  {quotedRate === 0 && calculatedRate > 0 && rateBracket && hidePricing && (
+                    <p className="rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-500">
+                      Rate is applied automatically and cannot be changed. Pricing is hidden from Operations.
+                    </p>
+                  )}
+                  {quotedRate === 0 && calculatedRate > 0 && rateBracket && !hidePricing && (
                     <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 p-2 rounded border border-blue-200">
                       <CheckCircle className="h-3 w-3 flex-shrink-0" />
                       <span>

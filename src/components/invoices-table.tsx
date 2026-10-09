@@ -817,7 +817,32 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel,
                             
                             return (
                             <TableRow key={invoice._id} className={t.row}>
-                            <TableCell className={cn(t.cell, 'font-mono text-xs')}>{invoice.invoice_id || 'N/A'}</TableCell>
+                            <TableCell className={cn(t.cell, 'font-mono text-xs')}>
+                                {invoice.invoice_id ? (
+                                    <Link
+                                        href={(() => {
+                                            const params = new URLSearchParams();
+                                            const journalNo = invoice.gl_sync?.journal_no;
+                                            const journalId = invoice.gl_sync?.journal_id;
+                                            if (journalNo) params.set('entry', String(journalNo));
+                                            else if (journalId) params.set('id', String(journalId));
+                                            params.set('invoice', String(invoice.invoice_id));
+                                            return `/dashboard/accounting/journals?${params.toString()}`;
+                                        })()}
+                                        title={
+                                            invoice.gl_sync?.journal_no
+                                                ? `Open ${invoice.gl_sync.status === 'POSTED' ? 'posted' : 'draft'} journal ${invoice.gl_sync.journal_no}`
+                                                : 'Open the journal for this invoice'
+                                        }
+                                        className="text-brand-600 underline-offset-2 hover:text-brand-700 hover:underline"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        {invoice.invoice_id}
+                                    </Link>
+                                ) : (
+                                    'N/A'
+                                )}
+                            </TableCell>
                             <TableCell className={cn(t.cell, 'font-mono text-xs')}>{invoice.awb_number || 'N/A'}</TableCell>
                             <TableCell className={cn(t.cell, 'font-mono text-xs')}>
                                 {batchNumber || 'N/A'}

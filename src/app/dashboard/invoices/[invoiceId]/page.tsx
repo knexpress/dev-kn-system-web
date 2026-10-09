@@ -6,7 +6,8 @@ import InvoiceTemplate from "@/components/invoice-template";
 import TaxInvoiceTemplate, { usesUaeToPhTaxInvoiceLayout } from "@/components/tax-invoice-template";
 import { apiClient } from "@/lib/api-client";
 import { secureLog } from '@/lib/secure-logger';
-import { isPhToUaeService, isUaeToPhService } from '@/lib/invoice-request-utils';
+import { isPhToUaeService, isUaeToPhService, canSeeQuotePricing } from '@/lib/invoice-request-utils';
+import { useAuth } from '@/hooks/use-auth';
 import { parseDecimal } from '@/lib/invoice-utils';
 import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ import {
 import { cn } from '@/lib/utils';
 
 export default function InvoicePage() {
+    const { userProfile } = useAuth();
     const params = useParams();
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -3944,6 +3946,8 @@ export default function InvoicePage() {
                                                         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Classification</p>
                                                         <p className="text-sm font-semibold">{verification.shipment_classification || 'N/A'}</p>
                                                     </div>
+                                                    {canSeeQuotePricing(userProfile) && (
+                                                    <>
                                                     <div>
                                                         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Rate Bracket</p>
                                                         <p className="text-sm font-semibold">{verification.rate_bracket || 'N/A'}</p>
@@ -3957,6 +3961,8 @@ export default function InvoicePage() {
                                                             })()}
                                                         </p>
                                                     </div>
+                                                    </>
+                                                    )}
                                                 </div>
                                             </CardContent>
                                         </Card>

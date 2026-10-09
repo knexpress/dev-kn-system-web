@@ -39,7 +39,16 @@ const num = (v: unknown) => {
 };
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const aed = (n: number) => `AED ${n.toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const toInputDate = (value: unknown) => {
+  if (!value) return today();
+  const d = new Date(String(value));
+  if (Number.isNaN(d.getTime())) return today();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 export function activeInvoicePayments(invoice: any): any[] {
   return (invoice?.payments || []).filter((p: any) => p.status !== 'VOID');
@@ -85,6 +94,8 @@ export function RecordPaymentDialog({ invoice, open, onOpenChange, onUpdated }: 
   const [collectedAt, setCollectedAt] = useState(today());
   const [saving, setSaving] = useState(false);
   const [voidingId, setVoidingId] = useState<string | null>(null);
+  const [dateEdits, setDateEdits] = useState<Record<string, string>>({});
+  const [savingDateId, setSavingDateId] = useState<string | null>(null);
 
   const { total, paid, balance } = invoiceBalance(invoice);
   const modeConfig = PAYMENT_MODES.find((m) => m.value === mode);
@@ -167,6 +178,20 @@ export function RecordPaymentDialog({ invoice, open, onOpenChange, onUpdated }: 
     onUpdated(result.data);
   };
 
+  const savePaymentDate = async (payment: any) => {
+    if (!invoice?._id || !payment?._id) return;
+    const value = dateEdits[payment._id] || toInputDate(payment.collected_at);
+    setSavingDateId(payment._id);
+    const result: any = await apiClient.updateInvoicePaymentDate(invoice._id, payment._id, value);
+    setSavingDateId(null);
+    if (!result.success) {
+      toast({ variant: 'destructive', title: 'Could not update payment date', description: result.error });
+      return;
+    }
+    toast({ title: 'Payment date updated', description: 'The payment journal now uses this date.' });
+    onUpdated(result.data);
+  };
+
   const payments: any[] = invoice?.payments || [];
   const canRecord = balance > 0.009 && invoice?.status !== 'CANCELLED';
 
@@ -176,8 +201,8 @@ export function RecordPaymentDialog({ invoice, open, onOpenChange, onUpdated }: 
         <DialogHeader>
           <DialogTitle>Record payment · {invoice?.invoice_id || ''}</DialogTitle>
           <DialogDescription>
-            Enter what was actually collected. Anything above the invoice amount is booked as payment gateway
-            revenue (VAT-inclusive).
+            Enter what was actually collected, and the date the customer paid — including advance payments.
+            Anything above the invoice amount is booked as payment gateway revenue (VAT-inclusive).
           </DialogDescription>
         </DialogHeader>
 
@@ -249,8 +274,11 @@ export function RecordPaymentDialog({ invoice, open, onOpenChange, onUpdated }: 
                 )}
               </div>
               <div className="space-y-2">
-                <Label>Date collected</Label>
+                <Label>Date paid</Label>
                 <Input type="date" value={collectedAt} onChange={(e) => setCollectedAt(e.target.value)} className="rounded-xl" />
+                <p className="text-xs text-slate-500">
+                  The day money was received. Use an earlier date when the customer paid in advance.
+                </p>
               </div>
               <div className="space-y-2 sm:col-span-2">
                 <Label>Reference (optional)</Label>
@@ -305,18 +333,41 @@ export function RecordPaymentDialog({ invoice, open, onOpenChange, onUpdated }: 
                           )}
                         </p>
                         <p className="truncate text-xs text-slate-500">
-                          {p.collected_at ? new Date(p.collected_at).toLocaleDateString() : ''} · applied {aed(num(p.amount_applied))}
+                          applied {aed(num(p.amount_applied))}
                           {num(p.gateway_charge) > 0 ? ` · gateway ${aed(num(p.gateway_charge))}` : ''}
                           {p.journal_no ? ` · ${p.journal_no}` : ''}
                           {p.void_journal_no ? ` · reversed ${p.void_journal_no}` : ''}
                           {p.reference ? ` · ${p.reference}` : ''}
                         </p>
+                        {!isVoid && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <Label className="text-xs text-slate-500">Date paid</Label>
+                            <Input
+                              type="date"
+                              value={dateEdits[p._id] ?? toInputDate(p.collected_at)}
+                              onChange={(e) => setDateEdits((prev) => ({ ...prev, [p._id]: e.target.value }))}
+                              className="h-8 w-[10.5rem] rounded-lg"
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 rounded-lg"
+                              disabled={
+                                savingDateId === p._id ||
+                                (dateEdits[p._id] ?? toInputDate(p.collected_at)) === toInputDate(p.collected_at)
+                              }
+                              onClick={() => savePaymentDate(p)}
+                            >
+                              {savingDateId === p._id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save date'}
+                            </Button>
+                          </div>
+                        )}
                       </div>
                       {!isVoid && !p.remitted && (
                         <Button
                           variant="outline"
                           size="sm"
-                          className="rounded-xl"
+                          className="rounded-xl self-start"
                           disabled={voidingId === p._id}
                           onClick={() => voidPayment(p)}
                         >

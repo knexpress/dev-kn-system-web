@@ -51,8 +51,9 @@ import {
 } from './erp-shell';
 import { fmtDate, money } from './erp-format';
 import { cn } from '@/lib/utils';
+import BankReconciliationPanel from './bank-reconciliation-panel';
 
-type TabId = 'overview' | 'accounts' | 'payables' | 'pay' | 'approvals' | 'history';
+type TabId = 'overview' | 'accounts' | 'payables' | 'pay' | 'approvals' | 'history' | 'reconcile';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
@@ -61,6 +62,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'pay', label: 'Pay supplier' },
   { id: 'approvals', label: 'Clear payments' },
   { id: 'history', label: 'Payment history' },
+  { id: 'reconcile', label: 'Reconciliation' },
 ];
 
 const PAYABLE_PO_STATUSES = ['APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED'];
@@ -493,7 +495,7 @@ export default function BankCashTab() {
     <div className="flex flex-col">
       <ErpToolbar
         title="Bank & Cash"
-        description="Liquidity overview, supplier payments, and payment approvals."
+        description="Liquidity overview, supplier payments, approvals, and bank reconciliation."
         onRefresh={() => void load()}
         refreshing={loading}
         actions={
@@ -1380,6 +1382,8 @@ export default function BankCashTab() {
             </div>
           </div>
         ) : null}
+
+        {tab === 'reconcile' ? <BankReconciliationPanel accounts={accounts} /> : null}
 
         <Dialog open={Boolean(reverseTarget)} onOpenChange={(open) => !open && setReverseTarget(null)}>
           <DialogContent className="max-w-md rounded-3xl">

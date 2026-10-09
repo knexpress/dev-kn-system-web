@@ -52,3 +52,11 @@ export function getAwbNumber(request: any): string {
 
   return '';
 }
+
+/** Quote rate, quote total and AED/kg are Finance-only. Operations must not see them. */
+export function canSeeQuotePricing(user: any): boolean {
+  const role = String(user?.role || '').toUpperCase();
+  if (role === 'SUPERADMIN' || role === 'ADMIN') return true;
+  const dept = String(user?.department?.name || '').trim();
+  return dept === 'Finance' || dept === 'Management' || dept === 'IT' || dept === 'Auditor';
+}

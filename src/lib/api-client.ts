@@ -775,6 +775,25 @@ class ApiClient {
     });
   }
 
+  async cancelQuotedShipment(
+    id: string,
+    payload: {
+      charge: boolean;
+      amount?: number;
+      vat_rate?: 0 | 5;
+      reason?: string;
+      payment?: { mode: InvoicePaymentMode; reference?: string; collected_at?: string };
+    }
+  ) {
+    const result = await this.request(`/invoice-requests/${encodeURIComponent(id)}/cancel-shipment`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    this.invalidateCache('/invoice-requests');
+    this.invalidateCache('/invoices-unified');
+    return result;
+  }
+
   async updateDeliveryStatus(id: string, deliveryStatusData: any) {
     return this.request(`/invoice-requests/${id}/delivery-status`, {
       method: 'PUT',
@@ -1044,6 +1063,13 @@ class ApiClient {
     return this.request(`/invoices-unified/${id}/payments`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  }
+
+  async updateInvoicePaymentDate(id: string, paymentId: string, collected_at: string) {
+    return this.request(`/invoices-unified/${id}/payments/${paymentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ collected_at }),
     });
   }
 
@@ -1417,6 +1443,69 @@ class ApiClient {
 
   async getPayablesSummary() {
     return this.request('/accounting/payables/summary', {}, false);
+  }
+
+  async getBankReconciliations(accountId?: string) {
+    const q = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
+    return this.request(`/accounting/bank-cash/reconciliations${q}`, {}, false);
+  }
+
+  async getBankReconciliation(id: string) {
+    return this.request(`/accounting/bank-cash/reconciliations/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async uploadBankStatement(accountId: string, file: File) {
+    const formData = new FormData();
+    formData.append('bank_cash_account_id', accountId);
+    formData.append('statement', file);
+    const url = `${this.baseUrl}/accounting/bank-cash/reconciliations`;
+    const headers: Record<string, string> = {};
+    if (this.token) headers.Authorization = `Bearer ${this.token}`;
+    if (typeof window !== 'undefined') {
+      const csrfToken = getCSRFToken();
+      if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+    }
+    try {
+      const response = await fetch(url, { method: 'POST', headers, body: formData });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return { success: false, error: data.error || data.message || 'Failed to read the statement' };
+      }
+      return { success: true, data: data.data || data };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Failed to upload the statement' };
+    }
+  }
+
+  async matchBankReconciliation(id: string, statement_line_no: number, book_id: string) {
+    return this.request(`/accounting/bank-cash/reconciliations/${encodeURIComponent(id)}/match`, {
+      method: 'POST',
+      body: JSON.stringify({ statement_line_no, book_id }),
+    });
+  }
+
+  async unmatchBankReconciliation(id: string, statement_line_no: number) {
+    return this.request(`/accounting/bank-cash/reconciliations/${encodeURIComponent(id)}/unmatch`, {
+      method: 'POST',
+      body: JSON.stringify({ statement_line_no }),
+    });
+  }
+
+  async ignoreBankReconciliationLine(
+    id: string,
+    payload: { side: 'statement' | 'book'; statement_line_no?: number; book_id?: string }
+  ) {
+    return this.request(`/accounting/bank-cash/reconciliations/${encodeURIComponent(id)}/ignore`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async completeBankReconciliation(id: string, notes?: string) {
+    return this.request(`/accounting/bank-cash/reconciliations/${encodeURIComponent(id)}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ notes: notes || '' }),
+    });
   }
 
   async getPurchaseOrdersOverview() {

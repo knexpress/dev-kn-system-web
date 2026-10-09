@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { AccountingSubpageShell } from '@/components/accounting/accounting-subpage-shell';
 import GeneralLedgerTab from '@/components/accounting/general-ledger-tab';
 
@@ -9,7 +10,9 @@ export default function JournalsPage() {
       title="Journal Entries"
       crumbs={[{ id: 'journals', label: 'Journals' }]}
     >
-      <GeneralLedgerTab mode="journals" />
+      <Suspense fallback={null}>
+        <GeneralLedgerTab mode="journals" />
+      </Suspense>
     </AccountingSubpageShell>
   );
 }

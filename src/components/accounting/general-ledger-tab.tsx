@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
@@ -59,6 +60,11 @@ export default function GeneralLedgerTab({
   });
   const [retrying, setRetrying] = useState(false);
   const { toast } = useToast();
+  const searchParams = useSearchParams();
+  const openEntry = searchParams?.get('entry') || '';
+  const openId = searchParams?.get('id') || '';
+  const openInvoice = searchParams?.get('invoice') || '';
+  const autoOpenedKey = useRef('');
 
   useEffect(() => {
     if (selectedAccountCode) setAccountCode(selectedAccountCode);
@@ -145,6 +151,47 @@ export default function GeneralLedgerTab({
     setSelectedJournal(journal);
     setDetailOpen(true);
   };
+
+  useEffect(() => {
+    if (mode !== 'journals' || loadingJournals) return;
+    const key = `${openId}|${openEntry}|${openInvoice}`;
+    if (key === '||' || autoOpenedKey.current === key) return;
+    if (!journals.length && !openEntry && !openId && !openInvoice) return;
+
+    const idNorm = String(openId);
+    const entryNorm = openEntry.trim().toLowerCase();
+    const invoiceNorm = openInvoice.trim().toLowerCase();
+    if (!idNorm && !entryNorm && !invoiceNorm) return;
+
+    const rank = (j: any) => {
+      const posted = j.status === 'POSTED' ? 2 : j.status === 'DRAFT' ? 1 : 0;
+      const invoiceSource = j.source === 'INVOICE' ? 2 : 0;
+      return posted + invoiceSource;
+    };
+
+    const matches = journals.filter((j) => {
+      if (idNorm && String(j._id) === idNorm) return true;
+      if (entryNorm && String(j.entry_no || '').toLowerCase() === entryNorm) return true;
+      if (invoiceNorm && String(j.source_reference || '').toLowerCase() === invoiceNorm) return true;
+      if (invoiceNorm && String(j.memo || '').toLowerCase().includes(invoiceNorm)) return true;
+      return false;
+    });
+    autoOpenedKey.current = key;
+    if (!matches.length) {
+      toast({
+        variant: 'destructive',
+        title: 'Journal not found',
+        description: openInvoice
+          ? `No draft or posted journal is linked to ${openInvoice}.`
+          : 'That journal entry could not be found.',
+      });
+      return;
+    }
+    matches.sort((a, b) => rank(b) - rank(a));
+    const picked = matches[0];
+    setSearch(picked.entry_no || openInvoice || openEntry);
+    openJournal(picked);
+  }, [mode, loadingJournals, journals, openEntry, openId, openInvoice, toast]);
 
   const openJournalFromLedger = async (row: any) => {
     if (row.journal_id) {
