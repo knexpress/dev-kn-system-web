@@ -64,19 +64,22 @@ export function OriginalInvoiceDocument({ invoice, note }: { invoice: any; note:
   const invoiceNo = invoice?.invoice_id || note.invoice_no;
   const title = taxAmount > 0 ? 'TAX INVOICE' : 'INVOICE';
   const lineItems = Array.isArray(invoice?.line_items) ? invoice.line_items.filter(Boolean) : [];
-  const chargeRows =
+  type ChargeRow = { key: string; description: string; amount: number };
+  const chargeRows: ChargeRow[] =
     lineItems.length > 0
-      ? lineItems.map((line: any, i: number) => ({
+      ? lineItems.map((line: { _id?: string; description?: string; item?: string; total?: unknown; unit_price?: unknown; amount?: unknown }, i: number) => ({
           key: String(line._id || i),
           description: line.description || line.item || 'Charge',
           amount: num(line.total ?? line.unit_price ?? line.amount),
         }))
-      : [
-          shipping ? { key: 'ship', description: 'Shipping Charge', amount: shipping } : null,
-          pickup ? { key: 'pick', description: 'Pickup Charge', amount: pickup } : null,
-          delivery ? { key: 'del', description: 'Delivery Charge', amount: delivery } : null,
-          insurance ? { key: 'ins', description: 'Insurance', amount: insurance } : null,
-        ].filter(Boolean) as { key: string; description: string; amount: number }[];
+      : (
+          [
+            shipping ? { key: 'ship', description: 'Shipping Charge', amount: shipping } : null,
+            pickup ? { key: 'pick', description: 'Pickup Charge', amount: pickup } : null,
+            delivery ? { key: 'del', description: 'Delivery Charge', amount: delivery } : null,
+            insurance ? { key: 'ins', description: 'Insurance', amount: insurance } : null,
+          ] as Array<ChargeRow | null>
+        ).filter((row): row is ChargeRow => Boolean(row));
 
   return (
     <div className="mx-auto max-w-[210mm] bg-white p-8 text-sm leading-snug text-black">
