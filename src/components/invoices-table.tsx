@@ -842,6 +842,13 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel,
                                 ) : (
                                     'N/A'
                                 )}
+                                {invoice.invoice_origin === 'CANCELLATION' && (
+                                    <div className="mt-1">
+                                        <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] font-semibold uppercase tracking-wide text-rose-700">
+                                            Cancel fee
+                                        </Badge>
+                                    </div>
+                                )}
                             </TableCell>
                             <TableCell className={cn(t.cell, 'font-mono text-xs')}>{invoice.awb_number || 'N/A'}</TableCell>
                             <TableCell className={cn(t.cell, 'font-mono text-xs')}>

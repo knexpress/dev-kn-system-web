@@ -775,6 +775,24 @@ class ApiClient {
     });
   }
 
+  async recordQuotationAdvance(
+    id: string,
+    payload: {
+      mode: InvoicePaymentMode;
+      amount?: number;
+      reference?: string;
+      collected_at?: string;
+    }
+  ) {
+    const result = await this.request(`/invoice-requests/${encodeURIComponent(id)}/advance-payment`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    this.invalidateCache('/invoice-requests');
+    this.invalidateCache('/invoices-unified');
+    return result;
+  }
+
   async cancelQuotedShipment(
     id: string,
     payload: {
@@ -1138,6 +1156,33 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(invoiceData),
     });
+  }
+
+  async getCancellationInvoiceCandidates(search?: string) {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    const qs = params.toString();
+    return this.request(`/invoices-unified/cancellation-candidates${qs ? `?${qs}` : ''}`, {}, false);
+  }
+
+  async createCancellationInvoice(payload: {
+    request_id?: string;
+    amount: number;
+    vat_rate?: 0 | 5;
+    reason?: string;
+    awb_number?: string;
+    customer_name?: string;
+    customer_phone?: string;
+    paid?: boolean;
+    payment?: { mode: InvoicePaymentMode; reference?: string; collected_at?: string };
+  }) {
+    const result = await this.request('/invoices-unified/cancellation', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    this.invalidateCache('/invoices-unified');
+    this.invalidateCache('/invoice-requests');
+    return result;
   }
 
   async updateInvoiceUnified(id: string, invoiceData: any) {
@@ -2575,6 +2620,24 @@ class ApiClient {
 
   async getQuotation(id: string) {
     return this.request(`/quotations/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async recordSavedQuotationAdvance(
+    id: string,
+    payload: {
+      mode: InvoicePaymentMode;
+      amount?: number;
+      reference?: string;
+      collected_at?: string;
+    }
+  ) {
+    const result = await this.request(`/quotations/${encodeURIComponent(id)}/advance-payment`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    this.invalidateCache('/invoice-requests');
+    this.invalidateCache('/invoices-unified');
+    return result;
   }
 
   async updateQuotation(id: string, quotationData: any) {

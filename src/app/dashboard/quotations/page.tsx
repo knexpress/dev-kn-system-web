@@ -34,7 +34,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { ArrowRight, Ban, BellRing, ChevronDown, ChevronUp, Download, FileSignature, Pencil, PlusCircle, Printer, Send, Trash2 } from 'lucide-react';
+import { ArrowRight, Ban, Banknote, BellRing, ChevronDown, ChevronUp, Download, FileSignature, Pencil, PlusCircle, Printer, Send, Trash2 } from 'lucide-react';
 
 type RouteCode = 'PH_TO_UAE' | 'UAE_TO_PH';
 
@@ -74,6 +74,15 @@ type SavedQuotation = {
   invoice_request_id?: string;
   awb?: string;
   createdAt?: string;
+  advance?: {
+    amount?: number;
+    mode?: string;
+    journal_id?: string;
+    journal_no?: string;
+    collected_at?: string;
+    void_journal_id?: string;
+    void_journal_no?: string;
+  };
 };
 
 const ROUTE_LABELS: Record<RouteCode, string> = {
@@ -207,6 +216,16 @@ export default function QuotationsPage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   });
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [advanceTarget, setAdvanceTarget] = useState<any | null>(null);
+  const [advanceQuote, setAdvanceQuote] = useState<SavedQuotation | null>(null);
+  const [advanceMode, setAdvanceMode] = useState<InvoicePaymentMode | ''>('');
+  const [advanceAmount, setAdvanceAmount] = useState('');
+  const [advanceRef, setAdvanceRef] = useState('');
+  const [advanceDate, setAdvanceDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  const [savingAdvance, setSavingAdvance] = useState(false);
 
   const CANCEL_PAY_MODES: { value: InvoicePaymentMode; label: string; rate: number }[] = [
     { value: 'CASH', label: 'Cash', rate: 0 },
@@ -229,6 +248,75 @@ export default function QuotationsPage() {
   const openCancelShipment = (request: any) => {
     resetCancelForm();
     setCancelTarget(request);
+  };
+
+  const quoteAdvanceOf = (request: any) => request?.quotation_request?.advance;
+  const hasLiveAdvance = (request: any) => {
+    const adv = quoteAdvanceOf(request);
+    return Boolean(adv?.journal_id) && !adv?.void_journal_no && !adv?.void_journal_id;
+  };
+
+  const openAdvance = (request: any) => {
+    const d = new Date();
+    setAdvanceDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    setAdvanceMode('');
+    setAdvanceRef('');
+    setAdvanceAmount(String(Number(request?.quotation_request?.quotation_total || 0) || ''));
+    setAdvanceQuote(null);
+    setAdvanceTarget(request);
+  };
+
+  const quoteHasLiveAdvance = (quote: SavedQuotation) =>
+    Boolean(quote.advance?.journal_id) && !quote.advance?.void_journal_id && !quote.advance?.void_journal_no;
+
+  const openAdvanceFromSavedQuote = (quote: SavedQuotation) => {
+    const d = new Date();
+    setAdvanceDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    setAdvanceMode('');
+    setAdvanceRef('');
+    setAdvanceAmount(String(Number(quote.total_amount ?? quote.shipping_amount) || ''));
+    setAdvanceTarget(null);
+    setAdvanceQuote(quote);
+  };
+
+  const recordAdvance = async () => {
+    if (!advanceTarget && !advanceQuote) return;
+    if (!advanceMode) {
+      toast({ variant: 'destructive', title: 'Payment method required', description: 'Choose how the customer paid the advance.' });
+      return;
+    }
+    if (!advanceDate) {
+      toast({ variant: 'destructive', title: 'Payment date required', description: 'Enter the date the customer paid.' });
+      return;
+    }
+    const amount = Math.round((parseFloat(advanceAmount) || 0) * 100) / 100;
+    if (!(amount > 0)) {
+      toast({ variant: 'destructive', title: 'Amount required', description: 'Enter the advance amount received.' });
+      return;
+    }
+    setSavingAdvance(true);
+    const payload = {
+      mode: advanceMode,
+      amount,
+      reference: advanceRef.trim() || undefined,
+      collected_at: advanceDate,
+    };
+    const result = advanceQuote
+      ? await apiClient.recordSavedQuotationAdvance(advanceQuote._id, payload)
+      : await apiClient.recordQuotationAdvance(advanceTarget._id, payload);
+    setSavingAdvance(false);
+    if (!result.success) {
+      toast({ variant: 'destructive', title: 'Could not record advance', description: result.error || 'Failed to record the advance.' });
+      return;
+    }
+    setAdvanceTarget(null);
+    setAdvanceQuote(null);
+    loadQuoteRequests();
+    loadQuotations();
+    toast({
+      title: 'Advance recorded',
+      description: result.message || 'Credited to Customer Payment Due.',
+    });
   };
 
   const loadQuoteRequests = useCallback(async () => {
@@ -398,11 +486,11 @@ export default function QuotationsPage() {
         toast({ variant: 'destructive', title: 'Fee required', description: 'Enter the cancellation fee to charge.' });
         return;
       }
-      if (!cancelPayMode) {
+      if (!hasLiveAdvance(cancelTarget) && !cancelPayMode) {
         toast({ variant: 'destructive', title: 'Payment method required', description: 'Choose how the customer paid the cancellation fee.' });
         return;
       }
-      if (!cancelPayDate) {
+      if (!hasLiveAdvance(cancelTarget) && !cancelPayDate) {
         toast({ variant: 'destructive', title: 'Payment date required', description: 'Enter the date the customer paid the cancellation fee.' });
         return;
       }
@@ -411,7 +499,7 @@ export default function QuotationsPage() {
     const result = await apiClient.cancelQuotedShipment(cancelTarget._id, {
       charge: cancelCharge,
       amount: cancelCharge ? net : undefined,
-      vat_rate: cancelCharge ? (cancelVat === '5' ? 5 : 0) : undefined,
+      vat_rate: cancelCharge ? 5 : undefined,
       reason: cancelReason.trim() || undefined,
       payment: cancelCharge && cancelPayMode
         ? { mode: cancelPayMode, reference: cancelPayRef.trim() || undefined, collected_at: cancelPayDate || undefined }
@@ -431,8 +519,8 @@ export default function QuotationsPage() {
     toast({
       title: 'Shipment cancelled',
       description: cancelCharge
-        ? `Invoice ${invoiceNo || ''} raised. ${
-            pay?.status === 'PAID' && pay.journal_no ? `Payment posted as ${pay.journal_no}.` : pay?.error || 'Record the payment from the invoice if it did not post.'
+        ? `Invoice ${invoiceNo || ''} is on the Invoices page. ${
+            pay?.status === 'PAID' && pay.journal_no ? `Payment posted as ${pay.journal_no}.` : pay?.error || 'Record the payment from Invoices if it did not post.'
           }`
         : 'The customer was not charged.',
     });
@@ -775,6 +863,39 @@ export default function QuotationsPage() {
                     </div>
                   </div>
 
+                  {quoted && (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                      {hasLiveAdvance(request) ? (
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="font-semibold text-emerald-900">Advance received</p>
+                            <p className="text-xs text-emerald-800">
+                              AED {money(Number(qr.advance?.amount || 0))} via {qr.advance?.mode || '—'}
+                              {qr.advance?.collected_at ? ` · ${new Date(qr.advance.collected_at).toLocaleDateString()}` : ''}
+                              {qr.advance?.journal_no ? ` · ${qr.advance.journal_no}` : ''}
+                              {' '}on Customer Payment Due. Applied when the invoice journal posts, using this paid date.
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="font-semibold text-emerald-900">Receive advance payment</p>
+                            <p className="text-xs text-emerald-800">
+                              Record cash, bank, card or Tabby against this quotation. It credits Customer Payment Due until the invoice is generated.
+                            </p>
+                          </div>
+                          {canQuote && (
+                            <Button size="sm" className="bg-emerald-700 hover:bg-emerald-800" onClick={() => openAdvance(request)}>
+                              <Banknote className="mr-2 h-4 w-4" />
+                              Receive advance
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {expanded && (
                     <div className="grid gap-4 rounded-lg bg-muted/40 p-3 text-sm md:grid-cols-3">
                       {[
@@ -1095,8 +1216,17 @@ export default function QuotationsPage() {
                     </TableCell>
                     <TableCell>{ROUTE_LABELS[quote.route] || quote.route}</TableCell>
                     <TableCell>{Number(quote.chargeable_weight_kg).toFixed(2)} kg</TableCell>
-                    <TableCell>AED {money(Number(quote.total_amount ?? quote.shipping_amount))}</TableCell>
-                    <TableCell className="text-right space-x-2">
+                    <TableCell>
+                      <div>AED {money(Number(quote.total_amount ?? quote.shipping_amount))}</div>
+                      {quoteHasLiveAdvance(quote) ? (
+                        <div className="text-xs text-emerald-700">
+                          Advance AED {money(Number(quote.advance?.amount || 0))}
+                          {quote.advance?.journal_no ? ` · ${quote.advance.journal_no}` : ''}
+                        </div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex flex-wrap justify-end gap-2">
                       <Button size="sm" variant="outline" onClick={() => startEdit(quote)}>
                         <Pencil className="mr-2 h-4 w-4" />
                         Edit
@@ -1109,9 +1239,16 @@ export default function QuotationsPage() {
                         <Printer className="mr-2 h-4 w-4" />
                         Print
                       </Button>
+                      {canQuote && !quoteHasLiveAdvance(quote) && (
+                        <Button size="sm" className="bg-emerald-700 hover:bg-emerald-800" onClick={() => openAdvanceFromSavedQuote(quote)}>
+                          <Banknote className="mr-2 h-4 w-4" />
+                          Advance
+                        </Button>
+                      )}
                       <Button size="sm" variant="outline" onClick={() => handleDelete(quote._id)}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1358,6 +1495,65 @@ export default function QuotationsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog open={Boolean(advanceTarget) || Boolean(advanceQuote)} onOpenChange={(open) => { if (!open) { setAdvanceTarget(null); setAdvanceQuote(null); } }}>
+        <AlertDialogContent className="max-w-lg">
+          {(advanceTarget || advanceQuote) && (() => {
+            const qr = advanceTarget?.quotation_request || {};
+            const quoteNo = advanceQuote?.quotation_number || qr.quotation_number;
+            const awb = advanceQuote?.awb || advanceTarget?.tracking_code || advanceTarget?.awb_number || advanceTarget?._id;
+            const quoteTotal = Number(advanceQuote?.total_amount ?? advanceQuote?.shipping_amount ?? qr.quotation_total ?? 0);
+            return (
+              <>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Receive advance · {quoteNo || awb}</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Cash, bank, card or Tabby is posted to Customer Payment Due. When the invoice journal posts, a
+                    payment journal is raised on this paid date (not today).
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="space-y-3 text-sm">
+                  <p className="text-muted-foreground">
+                    Quotation total AED {money(quoteTotal)}
+                  </p>
+                  <div className="space-y-1">
+                    <Label>Amount received (AED) *</Label>
+                    <Input type="number" min="0.01" step="0.01" value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} className="bg-white" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Mode of payment *</Label>
+                    <Select value={advanceMode} onValueChange={(value) => setAdvanceMode(value as InvoicePaymentMode)}>
+                      <SelectTrigger className="bg-white">
+                        <SelectValue placeholder="Choose how the customer paid" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CANCEL_PAY_MODES.map((mode) => (
+                          <SelectItem key={mode.value} value={mode.value}>{mode.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Date paid *</Label>
+                    <Input type="date" value={advanceDate} onChange={(e) => setAdvanceDate(e.target.value)} className="bg-white" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Reference (optional)</Label>
+                    <Input value={advanceRef} onChange={(e) => setAdvanceRef(e.target.value)} placeholder="Receipt no., transfer ref, card slip…" className="bg-white" />
+                  </div>
+                </div>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={savingAdvance}>Cancel</AlertDialogCancel>
+                  <Button onClick={() => void recordAdvance()} disabled={savingAdvance || !advanceMode || !(parseFloat(advanceAmount) > 0)}>
+                    <Banknote className="mr-2 h-4 w-4" />
+                    {savingAdvance ? 'Recording...' : 'Record advance'}
+                  </Button>
+                </AlertDialogFooter>
+              </>
+            );
+          })()}
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={Boolean(cancelTarget)} onOpenChange={(open) => { if (!open) { setCancelTarget(null); resetCancelForm(); } }}>
         <AlertDialogContent className="max-w-lg">
           {cancelTarget && (() => {
@@ -1452,15 +1648,7 @@ export default function QuotationsPage() {
                       </div>
                       <div className="space-y-1">
                         <Label>VAT</Label>
-                        <Select value={cancelVat} onValueChange={(value) => setCancelVat(value as '0' | '5')}>
-                          <SelectTrigger className="bg-white">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="5">5% VAT</SelectItem>
-                            <SelectItem value="0">No VAT</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <p className="flex h-10 items-center rounded-md border bg-white px-3 text-sm">5% — tax invoice</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm text-emerald-950 dark:text-emerald-100">
@@ -1471,6 +1659,13 @@ export default function QuotationsPage() {
                       <span className="font-semibold">Invoice total</span>
                       <span className="text-right font-semibold">AED {money(total)}</span>
                     </div>
+                    {hasLiveAdvance(cancelTarget) ? (
+                      <p className="text-xs text-emerald-800 dark:text-emerald-200">
+                        Quotation advance AED {money(Number(qr.advance?.amount || 0))} ({qr.advance?.journal_no || 'Customer Payment Due'}) will apply to this cancellation invoice on the original paid date.
+                      </p>
+                    ) : null}
+                    {!hasLiveAdvance(cancelTarget) && (
+                    <>
                     <div className="space-y-1">
                       <Label>Mode of payment *</Label>
                       <Select value={cancelPayMode} onValueChange={(value) => setCancelPayMode(value as InvoicePaymentMode)}>
@@ -1512,6 +1707,8 @@ export default function QuotationsPage() {
                         className="bg-white"
                       />
                     </div>
+                    </>
+                    )}
                   </div>
                 )}
 
@@ -1520,7 +1717,7 @@ export default function QuotationsPage() {
                   <Button
                     variant={cancelCharge ? 'default' : 'destructive'}
                     onClick={cancelShipment}
-                    disabled={Boolean(cancellingId) || (cancelCharge && (!(net > 0) || !cancelPayMode))}
+                    disabled={Boolean(cancellingId) || (cancelCharge && (!(net > 0) || (!cancelPayMode && !hasLiveAdvance(cancelTarget))))}
                   >
                     <Ban className="mr-2 h-4 w-4" />
                     {cancellingId

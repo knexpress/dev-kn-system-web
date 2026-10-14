@@ -1312,7 +1312,21 @@ export default function InvoiceRequestsPage() {
 
     const pickup = Number(quote.quotation_pickup_charge) || 0;
     const delivery = Number(quote.quotation_delivery_charge) || 0;
-    const insurance = Number(quote.quotation_insurance_charge) || 0;
+    const pickupVat = Number(quote.quotation_pickup_vat) || Math.round(pickup * 0.05 * 100) / 100;
+    let insurance = Number(quote.quotation_insurance_charge) || 0;
+    if (insurance <= 0 && Number(quote.quotation_total) > 0) {
+      const implied = Math.round(
+        (Number(quote.quotation_total) -
+          (Number(quote.quotation_shipping_amount) || 0) -
+          pickup -
+          pickupVat -
+          delivery) *
+          100
+      ) / 100;
+      if (implied > 0) insurance = implied;
+    }
+    setHasInsurance(false);
+    setInsuranceManualAmount('');
     if (pickup > 0) setPickupCharge(String(pickup));
     if (isPhToUaeService(getRequestServiceCode(request))) {
       // PH -> UAE delivery is base + 5 AED per extra box; the quoted delivery becomes the base
@@ -1961,8 +1975,10 @@ export default function InvoiceRequestsPage() {
       quotedRateOverride = Math.round(parsedQuoteRate * 100) / 100;
     }
 
+    const quoteAdvance = (selectedRequestForInvoice as any)?.quotation_request?.advance;
+    const hasQuoteAdvance = Boolean(quoteAdvance?.journal_id) && !quoteAdvance?.void_journal_id && !quoteAdvance?.void_journal_no;
     const prepaid = isPrepaidQuotedRequest(selectedRequestForInvoice);
-    if (prepaid && !prepaidMode) {
+    if (prepaid && !hasQuoteAdvance && !prepaidMode) {
       toast({
         variant: 'destructive',
         title: 'Payment Mode Required',
@@ -1970,7 +1986,7 @@ export default function InvoiceRequestsPage() {
       });
       return;
     }
-    if (prepaid && !prepaidPaidAt) {
+    if (prepaid && !hasQuoteAdvance && !prepaidPaidAt) {
       toast({
         variant: 'destructive',
         title: 'Payment date required',
@@ -2441,7 +2457,7 @@ export default function InvoiceRequestsPage() {
           unit_price: item.unitPrice, // REQUIRED - Price per unit
           total: item.total // REQUIRED - Total amount (quantity × unit_price)
         })),
-        tax_rate: taxRateForRequest, // REQUIRED - 0 for COD, 5 for Tax
+        tax_rate: (invoiceData as any)?.charges?.taxRate ?? taxRateForRequest, // REQUIRED - 0 for COD, 5 for Tax
         service_code: serviceCode, // REQUIRED for PH_TO_UAE
         has_delivery: hasDeliveryFlag, // REQUIRED - Boolean indicating if delivery is enabled
         delivery_base_amount: deliveryBaseAmountValue, // REQUIRED if has_delivery = true for PH_TO_UAE
@@ -2467,7 +2483,7 @@ export default function InvoiceRequestsPage() {
             : ((invoiceData as any).totalAmountCod || 0), // Fallback to calculated value
           total_amount_tax_invoice: (invoiceData as any).totalAmountTaxInvoice || 0 // Tax Invoice total: Delivery + Tax
         }),
-        ...(prepaid && {
+        ...(prepaid && !hasQuoteAdvance && {
           prepaid_payment: {
             mode: prepaidMode,
             reference: prepaidReference.trim() || undefined,
@@ -2569,8 +2585,8 @@ export default function InvoiceRequestsPage() {
           }
         };
 
-        if (prepaid) {
-          // Customer already paid: no COD delivery assignment or collection entry for a driver
+        if (prepaid || hasQuoteAdvance) {
+          // Customer already paid (prepaid UAE→PH or quotation advance): no driver collection
           await markShipmentDelivered();
         } else {
         const deliveryAssignmentData = {
@@ -3035,10 +3051,23 @@ export default function InvoiceRequestsPage() {
       }
     } else {
       // UAE TO PH or other routes (existing logic)
+      const quote = getInvoiceQuote(request);
+      const quotedUaeToPh = Boolean(quote) && isUaeToPh;
       const subtotal = shippingCharge + pickupChargeValue + deliveryCharge + insuranceCharge;
       const fallbackTaxRate = isPhToUae ? 5 : 0;
       const effectiveTaxRate = typeof taxRateOverride === 'number' ? taxRateOverride : fallbackTaxRate;
-      
+
+      if (quotedUaeToPh) {
+        const quotedPickupVat = Number(quote.quotation_pickup_vat);
+        taxAmount = Number.isFinite(quotedPickupVat) && quotedPickupVat > 0
+          ? quotedPickupVat
+          : Math.round(pickupChargeValue * 0.05 * 100) / 100;
+        taxRateForDelivery = taxAmount > 0 ? 5 : 0;
+        displayShippingCharge = shippingCharge;
+        displaySubtotal = subtotal;
+        displayTaxAmount = taxAmount;
+        displayTotal = Math.round((subtotal + taxAmount) * 100) / 100;
+      } else {
       // Calculate tax:
       // - If flomic UAE to PH: 5% VAT included in subtotal (total = subtotal, VAT shown for display)
       // - Otherwise: Tax on delivery charge only (if present and PH to UAE)
@@ -3065,6 +3094,7 @@ export default function InvoiceRequestsPage() {
       displaySubtotal = subtotal;
       displayTaxAmount = taxAmount;
       displayTotal = total;
+      }
     }
     
     // Create base invoice data object (don't return yet - we need to add lineItems)
@@ -3630,6 +3660,8 @@ export default function InvoiceRequestsPage() {
                   <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-700">
                     <span>Quoted pickup{pickupLocation ? ` (${pickupLocation})` : ''}</span>
                     <span className="text-right">{money(quotedPickup)}</span>
+                    <span>VAT 5% on pickup</span>
+                    <span className="text-right">{money(Number(quote.quotation_pickup_vat) || Math.round(quotedPickup * 0.05 * 100) / 100)}</span>
                     <span>Quoted delivery</span>
                     <span className="text-right">{money(quotedDelivery)}</span>
                     <span>Quoted insurance</span>
@@ -3656,7 +3688,24 @@ export default function InvoiceRequestsPage() {
               );
             })()}
 
-            {isPrepaidQuotedRequest(selectedRequestForInvoice) && (
+            {(() => {
+              const adv = (selectedRequestForInvoice as any)?.quotation_request?.advance;
+              const liveAdvance = Boolean(adv?.journal_id) && !adv?.void_journal_id && !adv?.void_journal_no;
+              if (liveAdvance) {
+                return (
+              <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3">
+                <p className="text-sm font-semibold text-emerald-900">Quotation advance already recorded</p>
+                <p className="text-xs text-emerald-800">
+                  AED {Number(adv.amount || 0).toFixed(2)} via {adv.mode || '—'}
+                  {adv.collected_at ? ` on ${new Date(adv.collected_at).toLocaleDateString()}` : ''}
+                  {adv.journal_no ? ` · ${adv.journal_no}` : ''} sits in Customer Payment Due. Generating this invoice
+                  posts the invoice journal, then a payment journal dated the day the advance was recorded.
+                </p>
+              </div>
+                );
+              }
+              if (!isPrepaidQuotedRequest(selectedRequestForInvoice)) return null;
+              return (
               <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3">
                 <p className="text-sm font-semibold text-emerald-900">Customer payment received *</p>
                 <p className="text-xs text-emerald-800 mb-2">
@@ -3698,7 +3747,8 @@ export default function InvoiceRequestsPage() {
                   className="w-full bg-white"
                 />
               </div>
-            )}
+              );
+            })()}
 
             {/* Pickup Charge - Shown only if sender_delivery_option is "pickup" */}
             {showPickupChargeField && (

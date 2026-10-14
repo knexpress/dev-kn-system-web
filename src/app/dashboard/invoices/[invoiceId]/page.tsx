@@ -201,6 +201,9 @@ export default function InvoicePage() {
                         delivery_base_amount: (result.data as any).delivery_base_amount
                     });
                     setInvoice(result.data);
+                    if ((result.data as any).invoice_origin === 'CANCELLATION' && typeParam !== 'normal') {
+                        setInvoiceType('tax');
+                    }
                     const invoiceData = result.data as any;
                     // Get insurance charge from invoice (line_items or direct field)
                     let insuranceValue = '';
@@ -600,6 +603,7 @@ export default function InvoicePage() {
         invoice.request_id?.verification?.service_code ||
         '';
     const isPhToUae = isPhToUaeService(serviceCodeRaw);
+    const isCancellationInvoice = invoice?.invoice_origin === 'CANCELLATION';
     
     // Read pickup charge: For PH TO UAE, also check pickup_base_amount
     let pickupCharge = parseDecimal(invoice.pickup_charge || 0, 2);
@@ -1026,7 +1030,7 @@ export default function InvoicePage() {
     // Check if database has valid tax_amount and total_amount
     // For PH TO UAE COD invoices, always use totalAmountCod if available
     const hasValidTaxAmount = taxAmount > 0 || (taxAmount === 0 && taxRate === 0);
-    const isPhToUaeCodInvoice = isPhToUae && taxRate === 0;
+    const isPhToUaeCodInvoice = isPhToUae && taxRate === 0 && !isCancellationInvoice;
     
     // For PH TO UAE COD: Always use totalAmountCod if available, otherwise recalculate
     // Don't trust stored total_amount for COD invoices - use totalAmountCod instead
@@ -1164,6 +1168,16 @@ export default function InvoicePage() {
           finalTotal: total
         });
       }
+    if (isCancellationInvoice) {
+      taxRate = 5;
+      const netFee = parseDecimal(invoice.amount || subtotal, 2);
+      taxAmount = parseDecimal(invoice.tax_amount || 0, 2) > 0
+        ? parseDecimal(invoice.tax_amount, 2)
+        : parseDecimal((netFee * 5) / 100, 2);
+      const storedTaxTotal = parseDecimal(totalAmountTaxInvoice || invoice.total_amount || 0, 2);
+      total = storedTaxTotal > 0 ? storedTaxTotal : parseDecimal(netFee + taxAmount, 2);
+    }
+
       secureLog.debug('✅ Using database tax/total values:', {
         taxRate,
         taxAmount,
@@ -1569,7 +1583,7 @@ export default function InvoicePage() {
     // PH TO UAE Invoice Display Logic:
     // - COD Invoice (normal): Show shipping + base delivery (no tax)
     // - Tax Invoice: Show only delivery (calculated with boxes) + tax on delivery (NO shipping, NO insurance)
-    const shouldShowDeliveryOnlyInTaxInvoice = isPhToUae && invoiceType === 'tax';
+    const shouldShowDeliveryOnlyInTaxInvoice = isPhToUae && invoiceType === 'tax' && !isCancellationInvoice;
     
     // For PH TO UAE tax invoice: Ensure taxRate is 5% and calculate tax correctly
     let taxRateForTaxInvoice = taxRate;

@@ -3,6 +3,7 @@
 import InvoicesTable from "@/components/invoices-table";
 import { RecordPaymentDialog } from "@/components/record-payment-dialog";
 import { InvoiceNoteDialog } from "@/components/invoice-notes/invoice-note-dialog";
+import { CancellationInvoiceDialog } from "@/components/cancellation-invoice-dialog";
 import { apiClient } from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 import { useNotifications } from '@/contexts/NotificationContext';
@@ -16,14 +17,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { X } from "lucide-react";
+import { FilePlus2, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { secureLog } from '@/lib/secure-logger';
-import { Loader2 } from "lucide-react";
 import {
   DashboardPageShell,
-  ErpToolbar,
-  erpOutlineControlClass,
+    ErpToolbar,
+    erpOutlineControlClass,
+    erpPrimaryButtonClass,
 } from "@/components/dashboard/maglo-shell";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +51,7 @@ export default function InvoicesPage() {
     const itemsPerPage = 50;
     const [paymentInvoice, setPaymentInvoice] = useState<any | null>(null);
     const [noteInvoice, setNoteInvoice] = useState<any | null>(null);
+    const [showCancellationInvoice, setShowCancellationInvoice] = useState(false);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -331,6 +333,16 @@ export default function InvoicesPage() {
                             )}
                         </>
                     }
+                    actions={
+                        <Button
+                            type="button"
+                            className={erpPrimaryButtonClass()}
+                            onClick={() => setShowCancellationInvoice(true)}
+                        >
+                            <FilePlus2 className="mr-1.5 h-4 w-4" />
+                            Cancellation invoice
+                        </Button>
+                    }
                 />
 
                 <InvoicesTable 
@@ -353,6 +365,24 @@ export default function InvoicesPage() {
                     invoice={noteInvoice}
                     open={Boolean(noteInvoice)}
                     onOpenChange={(open) => !open && setNoteInvoice(null)}
+                />
+
+                <CancellationInvoiceDialog
+                    open={showCancellationInvoice}
+                    onOpenChange={setShowCancellationInvoice}
+                    onCreated={async () => {
+                        const updatedResult = await apiClient.getInvoicesUnified({
+                            page: currentPage,
+                            limit: itemsPerPage,
+                            search: debouncedSearchQuery || undefined,
+                            useCache: false
+                        });
+                        if (updatedResult.success && updatedResult.data) {
+                            setInvoices(Array.isArray(updatedResult.data) ? updatedResult.data : []);
+                            const paginationData = (updatedResult as any).pagination;
+                            setPagination(paginationData || null);
+                        }
+                    }}
                 />
 
                 {!loading && pagination && pagination.pages > 1 && (
