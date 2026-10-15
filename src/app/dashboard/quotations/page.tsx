@@ -45,6 +45,10 @@ type QuoteItem = {
   quantity: number;
 };
 
+function distinctBoxCount(boxNumbers: (string | undefined)[]) {
+  return new Set(boxNumbers.map((box, index) => (box || String(index + 1)).trim().toLowerCase())).size;
+}
+
 type SavedQuotation = {
   _id: string;
   quotation_number: string;
@@ -59,6 +63,7 @@ type SavedQuotation = {
   volumetric_weight_kg: number;
   chargeable_weight_kg: number;
   weight_type: 'ACTUAL' | 'VOLUMETRIC';
+  number_of_boxes?: number;
   items: { box_number?: string; name: string; quantity: number }[];
   rate_per_kg: number;
   rate_bracket?: string;
@@ -188,6 +193,7 @@ export default function QuotationsPage() {
   const [volumetricWeight, setVolumetricWeight] = useState('');
   const [ratePerKg, setRatePerKg] = useState('');
   const [notes, setNotes] = useState('');
+  const [numberOfBoxes, setNumberOfBoxes] = useState('');
   const [pickupLocation, setPickupLocation] = useState<'INSIDE_DUBAI' | 'OUTSIDE_DUBAI' | 'DROP_OFF' | ''>('');
   const [deliveryCharge, setDeliveryCharge] = useState('');
   const [insuranceCharge, setInsuranceCharge] = useState('');
@@ -388,6 +394,7 @@ export default function QuotationsPage() {
     setVolumetricWeight('');
     setRatePerKg('');
     setNotes('');
+    setNumberOfBoxes('');
     setPickupLocation('');
     setDeliveryCharge('');
     setInsuranceCharge('');
@@ -421,6 +428,7 @@ export default function QuotationsPage() {
         : [{ id: '1', boxNumber: '1', name: '', quantity: 1 }]
     );
     setNotes(qr.notes || '');
+    setNumberOfBoxes(qr.number_of_boxes ? String(qr.number_of_boxes) : '');
     setLinkedRequest(request);
     setShowForm(true);
     window.setTimeout(() => document.getElementById('quotation-form')?.scrollIntoView({ behavior: 'smooth' }), 50);
@@ -547,6 +555,7 @@ export default function QuotationsPage() {
     setVolumetricWeight(String(quote.volumetric_weight_kg ?? ''));
     setRatePerKg(String(quote.rate_per_kg ?? ''));
     setNotes(quote.notes || '');
+    setNumberOfBoxes(quote.number_of_boxes ? String(quote.number_of_boxes) : '');
     setPickupLocation(quote.pickup_location || '');
     setDeliveryCharge(quote.delivery_charge ? String(quote.delivery_charge) : '');
     setInsuranceCharge(quote.insurance_charge ? String(quote.insurance_charge) : '');
@@ -586,6 +595,11 @@ export default function QuotationsPage() {
       toast({ variant: 'destructive', title: 'Pickup required', description: 'Choose inside Dubai, outside Dubai, or drop off.' });
       return;
     }
+    const boxCount = parseInt(numberOfBoxes, 10) || distinctBoxCount(validItems.map((item) => item.boxNumber));
+    if (!(boxCount >= 1)) {
+      toast({ variant: 'destructive', title: 'Boxes required', description: 'Enter the number of boxes (at least 1).' });
+      return;
+    }
 
     const payload = {
       sender_name: senderName.trim(),
@@ -598,6 +612,7 @@ export default function QuotationsPage() {
       actual_weight_kg: actual,
       volumetric_weight_kg: volumetric,
       rate_per_kg: rate,
+      number_of_boxes: boxCount,
       items: validItems.map((item, index) => ({
         box_number: item.boxNumber.trim() || String(index + 1),
         name: item.name.trim(),
@@ -1030,6 +1045,20 @@ export default function QuotationsPage() {
               </div>
 
               <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="number_of_boxes">Number of boxes *</Label>
+                    <Input
+                      id="number_of_boxes"
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder={String(distinctBoxCount(items.map((item) => item.boxNumber)))}
+                      value={numberOfBoxes}
+                      onChange={(e) => setNumberOfBoxes(e.target.value)}
+                    />
+                  </div>
+                </div>
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold">Items</h3>
                   <Button
@@ -1340,7 +1369,9 @@ export default function QuotationsPage() {
               </thead>
               <tbody>
                 <tr>
-                  <td className="border border-gray-300">{printTarget.items.length}</td>
+                  <td className="border border-gray-300">
+                    {printTarget.number_of_boxes || distinctBoxCount(printTarget.items.map((item) => item.box_number))}
+                  </td>
                   <td className="border border-gray-300">
                     <div className="font-semibold">{Number(printTarget.chargeable_weight_kg).toFixed(2)} kg</div>
                     <div className="text-[11px] text-gray-600">

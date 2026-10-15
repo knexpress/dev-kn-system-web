@@ -55,6 +55,8 @@ export interface UaeToPhTaxInvoiceData {
     code: string;
   };
   shipmentClassification?: string;
+  /** Cancelled shipment charged as a domestic delivery fee (5% VAT on the whole line). */
+  domesticDeliveryFee?: boolean;
 }
 
 interface UaeToPhTaxInvoiceTemplateProps {
@@ -70,11 +72,13 @@ function cellBorder() {
 }
 
 const SERVICE_DESCRIPTION = 'International Courier Service - UAE to Philippines';
+const DOMESTIC_DELIVERY_DESCRIPTION = 'Domestic Delivery Fees';
 
 export default function UaeToPhTaxInvoiceTemplate({ data }: UaeToPhTaxInvoiceTemplateProps) {
   const [page, setPage] = useState<1 | 2>(1);
 
-  const pickup = data.charges.pickupCharge ?? 0;
+  const isDomestic = data.domesticDeliveryFee === true;
+  const pickup = isDomestic ? 0 : data.charges.pickupCharge ?? 0;
   const insurance = data.charges.insuranceCharge ?? 0;
   const delivery = data.charges.deliveryCharge ?? 0;
   const shipping = data.charges.shippingCharge ?? 0;
@@ -83,9 +87,9 @@ export default function UaeToPhTaxInvoiceTemplate({ data }: UaeToPhTaxInvoiceTem
   const mainTaxLineAmount = courierBundleAmount;
   const subtotal = data.charges.subtotal;
   // UAE->PH rule: shipment detail lines are always zero-tax.
-  // Tax is applied only on pickup/collection charges at 5%.
-  const taxAmount = pickup > 0 ? pickup * 0.05 : 0;
-  const taxRate = data.charges.taxRate;
+  // Tax is applied only on pickup/collection charges at 5%. Domestic delivery fees are taxed in full.
+  const taxAmount = isDomestic ? data.charges.taxAmount : pickup > 0 ? pickup * 0.05 : 0;
+  const taxRate = isDomestic ? 5 : data.charges.taxRate;
   const taxSummaryLabel =
     taxAmount > 0 ? `TOTAL TAX ON SALES ${taxRate > 0 ? taxRate : 5}%` : 'TOTAL SALES TAX 0%';
   const taxSummaryAmount = taxAmount > 0 ? taxAmount : 0;
@@ -177,10 +181,10 @@ export default function UaeToPhTaxInvoiceTemplate({ data }: UaeToPhTaxInvoiceTem
           </thead>
           <tbody>
             <tr>
-              <td className={cellBorder()}>{SERVICE_DESCRIPTION}</td>
+              <td className={cellBorder()}>{isDomestic ? DOMESTIC_DELIVERY_DESCRIPTION : SERVICE_DESCRIPTION}</td>
               <td className={`${cellBorder()} text-center`}>1</td>
               <td className={`${cellBorder()} text-right`}>{fmt(mainTaxLineAmount)}</td>
-              <td className={`${cellBorder()} text-center`}>Tax on Sales</td>
+              <td className={`${cellBorder()} text-center`}>{isDomestic ? '5%' : 'Tax on Sales'}</td>
               <td className={`${cellBorder()} text-right`}>{fmt(mainTaxLineAmount)}</td>
             </tr>
             {pickup > 0 && (

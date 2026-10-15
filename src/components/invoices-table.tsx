@@ -782,10 +782,7 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel,
                             <TableHead className={t.head}>Batch No</TableHead>
                             <TableHead className={t.head}>Client</TableHead>
                             <TableHead className={t.head}>Amount</TableHead>
-                            <TableHead className={t.head}>Service Code</TableHead>
                             <TableHead className={t.head}>Weight (KG)</TableHead>
-                            <TableHead className={t.head}>No. of Boxes</TableHead>
-                            <TableHead className={t.head}>Volume (CBM)</TableHead>
                             <TableHead className={t.head}>Receiver</TableHead>
                             <TableHead className={t.head}>Receiver Address</TableHead>
                             <TableHead className={t.head}>Receiver Phone</TableHead>
@@ -885,28 +882,7 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel,
                                     return `AED ${displayAmount ? parseFloat(displayAmount.toString()).toFixed(2) : '0.00'}`;
                                 })()}
                             </TableCell>
-                            <TableCell className={cn(t.cell, 'font-mono text-xs')}>{invoice.service_code ?? 'N/A'}</TableCell>
                             <TableCell className={t.cell}>{invoice.weight_kg != null ? invoice.weight_kg : 'N/A'}</TableCell>
-                            <TableCell className={t.cell}>
-                                {(() => {
-                                    const boxArrays = [
-                                        invoice.boxes,
-                                        invoice.request_id?.shipment?.boxes,
-                                        invoice.request_id?.boxes,
-                                    ];
-                                    const arrayCount = boxArrays.find((arr: any) => Array.isArray(arr));
-                                    const computedCount = Array.isArray(arrayCount)
-                                        ? Math.max(0, arrayCount.length - 1)
-                                        : null;
-                                    const fallbackCount =
-                                        invoice.number_of_boxes ??
-                                        invoice.request_id?.shipment?.number_of_boxes ??
-                                        invoice.request_id?.verification?.number_of_boxes ??
-                                        null;
-                                    return (computedCount ?? fallbackCount) ?? 'N/A';
-                                })()}
-                            </TableCell>
-                            <TableCell className={t.cell}>{invoice.volume_cbm != null ? invoice.volume_cbm : 'N/A'}</TableCell>
                             <TableCell className={t.cell}>{invoice.receiver_name ?? 'N/A'}</TableCell>
                             <TableCell className={cn(t.cell, 'max-w-[200px] truncate')} title={invoice.receiver_address ?? ''}>{invoice.receiver_address ?? 'N/A'}</TableCell>
                             <TableCell className={t.cell}>{invoice.receiver_phone ?? 'N/A'}</TableCell>
@@ -1029,7 +1005,7 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel,
                         })}
                          {safeInvoices.length === 0 && (
                             <TableRow>
-                                <TableCell colSpan={15} className={cn(t.cell, 'py-10 text-center text-slate-400')}>
+                                <TableCell colSpan={12} className={cn(t.cell, 'py-10 text-center text-slate-400')}>
                                     No invoices found. Try adjusting your search or filters.
                                 </TableCell>
                             </TableRow>

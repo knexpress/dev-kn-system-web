@@ -7,7 +7,7 @@ export default function SalesPage() {
   return (
     <AccountingSubpageShell
       title="Sales"
-      subtitle="Invoices, finance approval journals, receipts, and VAT traders."
+      subtitle="Shipment and sales invoices, finance approval journals, receipts, and VAT traders."
       crumbs={[{ id: 'sales', label: 'Sales' }]}
     >
       <SalesTab />

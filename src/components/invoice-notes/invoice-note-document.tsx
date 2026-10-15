@@ -16,170 +16,39 @@ import { apiClient, type InvoiceNote } from '@/lib/api-client';
 import { fmtDate, money } from '@/components/accounting/erp-format';
 import { NoteStatusPill, categoryLabel, reasonLabel, refundModeLabel } from './invoice-note-shared';
 
-export function noteDocumentTitle(note: Pick<InvoiceNote, 'note_type' | 'vat_amount'>) {
-  if (note.note_type === 'CREDIT') return note.vat_amount > 0 ? 'TAX CREDIT NOTE' : 'CREDIT NOTE';
-  return note.vat_amount > 0 ? 'TAX DEBIT NOTE' : 'DEBIT NOTE';
+export function noteDocumentTitle(note: Pick<InvoiceNote, 'note_type'>) {
+  return note.note_type === 'CREDIT' ? 'TAX CREDIT NOTE' : 'TAX DEBIT NOTE';
 }
 
-const num = (v: unknown) => {
-  const raw =
-    v && typeof v === 'object' && '$numberDecimal' in (v as object)
-      ? (v as { $numberDecimal: string }).$numberDecimal
-      : v;
-  const n = parseFloat(String(raw ?? ''));
-  return Number.isFinite(n) ? n : 0;
-};
-
-function KnexLetterhead() {
-  return (
-    <div className="mb-6 flex items-start justify-between gap-6">
-      <img src="/Screenshot 2026-06-29 132542.png" alt="KNEX logo" className="h-20 w-auto shrink-0 object-contain" />
-      <div className="text-right">
-        <p className="font-semibold">Knex Delivery Services L.L.C.</p>
-        <p>Rocky Warehouse # 19</p>
-        <p>11th Street, Al Qusais, Industrial Area 1</p>
-        <p>Dubai, UAE</p>
-        <p className="mt-1">
-          <span className="font-medium">TRN :</span> 104131637100003
-        </p>
-      </div>
-    </div>
-  );
+function cellBorder() {
+  return 'border border-gray-400 px-2 py-1.5 text-sm';
 }
 
-/** Original invoice issued to the customer — printed with the credit / debit note. */
-export function OriginalInvoiceDocument({ invoice, note }: { invoice: any; note: InvoiceNote }) {
-  const taxAmount = num(invoice?.tax_amount);
-  const taxRate = num(invoice?.tax_rate);
-  const total = num(invoice?.total_amount);
-  const shipping = num(invoice?.amount);
-  const pickup = num(invoice?.pickup_charge);
-  const delivery = num(invoice?.delivery_charge);
-  const insurance = num(invoice?.insurance_charge);
-  const subtotal = num(invoice?.subtotal) || shipping + pickup + delivery + insurance;
-  const client = invoice?.client_id || {};
-  const customerName =
-    invoice?.customer_name || client.company_name || client.contact_name || note.customer_name || '—';
-  const customerTrn = invoice?.customer_trn || client.trn || note.customer_trn;
-  const invoiceNo = invoice?.invoice_id || note.invoice_no;
-  const title = taxAmount > 0 ? 'TAX INVOICE' : 'INVOICE';
-  const lineItems = Array.isArray(invoice?.line_items) ? invoice.line_items.filter(Boolean) : [];
-  type ChargeRow = { key: string; description: string; amount: number };
-  const chargeRows: ChargeRow[] =
-    lineItems.length > 0
-      ? lineItems.map((line: { _id?: string; description?: string; item?: string; total?: unknown; unit_price?: unknown; amount?: unknown }, i: number) => ({
-          key: String(line._id || i),
-          description: line.description || line.item || 'Charge',
-          amount: num(line.total ?? line.unit_price ?? line.amount),
-        }))
-      : (
-          [
-            shipping ? { key: 'ship', description: 'Shipping Charge', amount: shipping } : null,
-            pickup ? { key: 'pick', description: 'Pickup Charge', amount: pickup } : null,
-            delivery ? { key: 'del', description: 'Delivery Charge', amount: delivery } : null,
-            insurance ? { key: 'ins', description: 'Insurance', amount: insurance } : null,
-          ] as Array<ChargeRow | null>
-        ).filter((row): row is ChargeRow => Boolean(row));
-
-  return (
-    <div className="mx-auto max-w-[210mm] bg-white p-8 text-sm leading-snug text-black">
-      <KnexLetterhead />
-      <div className="mb-6 flex items-end justify-between gap-4">
-        <h2 className="text-xl font-bold tracking-wide">{title}</h2>
-        <span className="rounded border border-slate-400 px-2 py-0.5 text-xs font-semibold uppercase text-slate-600">
-          Original invoice
-        </span>
-      </div>
-
-      <div className="mb-6 grid grid-cols-2 gap-8">
-        <div>
-          <p className="mb-2 font-semibold">Billed To :</p>
-          <p className="font-medium">{customerName}</p>
-          {customerTrn ? (
-            <p className="mt-1">
-              <span className="font-medium">TRN :</span> {customerTrn}
-            </p>
-          ) : null}
-          {invoice?.receiver_name ? <p className="mt-2">Receiver: {invoice.receiver_name}</p> : null}
-          {invoice?.receiver_address ? <p>{invoice.receiver_address}</p> : null}
-        </div>
-        <div className="space-y-1">
-          <p>
-            <span className="font-semibold">Invoice No :</span> {invoiceNo}
-          </p>
-          <p>
-            <span className="font-semibold">Date :</span> {fmtDate(invoice?.issue_date || note.invoice_date)}
-          </p>
-          {invoice?.awb_number || note.awb_number ? (
-            <p>
-              <span className="font-semibold">AIR WAYBILL NO :</span> {invoice?.awb_number || note.awb_number}
-            </p>
-          ) : null}
-          {invoice?.batch_number ? (
-            <p>
-              <span className="font-semibold">Batch :</span> {invoice.batch_number}
-            </p>
-          ) : null}
-          {invoice?.service_code ? (
-            <p>
-              <span className="font-semibold">Service :</span> {String(invoice.service_code).replace(/_/g, ' ')}
-            </p>
-          ) : null}
-        </div>
-      </div>
-
-      <table className="mb-4 w-full border-collapse text-xs">
-        <thead>
-          <tr className="border-y border-black">
-            <th className="py-2 text-left">#</th>
-            <th className="py-2 text-left">Description</th>
-            <th className="py-2 text-right">Amount (AED)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {chargeRows.map((row, i) => (
-            <tr key={row.key} className="border-b border-slate-300">
-              <td className="py-2">{i + 1}</td>
-              <td className="py-2">{row.description}</td>
-              <td className="py-2 text-right tabular-nums">{money(row.amount)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <div className="ml-auto w-72 space-y-1">
-        <div className="flex justify-between">
-          <span>Subtotal</span>
-          <span className="tabular-nums">AED {money(subtotal)}</span>
-        </div>
-        {taxAmount > 0 && (
-          <div className="flex justify-between">
-            <span>VAT {taxRate > 0 ? `${taxRate}%` : ''}</span>
-            <span className="tabular-nums">AED {money(taxAmount)}</span>
-          </div>
-        )}
-        <div className="flex justify-between border-t border-black pt-1 font-bold">
-          <span>Invoice total</span>
-          <span className="tabular-nums">AED {money(total)}</span>
-        </div>
-      </div>
-
-      <div className="mt-6 space-y-1 text-xs text-slate-700">
-        <p>
-          This is the original invoice {invoiceNo}. It is adjusted by {note.note_type === 'CREDIT' ? 'credit' : 'debit'}{' '}
-          note {note.note_no} for AED {money(note.total_amount)} (see previous page).
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/** A4 credit / debit note, styled like the tax invoice it adjusts. */
-export function InvoiceNoteDocument({ note }: { note: InvoiceNote }) {
+/** A4 tax credit / debit note, laid out like the tax invoice it adjusts. */
+export function InvoiceNoteDocument({ note, invoice }: { note: InvoiceNote; invoice?: any }) {
   const isCredit = note.note_type === 'CREDIT';
+  const client = invoice?.client_id && typeof invoice.client_id === 'object' ? invoice.client_id : {};
+  const customerName = note.customer_name || client.company_name || client.contact_name || '—';
+  const customerAddress = client.address || '';
+  const customerTrn = note.customer_trn || invoice?.customer_trn;
+  const vatRates = Array.from(new Set(note.lines.map((l) => l.vat_rate).filter((r) => r > 0)));
+  const taxSummaryLabel =
+    note.vat_amount > 0 ? `TOTAL TAX ON SALES ${vatRates.length === 1 ? vatRates[0] : 5}%` : 'TOTAL SALES TAX 0%';
+
   return (
-    <div className="mx-auto max-w-[210mm] bg-white p-8 text-sm leading-snug text-black">
-      <KnexLetterhead />
+    <div className="mx-auto flex min-h-[277mm] max-w-[210mm] flex-col bg-white p-8 text-sm leading-snug text-black">
+      <div className="mb-6 flex items-start justify-between gap-6">
+        <img src="/Screenshot 2026-06-29 132542.png" alt="KNEX logo" className="h-24 w-auto shrink-0 object-contain" />
+        <div className="text-right">
+          <p className="font-semibold">Knex Delivery Services L.L.C.</p>
+          <p>Rocky Warehouse # 19</p>
+          <p>11th Street, Al Qusais, Industrial Area 1</p>
+          <p>Dubai, UAE</p>
+          <p className="mt-1">
+            <span className="font-medium">TRN :</span> 104131637100003
+          </p>
+        </div>
+      </div>
 
       <div className="mb-6 flex items-end justify-between gap-4">
         <h2 className="text-xl font-bold tracking-wide">{noteDocumentTitle(note)}</h2>
@@ -192,11 +61,13 @@ export function InvoiceNoteDocument({ note }: { note: InvoiceNote }) {
 
       <div className="mb-6 grid grid-cols-2 gap-8">
         <div>
-          <p className="mb-2 font-semibold">Issued To :</p>
-          <p className="font-medium">{note.customer_name || '—'}</p>
-          {note.customer_trn ? (
-            <p className="mt-1">
-              <span className="font-medium">TRN :</span> {note.customer_trn}
+          <p className="mb-2 font-semibold">Bill To :</p>
+          <p className="font-medium">{customerName}</p>
+          {customerAddress ? <p className="whitespace-pre-line leading-relaxed">{customerAddress}</p> : null}
+          <p>UAE</p>
+          {customerTrn ? (
+            <p className="mt-2">
+              <span className="font-medium">TRN :</span> {customerTrn}
             </p>
           ) : null}
         </div>
@@ -205,13 +76,13 @@ export function InvoiceNoteDocument({ note }: { note: InvoiceNote }) {
             <span className="font-semibold">{isCredit ? 'Credit' : 'Debit'} Note No :</span> {note.note_no}
           </p>
           <p>
-            <span className="font-semibold">Date :</span> {fmtDate(note.note_date)}
+            <span className="font-semibold">{isCredit ? 'Credit' : 'Debit'} Note Date :</span> {fmtDate(note.note_date)}
           </p>
           <p>
-            <span className="font-semibold">Original Invoice :</span> {note.invoice_no}
+            <span className="font-semibold">Tax Invoice No :</span> {note.invoice_no}
           </p>
           <p>
-            <span className="font-semibold">Invoice Date :</span> {fmtDate(note.invoice_date)}
+            <span className="font-semibold">Tax Invoice Date :</span> {fmtDate(note.invoice_date)}
           </p>
           {note.awb_number ? (
             <p>
@@ -221,61 +92,60 @@ export function InvoiceNoteDocument({ note }: { note: InvoiceNote }) {
         </div>
       </div>
 
-      <div className="mb-4">
-        <p className="font-semibold">Reason :</p>
-        <p>
-          {reasonLabel(note.reason_code)} — {note.reason}
-        </p>
-      </div>
-
-      <table className="mb-4 w-full border-collapse text-xs">
+      <table className="mb-4 w-full border-collapse text-sm">
         <thead>
-          <tr className="border-y border-black">
-            <th className="py-2 text-left">#</th>
-            <th className="py-2 text-left">Description</th>
-            <th className="py-2 text-right">Taxable amount (AED)</th>
-            <th className="py-2 text-right">VAT %</th>
-            <th className="py-2 text-right">VAT (AED)</th>
-            <th className="py-2 text-right">Total (AED)</th>
+          <tr className="bg-gray-50">
+            <th className={`${cellBorder()} w-[40%] text-left font-semibold`}>DESCRIPTION</th>
+            <th className={`${cellBorder()} text-center font-semibold`}>QUANTITY</th>
+            <th className={`${cellBorder()} text-right font-semibold`}>UNIT PRICE</th>
+            <th className={`${cellBorder()} text-center font-semibold`}>Tax</th>
+            <th className={`${cellBorder()} text-right font-semibold`}>Amount AED</th>
           </tr>
         </thead>
         <tbody>
           {note.lines.map((line, i) => (
-            <tr key={i} className="border-b border-slate-300">
-              <td className="py-2">{i + 1}</td>
-              <td className="py-2">
-                <span className="font-medium">{categoryLabel(line.category)}</span>
-                {line.description && line.description !== categoryLabel(line.category) ? ` — ${line.description}` : ''}
+            <tr key={i}>
+              <td className={cellBorder()}>
+                {line.description || categoryLabel(line.category)}
               </td>
-              <td className="py-2 text-right tabular-nums">{money(line.amount)}</td>
-              <td className="py-2 text-right tabular-nums">{line.vat_rate}%</td>
-              <td className="py-2 text-right tabular-nums">{money(line.vat_amount)}</td>
-              <td className="py-2 text-right tabular-nums">{money(line.total)}</td>
+              <td className={`${cellBorder()} text-center`}>1</td>
+              <td className={`${cellBorder()} text-right`}>{money(line.amount)}</td>
+              <td className={`${cellBorder()} text-center`}>{line.vat_rate}%</td>
+              <td className={`${cellBorder()} text-right`}>{money(line.amount)}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <div className="ml-auto w-72 space-y-1">
-        <div className="flex justify-between">
-          <span>Total taxable amount</span>
-          <span className="tabular-nums">AED {money(note.subtotal)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span>Total VAT</span>
-          <span className="tabular-nums">AED {money(note.vat_amount)}</span>
-        </div>
-        <div className="flex justify-between border-t border-black pt-1 font-bold">
-          <span>{isCredit ? 'Total credited' : 'Total debited'}</span>
-          <span className="tabular-nums">AED {money(note.total_amount)}</span>
-        </div>
+      <div className="mb-6 flex justify-end">
+        <table className="w-72 border-collapse text-sm">
+          <tbody>
+            <tr>
+              <td className={`${cellBorder()} text-right font-semibold`}>Subtotal</td>
+              <td className={`${cellBorder()} text-right`}>{money(note.subtotal)}</td>
+            </tr>
+            <tr>
+              <td className={`${cellBorder()} text-right font-semibold`}>{taxSummaryLabel}</td>
+              <td className={`${cellBorder()} text-right`}>{money(note.vat_amount)}</td>
+            </tr>
+            <tr>
+              <td className={`${cellBorder()} text-right font-bold`}>
+                {isCredit ? 'TOTAL CREDIT AED' : 'TOTAL DEBIT AED'}
+              </td>
+              <td className={`${cellBorder()} text-right font-bold`}>{money(note.total_amount)}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
-      <div className="mt-6 space-y-1 text-xs text-slate-700">
+      <div className="space-y-1 text-sm">
         <p>
-          This {isCredit ? 'credit' : 'debit'} note {isCredit ? 'reduces' : 'increases'} the amount payable on invoice{' '}
-          {note.invoice_no}
-          {note.invoice_total ? ` (original total AED ${money(note.invoice_total)})` : ''} by AED {money(note.total_amount)}.
+          <span className="font-semibold">Reason :</span> {reasonLabel(note.reason_code)} — {note.reason}
+        </p>
+        <p>
+          This {isCredit ? 'credit' : 'debit'} note {isCredit ? 'reduces' : 'increases'} tax invoice {note.invoice_no}
+          {note.invoice_total ? ` (AED ${money(note.invoice_total)})` : ''} by AED {money(note.total_amount)}
+          {note.vat_amount > 0 ? `, including VAT of AED ${money(note.vat_amount)}` : ''}.
         </p>
         {isCredit && (note.refund_amount || 0) > 0 && (
           <p>
@@ -285,16 +155,17 @@ export function InvoiceNoteDocument({ note }: { note: InvoiceNote }) {
         )}
       </div>
 
-      <div className="mt-16 grid grid-cols-2 gap-10 text-xs">
-        <div>
+      <div className="mt-auto pt-12">
+        <div className="grid grid-cols-2 gap-10 text-xs">
           <p className="border-t border-black pt-1">Prepared by: {note.created_by_name || '—'}</p>
-        </div>
-        <div>
           <p className="border-t border-black pt-1">
             Approved by: {note.approved_by_name || '—'}
             {note.approved_at ? ` · ${fmtDate(note.approved_at)}` : ''}
           </p>
         </div>
+        <p className="pt-6 text-center text-base font-bold">
+          This is a computer generated document and does not require a signature
+        </p>
       </div>
     </div>
   );
@@ -310,7 +181,6 @@ export function InvoiceNoteDocumentDialog({ note, open, onOpenChange }: DialogPr
   const ref = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
   const [invoice, setInvoice] = useState<any | null>(null);
-  const [invoiceLoading, setInvoiceLoading] = useState(false);
 
   useEffect(() => {
     const invoiceId =
@@ -322,11 +192,8 @@ export function InvoiceNoteDocumentDialog({ note, open, onOpenChange }: DialogPr
       return;
     }
     let cancelled = false;
-    setInvoiceLoading(true);
     apiClient.getInvoiceUnified(invoiceId).then((result: any) => {
-      if (cancelled) return;
-      setInvoice(result?.success ? result.data : null);
-      setInvoiceLoading(false);
+      if (!cancelled) setInvoice(result?.success ? result.data : null);
     });
     return () => {
       cancelled = true;
@@ -342,13 +209,10 @@ export function InvoiceNoteDocumentDialog({ note, open, onOpenChange }: DialogPr
       await html2pdf()
         .set({
           margin: 0.3,
-          filename: invoice
-            ? `${note.note_no}-${note.invoice_no || invoice.invoice_id}.pdf`
-            : `${note.note_no}.pdf`,
+          filename: `${note.note_no}-${note.invoice_no}.pdf`,
           image: { type: 'jpeg', quality: 0.98 },
           html2canvas: { scale: 2, useCORS: true },
           jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'] },
         })
         .from(ref.current)
         .save();
@@ -377,7 +241,7 @@ export function InvoiceNoteDocumentDialog({ note, open, onOpenChange }: DialogPr
     };
     doc.open();
     doc.write(
-      `<!doctype html><html><head><base href="${window.location.origin}/"><title>${note.note_no}</title>${styles}<style>@media print{.note-print-break{page-break-before:always;break-before:page}}</style></head><body>${ref.current.innerHTML}</body></html>`
+      `<!doctype html><html><head><base href="${window.location.origin}/"><title>${note.note_no}</title>${styles}</head><body>${ref.current.innerHTML}</body></html>`
     );
     doc.close();
   };
@@ -393,28 +257,14 @@ export function InvoiceNoteDocumentDialog({ note, open, onOpenChange }: DialogPr
             {note && <NoteStatusPill status={note.status} />}
           </DialogTitle>
           <DialogDescription>
-            {note
-              ? `${noteDocumentTitle(note)} plus original invoice ${note.invoice_no}`
-              : ''}
+            {note ? `${noteDocumentTitle(note)} against tax invoice ${note.invoice_no}` : ''}
           </DialogDescription>
         </DialogHeader>
         {note && (
           <div className="theme-light overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
-            <div ref={ref} className="theme-light space-y-4">
-              <InvoiceNoteDocument note={note} />
-              {invoice && (
-                <>
-                  <div className="html2pdf__page-break note-print-break" />
-                  <OriginalInvoiceDocument invoice={invoice} note={note} />
-                </>
-              )}
+            <div ref={ref} className="theme-light">
+              <InvoiceNoteDocument note={note} invoice={invoice} />
             </div>
-            {invoiceLoading && (
-              <p className="mt-2 flex items-center gap-2 px-2 text-xs text-slate-500">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading original invoice…
-              </p>
-            )}
           </div>
         )}
         <DialogFooter className="gap-2 sm:justify-between">

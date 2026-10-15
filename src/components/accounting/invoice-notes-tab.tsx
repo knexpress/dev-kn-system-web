@@ -278,7 +278,7 @@ export default function InvoiceNotesTab() {
         refreshing={loading}
         actions={
           <Button type="button" variant="outline" className="rounded-xl" asChild>
-            <Link href="/dashboard/invoices">
+            <Link href="/dashboard/accounting/sales?tab=shipments">
               <FileText className="h-4 w-4" />
               Invoices
             </Link>

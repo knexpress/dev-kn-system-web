@@ -29,14 +29,22 @@ type AddInventoryItemDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: () => void;
+  /** Edit this item instead of creating one. */
+  item?: any | null;
+  /** Item has stock movements: SKU, quantity and cost are carried by posted journals. */
+  hasMovements?: boolean;
 };
 
 export default function AddInventoryItemDialog({
   open,
   onOpenChange,
   onCreated,
+  item,
+  hasMovements = false,
 }: AddInventoryItemDialogProps) {
   const { toast } = useToast();
+  const isEdit = Boolean(item?._id);
+  const stockLocked = isEdit && hasMovements;
   const [saving, setSaving] = useState(false);
   const [accounts, setAccounts] = useState<any[]>([]);
 
@@ -71,21 +79,22 @@ export default function AddInventoryItemDialog({
 
   useEffect(() => {
     if (!open) return;
-    setSku('');
-    setName('');
-    setUnit('PCS');
-    setQtyOnHand('0');
-    setAvgCost('0');
-    setReorderLevel('0');
-    setAssetAccount('1200');
-    setCogsAccount('5000');
-    setIncomeAccount('4000');
-    setIsActive(true);
+    setSku(item?.sku || '');
+    setName(item?.name || '');
+    setUnit(item?.unit || 'PCS');
+    setQtyOnHand(String(item?.qty_on_hand ?? 0));
+    setAvgCost(String(item?.avg_cost ?? 0));
+    setReorderLevel(String(item?.reorder_level ?? 0));
+    setAssetAccount(item?.asset_account_code || '1200');
+    setCogsAccount(item?.cogs_account_code || '5000');
+    setIncomeAccount(item?.income_account_code || '4000');
+    setIsActive(item ? item.is_active !== false : true);
 
     (async () => {
       const result = await apiClient.getAccounts();
       if (result.success && Array.isArray(result.data)) {
         setAccounts(result.data);
+        if (item) return;
         const codes = new Set(result.data.map((a: any) => a.code));
         if (!codes.has('1200')) {
           const firstAsset = result.data.find((a: any) => a.type === 'Asset');
@@ -103,7 +112,7 @@ export default function AddInventoryItemDialog({
         setAccounts([]);
       }
     })();
-  }, [open]);
+  }, [open, item]);
 
   const accountLabel = (code: string) => {
     const a = accounts.find((x) => x.code === code);
@@ -145,38 +154,41 @@ export default function AddInventoryItemDialog({
 
     setSaving(true);
     try {
-      const result = await apiClient.createInventoryItem({
-        sku: trimmedSku,
+      const payload = {
         name: trimmedName,
         unit,
-        qty_on_hand: qty,
-        avg_cost: cost,
         reorder_level: reorder,
         asset_account_code: assetAccount,
         cogs_account_code: cogsAccount,
         income_account_code: incomeAccount,
         is_active: isActive,
-      });
+        ...(stockLocked ? {} : { sku: trimmedSku, qty_on_hand: qty, avg_cost: cost }),
+      };
+      const result = isEdit
+        ? await apiClient.updateInventoryItem(String(item._id), payload)
+        : await apiClient.createInventoryItem({ ...payload, sku: trimmedSku });
 
       if (!result.success) {
         toast({
           variant: 'destructive',
-          title: 'Could not create item',
+          title: isEdit ? 'Could not update item' : 'Could not create item',
           description: result.error || 'Please try again.',
         });
         return;
       }
 
       toast({
-        title: 'Item created',
-        description: `${trimmedSku} — ${trimmedName} added to inventory.`,
+        title: isEdit ? 'Item updated' : 'Item created',
+        description: isEdit
+          ? `${trimmedSku} — ${trimmedName} saved.`
+          : `${trimmedSku} — ${trimmedName} added to inventory.`,
       });
       onOpenChange(false);
       onCreated?.();
     } catch (e: any) {
       toast({
         variant: 'destructive',
-        title: 'Could not create item',
+        title: isEdit ? 'Could not update item' : 'Could not create item',
         description: e?.message || 'Please try again.',
       });
     } finally {
@@ -189,9 +201,13 @@ export default function AddInventoryItemDialog({
       <DialogContent className="max-w-lg gap-0 p-0 max-h-[90vh] overflow-hidden flex flex-col">
         <div className="border-b border-border/60 px-4 py-3 shrink-0">
           <DialogHeader className="space-y-1">
-            <DialogTitle className="text-base">Add Inventory Item</DialogTitle>
+            <DialogTitle className="text-base">{isEdit ? `Edit ${item.sku}` : 'Add Inventory Item'}</DialogTitle>
             <DialogDescription className="text-xs">
-              Create a SKU with inventory, COGS, and sales GL accounts.
+              {stockLocked
+                ? 'This item has stock movements, so SKU, quantity and cost are locked. Use Record Movement to change stock.'
+                : isEdit
+                  ? 'Update the item details and GL accounts.'
+                  : 'Create a SKU with inventory, COGS, and sales GL accounts.'}
             </DialogDescription>
           </DialogHeader>
         </div>
@@ -206,7 +222,8 @@ export default function AddInventoryItemDialog({
                 value={sku}
                 onChange={(e) => setSku(e.target.value.toUpperCase())}
                 className="h-8 font-mono text-xs"
-                autoFocus
+                disabled={stockLocked}
+                autoFocus={!isEdit}
               />
             </div>
             <div className="space-y-1">
@@ -239,7 +256,7 @@ export default function AddInventoryItemDialog({
 
           <div className="grid grid-cols-3 gap-2.5">
             <div className="space-y-1">
-              <Label htmlFor="item-qty" className="text-[11px]">Opening qty</Label>
+              <Label htmlFor="item-qty" className="text-[11px]">{isEdit ? 'Qty on hand' : 'Opening qty'}</Label>
               <Input
                 id="item-qty"
                 type="number"
@@ -248,6 +265,7 @@ export default function AddInventoryItemDialog({
                 value={qtyOnHand}
                 onChange={(e) => setQtyOnHand(e.target.value)}
                 className="h-8 font-mono text-xs"
+                disabled={stockLocked}
               />
             </div>
             <div className="space-y-1">
@@ -260,6 +278,7 @@ export default function AddInventoryItemDialog({
                 value={avgCost}
                 onChange={(e) => setAvgCost(e.target.value)}
                 className="h-8 font-mono text-xs"
+                disabled={stockLocked}
               />
             </div>
             <div className="space-y-1">
@@ -338,7 +357,7 @@ export default function AddInventoryItemDialog({
             Cancel
           </Button>
           <Button size="sm" className="h-8 text-xs" onClick={handleSave} disabled={saving}>
-            {saving ? 'Creating…' : 'Create Item'}
+            {saving ? (isEdit ? 'Saving…' : 'Creating…') : isEdit ? 'Save Changes' : 'Create Item'}
           </Button>
         </DialogFooter>
       </DialogContent>

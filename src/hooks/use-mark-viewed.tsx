@@ -20,7 +20,7 @@ export const useMarkAsViewed = (itemType: string, itemId?: string) => {
   useEffect(() => {
     // Mark all items of a type as viewed when visiting the main page
     const routeTypeMap: { [key: string]: string } = {
-      '/dashboard/invoices': 'invoice',
+      '/dashboard/accounting/sales': 'invoice',
       '/dashboard/invoice-requests': 'invoice_request',
       '/dashboard/collections': 'collection',
       '/dashboard/requests': 'request',

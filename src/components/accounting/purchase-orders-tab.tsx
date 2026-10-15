@@ -51,7 +51,6 @@ import {
 } from './erp-shell';
 import { fmtDate, money } from './erp-format';
 import { SupplierDialog } from './supplier-dialog';
-import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 
 type TabId = 'overview' | 'orders' | 'create' | 'suppliers' | 'approvals';
@@ -62,12 +61,13 @@ type LineDraft = {
   sku: string;
   quantity: string;
   unit_cost: string;
+  account_code: string;
 };
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'orders', label: 'All POs' },
-  { id: 'create', label: 'Enter supplier invoice' },
+  { id: 'create', label: 'New purchase order' },
   { id: 'suppliers', label: 'Suppliers' },
   { id: 'approvals', label: 'Approve / receive' },
 ];
@@ -84,11 +84,7 @@ function addDaysIso(dateIso: string, days: number) {
 function emptyForm() {
   return {
     supplier_id: '',
-    supplier_invoice_no: '',
-    supplier_invoice_date: todayIso(),
-    due_date: addDaysIso(todayIso(), 30),
-    due_touched: false,
-    receive_later: false,
+    po_date: todayIso(),
     expected_date: '',
     supplier_reference: '',
     tax_amount: '0',
@@ -119,13 +115,14 @@ function statusTone(status: string) {
   }
 }
 
-function emptyLine(): LineDraft {
+function emptyLine(accountCode = '1200'): LineDraft {
   return {
     key: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     description: '',
     sku: '',
     quantity: '1',
     unit_cost: '0',
+    account_code: accountCode,
   };
 }
 
@@ -167,6 +164,16 @@ export default function PurchaseOrdersTab() {
   const [receivePoRow, setReceivePoRow] = useState<any | null>(null);
   const [receiveQty, setReceiveQty] = useState<Record<string, string>>({});
   const [receiving, setReceiving] = useState(false);
+
+  const [invoicePo, setInvoicePo] = useState<any | null>(null);
+  const [invoiceForm, setInvoiceForm] = useState({
+    supplier_invoice_no: '',
+    supplier_invoice_date: todayIso(),
+    due_date: '',
+    due_touched: false,
+    tax_amount: '0',
+  });
+  const [savingInvoice, setSavingInvoice] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -219,6 +226,29 @@ export default function PurchaseOrdersTab() {
   );
   const grandTotal = lineTotal + (Number(form.tax_amount) || 0);
 
+  const debitAccounts = useMemo(
+    () => glAccounts.filter((a) => a.type === 'Asset' || a.type === 'Expense'),
+    [glAccounts]
+  );
+
+  const totalsByAccount = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const l of lines) {
+      const amount = (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0);
+      if (!amount) continue;
+      const code = l.account_code || form.debit_account_code;
+      map.set(code, (map.get(code) || 0) + amount);
+    }
+    return [...map.entries()];
+  }, [lines, form.debit_account_code]);
+
+  const setDefaultDebitAccount = (code: string) => {
+    setLines((prev) =>
+      prev.map((l) => (l.account_code === form.debit_account_code ? { ...l, account_code: code } : l))
+    );
+    setForm((f) => ({ ...f, debit_account_code: code }));
+  };
+
   const stats = [
     { label: 'All POs', value: overview?.totals?.count || orders.length, hint: 'Total orders' },
     { label: 'Pending', value: overview?.totals?.pending || 0, hint: 'Awaiting approval' },
@@ -244,13 +274,7 @@ export default function PurchaseOrdersTab() {
   }, [suppliers, supplierSearch]);
 
   const chooseSupplier = (supplier: any) => {
-    setForm((f) => ({
-      ...f,
-      supplier_id: supplier?._id || '',
-      due_date: f.due_touched
-        ? f.due_date
-        : addDaysIso(f.supplier_invoice_date, Number(supplier?.payment_terms_days ?? 30)),
-    }));
+    setForm((f) => ({ ...f, supplier_id: supplier?._id || '' }));
   };
 
   const onSupplierSaved = (saved: any) => {
@@ -261,13 +285,9 @@ export default function PurchaseOrdersTab() {
     if (supplierDialog.forForm) chooseSupplier(saved);
   };
 
-  const createPo = async (submit: boolean) => {
+  const createPo = async () => {
     if (!form.supplier_id) {
       toast({ variant: 'destructive', title: 'Pick or add a supplier' });
-      return;
-    }
-    if (!form.supplier_invoice_no.trim()) {
-      toast({ variant: 'destructive', title: "Enter the supplier's invoice number" });
       return;
     }
     const built = lines
@@ -276,6 +296,7 @@ export default function PurchaseOrdersTab() {
         sku: l.sku.trim() || undefined,
         quantity: Number(l.quantity) || 0,
         unit_cost: Number(l.unit_cost) || 0,
+        account_code: l.account_code || form.debit_account_code,
       }))
       .filter((l) => l.description && l.quantity > 0);
     if (!built.length) {
@@ -286,17 +307,13 @@ export default function PurchaseOrdersTab() {
     setSaving(true);
     const result = await apiClient.createPurchaseOrder({
       supplier_id: form.supplier_id,
-      supplier_invoice_no: form.supplier_invoice_no.trim(),
-      supplier_invoice_date: form.supplier_invoice_date,
-      due_date: form.due_date || undefined,
-      receive_later: form.receive_later,
-      expected_date: form.receive_later && form.expected_date ? form.expected_date : undefined,
+      po_date: form.po_date,
+      expected_date: form.expected_date || undefined,
       supplier_reference: form.supplier_reference.trim() || undefined,
       tax_amount: Number(form.tax_amount) || 0,
       notes: form.notes.trim() || undefined,
       debit_account_code: form.debit_account_code,
       credit_account_code: form.credit_account_code,
-      submit,
       lines: built,
     });
     setSaving(false);
@@ -311,12 +328,61 @@ export default function PurchaseOrdersTab() {
     }
 
     toast({
-      title: submit ? 'Sent to Finance Manager for approval' : 'Draft saved',
-      description: `${(result.data as any)?.po_no || ''} — supplier invoice ${form.supplier_invoice_no.trim()}`,
+      title: 'Draft PO saved',
+      description: `${(result.data as any)?.po_no || ''} — open it from All POs to enter the supplier invoice when the delivery arrives.`,
     });
     setForm(emptyForm());
     setLines([emptyLine()]);
-    setTab(submit ? 'approvals' : 'orders');
+    setTab('orders');
+    await load();
+  };
+
+  const openInvoice = (po: any) => {
+    const invoiceDate = todayIso();
+    const terms = Number(suppliers.find((s) => s._id === String(po.supplier_id))?.payment_terms_days ?? 30);
+    setInvoicePo(po);
+    setInvoiceForm({
+      supplier_invoice_no: po.supplier_invoice_no || '',
+      supplier_invoice_date: invoiceDate,
+      due_date: addDaysIso(invoiceDate, terms),
+      due_touched: false,
+      tax_amount: String(po.tax_amount ?? 0),
+    });
+  };
+
+  const invoiceTerms = useMemo(
+    () => Number(suppliers.find((s) => s._id === String(invoicePo?.supplier_id))?.payment_terms_days ?? 30),
+    [suppliers, invoicePo]
+  );
+
+  const saveInvoice = async () => {
+    if (!invoicePo) return;
+    if (!invoiceForm.supplier_invoice_no.trim()) {
+      toast({ variant: 'destructive', title: "Enter the supplier's invoice number" });
+      return;
+    }
+    if (!invoiceForm.supplier_invoice_date) {
+      toast({ variant: 'destructive', title: 'Enter the invoice date' });
+      return;
+    }
+    setSavingInvoice(true);
+    const result = await apiClient.recordPurchaseOrderInvoice(invoicePo._id, {
+      supplier_invoice_no: invoiceForm.supplier_invoice_no.trim(),
+      supplier_invoice_date: invoiceForm.supplier_invoice_date,
+      due_date: invoiceForm.due_date || undefined,
+      tax_amount: Number(invoiceForm.tax_amount) || 0,
+    });
+    setSavingInvoice(false);
+    if (!result.success) {
+      toast({ variant: 'destructive', title: 'Could not record invoice', description: result.error });
+      return;
+    }
+    toast({
+      title: 'Invoice recorded — sent for approval',
+      description: `${invoicePo.po_no} · supplier invoice ${invoiceForm.supplier_invoice_no.trim()}. Approval posts it to the accounts.`,
+    });
+    setInvoicePo(null);
+    setTab('approvals');
     await load();
   };
 
@@ -606,7 +672,11 @@ export default function PurchaseOrdersTab() {
                 </TableHeader>
                 <TableBody>
                   {orders.map((po) => (
-                    <TableRow key={po._id}>
+                    <TableRow
+                      key={po._id}
+                      className={po.status === 'DRAFT' ? 'cursor-pointer hover:bg-slate-50' : undefined}
+                      onClick={po.status === 'DRAFT' ? () => openInvoice(po) : undefined}
+                    >
                       <TableCell>
                         <div className="font-medium">{po.po_no}</div>
                         <div className="text-xs text-slate-400">{fmtDate(po.po_date)}</div>
@@ -616,7 +686,18 @@ export default function PurchaseOrdersTab() {
                         {po.supplier_trn ? <div className="text-xs text-slate-400">TRN {po.supplier_trn}</div> : null}
                       </TableCell>
                       <TableCell className="text-slate-600">
-                        {po.supplier_invoice_no || po.supplier_reference || '—'}
+                        {po.supplier_invoice_no ? (
+                          <>
+                            {po.supplier_invoice_no}
+                            {po.supplier_invoice_date ? (
+                              <div className="text-[11px] text-slate-400">{fmtDate(po.supplier_invoice_date)}</div>
+                            ) : null}
+                          </>
+                        ) : po.status === 'DRAFT' ? (
+                          <span className="text-[11px] font-semibold text-amber-700">Awaiting delivery</span>
+                        ) : (
+                          po.supplier_reference || '—'
+                        )}
                         {po.receive_later ? (
                           <div className="text-[11px] text-violet-600">Receive later</div>
                         ) : null}
@@ -641,8 +722,19 @@ export default function PurchaseOrdersTab() {
                           {String(po.status || '').replace(/_/g, ' ')}
                         </span>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="inline-flex gap-2">
+                          {po.status === 'DRAFT' ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="rounded-xl bg-sky-600 hover:bg-sky-700"
+                              onClick={() => openInvoice(po)}
+                            >
+                              <PackageCheck className="h-3.5 w-3.5" />
+                              Delivery received
+                            </Button>
+                          ) : null}
                           {['APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(po.status) &&
                           payInfo(po).available > 0.009 ? (
                             <Button
@@ -681,11 +773,11 @@ export default function PurchaseOrdersTab() {
         {tab === 'create' ? (
           <div className="rounded-3xl border border-slate-200/70 bg-white/90 p-5 sm:p-6 space-y-5">
             <div>
-              <h3 className="text-base font-semibold text-slate-900">Enter supplier invoice</h3>
+              <h3 className="text-base font-semibold text-slate-900">New purchase order</h3>
               <p className="mt-1 text-sm text-slate-500">
-                Type in the invoice you received. Once a Finance Manager approves it, it posts to the
-                accounts (Inventory/Expense + VAT input against Accounts Payable) and appears under Bank
-                &amp; Cash → Pay supplier until it is paid.
+                The PO is saved as a draft — nothing posts to the accounts yet. When the delivery arrives,
+                open the PO under All POs and enter the supplier&apos;s invoice number and date. A Finance
+                Manager then approves it, which posts Inventory/Expense + VAT input against Accounts Payable.
               </p>
             </div>
 
@@ -757,78 +849,33 @@ export default function PurchaseOrdersTab() {
                 ) : null}
               </div>
               <div className="space-y-2">
-                <Label>Supplier invoice no.</Label>
-                <Input
-                  value={form.supplier_invoice_no}
-                  onChange={(e) => setForm((f) => ({ ...f, supplier_invoice_no: e.target.value }))}
-                  className="rounded-xl"
-                  placeholder="As printed on the invoice"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Invoice date</Label>
+                <Label>PO date</Label>
                 <Input
                   type="date"
-                  value={form.supplier_invoice_date}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setForm((f) => ({
-                      ...f,
-                      supplier_invoice_date: v,
-                      due_date: f.due_touched
-                        ? f.due_date
-                        : addDaysIso(v, Number(selectedSupplier?.payment_terms_days ?? 30)),
-                    }));
-                  }}
+                  value={form.po_date}
+                  onChange={(e) => setForm((f) => ({ ...f, po_date: e.target.value }))}
                   className="rounded-xl"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Due date</Label>
+                <Label>Expected delivery</Label>
                 <Input
                   type="date"
-                  value={form.due_date}
-                  onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value, due_touched: true }))}
+                  value={form.expected_date}
+                  onChange={(e) => setForm((f) => ({ ...f, expected_date: e.target.value }))}
                   className="rounded-xl"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Other reference (LPO / delivery note)</Label>
+                <Label>Reference (quotation / LPO)</Label>
                 <Input
                   value={form.supplier_reference}
                   onChange={(e) => setForm((f) => ({ ...f, supplier_reference: e.target.value }))}
                   className="rounded-xl"
                 />
               </div>
-              <div className="space-y-2 sm:col-span-2">
-                <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200/70 px-4 py-3">
-                  <Checkbox
-                    checked={form.receive_later}
-                    onCheckedChange={(v) => setForm((f) => ({ ...f, receive_later: v === true }))}
-                    className="mt-0.5"
-                  />
-                  <span className="text-sm">
-                    <span className="font-medium text-slate-900">Goods haven&apos;t arrived yet — receive later</span>
-                    <span className="block text-xs text-slate-500">
-                      Leave unticked when the goods/services are already in: approval posts the full invoice
-                      (and adds stock for SKU lines). Tick it to post Accounts Payable only as goods are received.
-                    </span>
-                  </span>
-                </label>
-              </div>
-              {form.receive_later ? (
-                <div className="space-y-2">
-                  <Label>Expected delivery</Label>
-                  <Input
-                    type="date"
-                    value={form.expected_date}
-                    onChange={(e) => setForm((f) => ({ ...f, expected_date: e.target.value }))}
-                    className="rounded-xl"
-                  />
-                </div>
-              ) : null}
               <div className="space-y-2">
-                <Label>VAT / tax amount (feeds VAT201 input)</Label>
+                <Label>Expected VAT (confirm on the invoice)</Label>
                 <Input
                   type="number"
                   step="0.01"
@@ -838,22 +885,17 @@ export default function PurchaseOrdersTab() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Debit account (Inventory / Expense)</Label>
-                <Select
-                  value={form.debit_account_code}
-                  onValueChange={(v) => setForm((f) => ({ ...f, debit_account_code: v }))}
-                >
+                <Label>Default debit account (new lines)</Label>
+                <Select value={form.debit_account_code} onValueChange={setDefaultDebitAccount}>
                   <SelectTrigger className="rounded-xl">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {glAccounts
-                      .filter((a) => a.type === 'Asset' || a.type === 'Expense')
-                      .map((a) => (
-                        <SelectItem key={a.code} value={a.code}>
-                          {a.code} — {a.name}
-                        </SelectItem>
-                      ))}
+                    {debitAccounts.map((a) => (
+                      <SelectItem key={a.code} value={a.code}>
+                        {a.code} — {a.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -896,7 +938,7 @@ export default function PurchaseOrdersTab() {
                   variant="outline"
                   size="sm"
                   className="rounded-xl"
-                  onClick={() => setLines((prev) => [...prev, emptyLine()])}
+                  onClick={() => setLines((prev) => [...prev, emptyLine(form.debit_account_code)])}
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Add line
@@ -907,7 +949,7 @@ export default function PurchaseOrdersTab() {
                   key={line.key}
                   className="grid gap-2 rounded-2xl border border-slate-100 bg-slate-50/60 p-3 sm:grid-cols-12"
                 >
-                  <div className="sm:col-span-4">
+                  <div className="sm:col-span-5">
                     <Input
                       placeholder="Description"
                       value={line.description}
@@ -918,6 +960,27 @@ export default function PurchaseOrdersTab() {
                       }
                       className="rounded-xl bg-white"
                     />
+                  </div>
+                  <div className="sm:col-span-4">
+                    <Select
+                      value={line.account_code || form.debit_account_code}
+                      onValueChange={(v) =>
+                        setLines((prev) =>
+                          prev.map((l, i) => (i === idx ? { ...l, account_code: v } : l))
+                        )
+                      }
+                    >
+                      <SelectTrigger className="rounded-xl bg-white" title="GL account (Chart of Accounts)">
+                        <SelectValue placeholder="GL account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {debitAccounts.map((a) => (
+                          <SelectItem key={a.code} value={a.code}>
+                            {a.code} — {a.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="sm:col-span-3">
                     <Select
@@ -931,6 +994,7 @@ export default function PurchaseOrdersTab() {
                               ? {
                                   ...l,
                                   sku,
+                                  account_code: item?.asset_account_code || l.account_code,
                                   description: l.description || item?.name || '',
                                   unit_cost:
                                     l.unit_cost === '0' && item?.avg_cost
@@ -955,7 +1019,7 @@ export default function PurchaseOrdersTab() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="sm:col-span-2">
+                  <div className="sm:col-span-3">
                     <Input
                       type="number"
                       min="0"
@@ -970,7 +1034,7 @@ export default function PurchaseOrdersTab() {
                       className="rounded-xl bg-white"
                     />
                   </div>
-                  <div className="sm:col-span-2">
+                  <div className="sm:col-span-3">
                     <Input
                       type="number"
                       min="0"
@@ -985,8 +1049,8 @@ export default function PurchaseOrdersTab() {
                       className="rounded-xl bg-white"
                     />
                   </div>
-                  <div className="flex items-center justify-between gap-2 sm:col-span-1">
-                    <span className="text-xs tabular-nums text-slate-500 sm:hidden">
+                  <div className="flex items-center justify-end gap-3 sm:col-span-6">
+                    <span className="text-xs tabular-nums text-slate-500">
                       AED {money((Number(line.quantity) || 0) * (Number(line.unit_cost) || 0))}
                     </span>
                     <Button
@@ -1002,6 +1066,19 @@ export default function PurchaseOrdersTab() {
                   </div>
                 </div>
               ))}
+              {totalsByAccount.length > 1 ? (
+                <div className="ml-auto max-w-sm space-y-0.5 rounded-xl bg-slate-50/80 px-3 py-2 text-xs text-slate-600">
+                  <div className="font-semibold text-slate-700">Debit by GL account (excl. VAT)</div>
+                  {totalsByAccount.map(([code, amount]) => (
+                    <div key={code} className="flex justify-between gap-4">
+                      <span>
+                        {code} — {glAccounts.find((a) => a.code === code)?.name || ''}
+                      </span>
+                      <span className="tabular-nums">AED {money(amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <div className="flex justify-end gap-6 text-sm">
                 <div className="text-slate-500">
                   Subtotal <span className="font-semibold text-slate-900">AED {money(lineTotal)}</span>
@@ -1015,22 +1092,12 @@ export default function PurchaseOrdersTab() {
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
-                variant="outline"
-                className="rounded-xl"
-                disabled={saving}
-                onClick={() => void createPo(false)}
-              >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Save draft
-              </Button>
-              <Button
-                type="button"
                 className={erpPrimaryButtonClass()}
                 disabled={saving}
-                onClick={() => void createPo(true)}
+                onClick={() => void createPo()}
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardList className="h-4 w-4" />}
-                Submit for approval
+                Save draft PO
               </Button>
             </div>
           </div>
@@ -1147,14 +1214,20 @@ export default function PurchaseOrdersTab() {
                           {po.supplier_trn ? <div className="text-xs text-slate-400">TRN {po.supplier_trn}</div> : null}
                         </TableCell>
                         <TableCell className="text-xs text-slate-600">
-                          <div className="font-medium text-slate-800">{po.supplier_invoice_no || po.supplier_reference || '—'}</div>
-                          <div>
-                            {fmtDate(po.supplier_invoice_date || po.po_date)}
-                            {po.due_date ? ` · due ${fmtDate(po.due_date)}` : ''}
-                          </div>
-                          <div className={po.receive_later ? 'text-violet-600' : 'text-emerald-700'}>
-                            {po.receive_later ? 'AP posts on receipt' : 'Posts to accounts on approval'}
-                          </div>
+                          {po.supplier_invoice_no ? (
+                            <>
+                              <div className="font-medium text-slate-800">{po.supplier_invoice_no}</div>
+                              <div>
+                                {fmtDate(po.supplier_invoice_date || po.po_date)}
+                                {po.due_date ? ` · due ${fmtDate(po.due_date)}` : ''}
+                              </div>
+                              <div className={po.receive_later ? 'text-violet-600' : 'text-emerald-700'}>
+                                {po.receive_later ? 'AP posts on receipt' : 'Posts to accounts on approval'}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="font-semibold text-amber-700">Awaiting delivery — no invoice yet</div>
+                          )}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           AED {money(po.total_amount)}
@@ -1174,7 +1247,17 @@ export default function PurchaseOrdersTab() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="inline-flex flex-wrap justify-end gap-2">
-                            {po.status === 'DRAFT' ? (
+                            {po.status === 'DRAFT' && !po.supplier_invoice_no ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="rounded-xl bg-sky-600 hover:bg-sky-700"
+                                onClick={() => openInvoice(po)}
+                              >
+                                <PackageCheck className="h-3.5 w-3.5" />
+                                Delivery received
+                              </Button>
+                            ) : po.status === 'DRAFT' ? (
                               <Button
                                 type="button"
                                 size="sm"
@@ -1186,7 +1269,7 @@ export default function PurchaseOrdersTab() {
                                 Submit
                               </Button>
                             ) : null}
-                            {isFm ? (
+                            {isFm && po.supplier_invoice_no ? (
                               <>
                                 <Button
                                   type="button"
@@ -1410,6 +1493,109 @@ export default function PurchaseOrdersTab() {
           </DialogContent>
         </Dialog>
 
+        <Dialog open={Boolean(invoicePo)} onOpenChange={(open) => !open && !savingInvoice && setInvoicePo(null)}>
+          <DialogContent className="max-w-xl rounded-3xl">
+            <DialogHeader>
+              <DialogTitle>Delivery received — {invoicePo?.po_no}</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-slate-500">
+              Enter the invoice {invoicePo?.supplier_name} sent with the delivery. The PO then goes to the
+              Finance Manager, whose approval posts it to the accounts.
+            </p>
+            {invoicePo ? (
+              <div className="space-y-1 rounded-2xl bg-slate-50/80 px-4 py-3 text-xs text-slate-600">
+                {(invoicePo.lines || []).map((l: any, i: number) => (
+                  <div key={l._id || i} className="flex justify-between gap-4">
+                    <span>
+                      {l.description} × {Number(l.quantity || 0)}
+                      <span className="text-slate-400"> · GL {l.account_code || invoicePo.debit_account_code}</span>
+                    </span>
+                    <span className="tabular-nums">AED {money(l.line_total)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between gap-4 border-t border-slate-200 pt-1 font-semibold text-slate-900">
+                  <span>Subtotal</span>
+                  <span className="tabular-nums">AED {money(invoicePo.subtotal)}</span>
+                </div>
+              </div>
+            ) : null}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Supplier invoice no. *</Label>
+                <Input
+                  value={invoiceForm.supplier_invoice_no}
+                  onChange={(e) => setInvoiceForm((f) => ({ ...f, supplier_invoice_no: e.target.value }))}
+                  className="rounded-xl"
+                  placeholder="As printed on the invoice"
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Invoice date *</Label>
+                <Input
+                  type="date"
+                  value={invoiceForm.supplier_invoice_date}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setInvoiceForm((f) => ({
+                      ...f,
+                      supplier_invoice_date: v,
+                      due_date: f.due_touched ? f.due_date : addDaysIso(v, invoiceTerms),
+                    }));
+                  }}
+                  className="rounded-xl"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Due date ({invoiceTerms} days terms)</Label>
+                <Input
+                  type="date"
+                  value={invoiceForm.due_date}
+                  onChange={(e) => setInvoiceForm((f) => ({ ...f, due_date: e.target.value, due_touched: true }))}
+                  className="rounded-xl"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>VAT on invoice (feeds VAT201 input)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={invoiceForm.tax_amount}
+                  onChange={(e) => setInvoiceForm((f) => ({ ...f, tax_amount: e.target.value }))}
+                  className="rounded-xl"
+                />
+              </div>
+              <div className="flex items-end justify-end pb-2 text-sm text-slate-500">
+                Invoice total{' '}
+                <span className="ml-1 font-semibold tabular-nums text-slate-900">
+                  AED {money(Number(invoicePo?.subtotal || 0) + (Number(invoiceForm.tax_amount) || 0))}
+                </span>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-xl"
+                disabled={savingInvoice}
+                onClick={() => setInvoicePo(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className={erpPrimaryButtonClass()}
+                disabled={savingInvoice}
+                onClick={() => void saveInvoice()}
+              >
+                {savingInvoice ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                Save invoice &amp; send for approval
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={receiveOpen} onOpenChange={setReceiveOpen}>
           <DialogContent className="max-w-xl rounded-3xl">
             <DialogHeader>
@@ -1432,6 +1618,7 @@ export default function PurchaseOrdersTab() {
                       <p className="text-sm font-medium text-slate-900">{l.description}</p>
                       <p className="text-[11px] text-slate-400">
                         {l.sku ? `${l.sku} · ` : ''}
+                        GL {l.account_code || receivePoRow?.debit_account_code} ·{' '}
                         {Number(l.received_qty || 0)} of {Number(l.quantity || 0)} received · AED {money(l.unit_cost)} each
                       </p>
                     </div>

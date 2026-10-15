@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   Users,
   Package,
-  FileText,
   UserCircle,
   FileCheck2,
   type LucideIcon,
@@ -69,12 +68,6 @@ const allLinks: NavLink[] = [
     departments: ['Sales', 'Operations', 'Finance', 'Management', 'IT'],
   },
   {
-    href: '/dashboard/invoices',
-    label: 'Invoices',
-    icon: FileText,
-    departments: ['Finance', 'Management', 'Auditor', 'IT'],
-  },
-  {
     href: '/dashboard/accounting',
     label: 'Accounting',
     icon: BookOpen,
@@ -132,7 +125,7 @@ const allLinks: NavLink[] = [
 
 /** Maps a nav href to the activity key used by useActivityBadges */
 const ACTIVITY_KEYS: Record<string, string> = {
-  '/dashboard/invoices': 'invoices',
+  '/dashboard/accounting': 'invoices',
   '/dashboard/invoice-requests': 'invoice_requests',
   '/dashboard/requests': 'requests',
   '/dashboard/delivery-assignments': 'delivery_assignments',

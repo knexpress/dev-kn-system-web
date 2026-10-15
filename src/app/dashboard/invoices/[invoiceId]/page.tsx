@@ -526,7 +526,7 @@ export default function InvoicePage() {
         return (
             <DashboardPageShell
                 title="Invoice"
-                backHref="/dashboard/invoices"
+                backHref="/dashboard/accounting/sales?tab=shipments"
                 backLabel="Back to Invoices"
                 panel
                 panelPadded
@@ -542,7 +542,7 @@ export default function InvoicePage() {
         return (
             <DashboardPageShell
                 title="Invoice"
-                backHref="/dashboard/invoices"
+                backHref="/dashboard/accounting/sales?tab=shipments"
                 backLabel="Back to Invoices"
                 panel
                 panelPadded
@@ -558,7 +558,7 @@ export default function InvoicePage() {
                     <Button
                         variant="outline"
                         className={erpOutlineControlClass()}
-                        onClick={() => router.push('/dashboard/invoices')}
+                        onClick={() => router.push('/dashboard/accounting/sales?tab=shipments')}
                     >
                         <ArrowLeft className="h-4 w-4 mr-2" />
                         Back to Invoices
@@ -604,6 +604,10 @@ export default function InvoicePage() {
         '';
     const isPhToUae = isPhToUaeService(serviceCodeRaw);
     const isCancellationInvoice = invoice?.invoice_origin === 'CANCELLATION';
+    // Cancellation fee is a domestic delivery fee; older ones stored it in amount
+    const cancellationFee = isCancellationInvoice
+        ? (deliveryChargeFromInvoice > 0 ? deliveryChargeFromInvoice : parseDecimal(invoice.amount || 0, 2))
+        : 0;
     
     // Read pickup charge: For PH TO UAE, also check pickup_base_amount
     let pickupCharge = parseDecimal(invoice.pickup_charge || 0, 2);
@@ -1170,7 +1174,7 @@ export default function InvoicePage() {
       }
     if (isCancellationInvoice) {
       taxRate = 5;
-      const netFee = parseDecimal(invoice.amount || subtotal, 2);
+      const netFee = cancellationFee || subtotal;
       taxAmount = parseDecimal(invoice.tax_amount || 0, 2) > 0
         ? parseDecimal(invoice.tax_amount, 2)
         : parseDecimal((netFee * 5) / 100, 2);
@@ -1613,7 +1617,26 @@ export default function InvoicePage() {
             ? parseDecimal(totalAmountTaxInvoice, 2)
             : parseDecimal(deliveryCharge + deliveryOnlyTaxAmount, 2))
         : total;
-    const taxInvoiceData = shouldShowDeliveryOnlyInTaxInvoice
+    const taxInvoiceData = isCancellationInvoice
+        ? {
+            ...invoiceData,
+            isPhToUae: false,
+            isUaeToPh: true,
+            domesticDeliveryFee: true,
+            serviceCode: serviceCodeRaw,
+            charges: {
+                ...invoiceData.charges,
+                shippingCharge: 0,
+                pickupCharge: 0,
+                deliveryCharge: cancellationFee,
+                insuranceCharge: 0,
+                subtotal: cancellationFee,
+                taxRate: 5,
+                taxAmount,
+                total,
+            }
+        }
+        : shouldShowDeliveryOnlyInTaxInvoice
         ? {
             ...invoiceData,
             isPhToUae: true, // Flag for PH TO UAE invoices
@@ -2622,7 +2645,7 @@ export default function InvoicePage() {
         <DashboardPageShell
             title={String(pageTitle)}
             eyebrow="Invoice"
-            backHref="/dashboard/invoices"
+            backHref="/dashboard/accounting/sales?tab=shipments"
             backLabel="Back to Invoices"
             panel={false}
         >
@@ -2633,7 +2656,7 @@ export default function InvoicePage() {
                         <Button
                             variant="outline"
                             className={erpOutlineControlClass()}
-                            onClick={() => router.push('/dashboard/invoices')}
+                            onClick={() => router.push('/dashboard/accounting/sales?tab=shipments')}
                         >
                             <ArrowLeft className="h-4 w-4 mr-2" />
                             Back to Invoices

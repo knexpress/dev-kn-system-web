@@ -10,8 +10,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { useToast } from '@/hooks/use-toast';
 import AddInventoryItemDialog from './add-inventory-item-dialog';
 import RecordStockMovementDialog from './record-stock-movement-dialog';
 import InventoryItemDetailDialog from './inventory-item-detail-dialog';
@@ -45,6 +56,10 @@ export default function InventoryTab({ mode = 'items' }: InventoryTabProps) {
   const [selectedJournal, setSelectedJournal] = useState<any | null>(null);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [editItem, setEditItem] = useState<any | null>(null);
+  const [deleteItem, setDeleteItem] = useState<any | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const { toast } = useToast();
 
   const load = async () => {
     setLoading(true);
@@ -67,6 +82,40 @@ export default function InventoryTab({ mode = 'items' }: InventoryTabProps) {
   const openItem = (sku: string) => {
     setSelectedSku(sku);
     setItemDetailOpen(true);
+  };
+
+  const movementCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const txn of txns) {
+      const key = String(txn.item_id || txn.sku || '');
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return counts;
+  }, [txns]);
+
+  const movementCountFor = (item: any) =>
+    (movementCounts.get(String(item?._id || '')) || 0) ||
+    (movementCounts.get(String(item?.sku || '')) || 0);
+
+  const confirmDelete = async () => {
+    if (!deleteItem?._id) return;
+    setDeleting(true);
+    try {
+      const result = await apiClient.deleteInventoryItem(String(deleteItem._id));
+      if (!result.success) {
+        toast({
+          variant: 'destructive',
+          title: 'Could not delete item',
+          description: result.error || 'Please try again.',
+        });
+        return;
+      }
+      toast({ title: 'Item deleted', description: `${deleteItem.sku} removed from inventory.` });
+      setDeleteItem(null);
+      load();
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const openMovementJournal = async (txn: any) => {
@@ -285,18 +334,19 @@ export default function InventoryTab({ mode = 'items' }: InventoryTabProps) {
               <TableHead className={cn(t.head, 'text-right')}>Avg Cost</TableHead>
               <TableHead className={cn(t.head, 'text-right')}>Value</TableHead>
               <TableHead className={cn(t.head, 'text-right')}>Reorder</TableHead>
+              <TableHead className={cn(t.head, 'w-[90px] text-right')}>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={7}>
+                <TableCell colSpan={8}>
                   <ErpEmptyState message="Loading inventory…" />
                 </TableCell>
               </TableRow>
             ) : filteredItems.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7}>
+                <TableCell colSpan={8}>
                   <ErpEmptyState message="No inventory items found." />
                 </TableCell>
               </TableRow>
@@ -326,7 +376,14 @@ export default function InventoryTab({ mode = 'items' }: InventoryTabProps) {
                       {item.sku}
                     </TableCell>
                     <TableCell className={cn(t.cell, 'font-medium')}>{item.name}</TableCell>
-                    <TableCell className={t.cell}>{item.unit}</TableCell>
+                    <TableCell className={t.cell}>
+                      {item.unit}
+                      {item.is_active === false && (
+                        <span className="ml-1.5 rounded bg-muted px-1 py-0.5 text-[10px] uppercase text-muted-foreground">
+                          Inactive
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell
                       className={cn(
                         t.cell,
@@ -345,6 +402,32 @@ export default function InventoryTab({ mode = 'items' }: InventoryTabProps) {
                     <TableCell className={cn(t.cell, 'text-right font-mono tabular-nums')}>
                       {item.reorder_level}
                     </TableCell>
+                    <TableCell
+                      className={cn(t.cell, 'text-right')}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          title="Edit item"
+                          onClick={() => setEditItem(item)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive hover:text-destructive"
+                          title="Delete item"
+                          onClick={() => setDeleteItem(item)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 );
               })
@@ -354,11 +437,55 @@ export default function InventoryTab({ mode = 'items' }: InventoryTabProps) {
       </ErpGrid>
 
       <AddInventoryItemDialog open={addOpen} onOpenChange={setAddOpen} onCreated={load} />
+      <AddInventoryItemDialog
+        open={Boolean(editItem)}
+        onOpenChange={(open) => !open && setEditItem(null)}
+        onCreated={load}
+        item={editItem}
+        hasMovements={movementCountFor(editItem) > 0}
+      />
       <InventoryItemDetailDialog
         open={itemDetailOpen}
         onOpenChange={setItemDetailOpen}
         sku={selectedSku}
       />
+      <AlertDialog open={Boolean(deleteItem)} onOpenChange={(open) => !open && !deleting && setDeleteItem(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleteItem?.sku}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {movementCountFor(deleteItem) > 0
+                ? `${deleteItem?.name} has ${movementCountFor(deleteItem)} stock movement(s) posted to the ledger, so it cannot be deleted. Edit the item and switch it to inactive instead.`
+                : `${deleteItem?.name} will be permanently removed from inventory. This cannot be undone.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            {movementCountFor(deleteItem) > 0 ? (
+              <AlertDialogAction
+                onClick={() => {
+                  const item = deleteItem;
+                  setDeleteItem(null);
+                  setEditItem(item);
+                }}
+              >
+                Edit Item
+              </AlertDialogAction>
+            ) : (
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                disabled={deleting}
+                onClick={(e) => {
+                  e.preventDefault();
+                  confirmDelete();
+                }}
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

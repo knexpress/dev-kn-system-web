@@ -45,6 +45,28 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'returns', label: 'Filed returns' },
 ];
 
+const VAT_SOURCE_LABEL: Record<string, string> = {
+  SALES_INVOICE: 'Sales',
+  SHIPMENT_INVOICE: 'Shipment',
+  SHIPMENT_INVOICE_REVERSAL: 'Reversal',
+  GATEWAY_CHARGE: 'Gateway fee',
+  GATEWAY_CHARGE_VOID: 'Gateway void',
+  CREDIT_NOTE: 'Credit note',
+  DEBIT_NOTE: 'Debit note',
+  NOTE_VOID: 'Note void',
+};
+
+const VAT_SOURCE_TONE: Record<string, string> = {
+  SALES_INVOICE: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+  SHIPMENT_INVOICE: 'bg-sky-50 text-sky-700 ring-sky-200',
+  SHIPMENT_INVOICE_REVERSAL: 'bg-rose-50 text-rose-700 ring-rose-200',
+  GATEWAY_CHARGE: 'bg-violet-50 text-violet-700 ring-violet-200',
+  GATEWAY_CHARGE_VOID: 'bg-rose-50 text-rose-700 ring-rose-200',
+  CREDIT_NOTE: 'bg-amber-50 text-amber-800 ring-amber-200',
+  DEBIT_NOTE: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  NOTE_VOID: 'bg-rose-50 text-rose-700 ring-rose-200',
+};
+
 function statusTone(status: string) {
   switch (status) {
     case 'DRAFT':
@@ -222,7 +244,7 @@ export default function Vat201Tab() {
     {
       label: 'Output VAT',
       value: `AED ${money(boxes.box11_total_output_vat ?? boxes.box4_output_vat)}`,
-      hint: 'From sales invoices',
+      hint: 'Shipment + sales invoices',
     },
     {
       label: 'Input VAT',
@@ -237,7 +259,7 @@ export default function Vat201Tab() {
     {
       label: 'Source docs',
       value: (sources.sales_count || 0) + (sources.purchase_count || 0),
-      hint: `${sources.sales_count || 0} sales · ${sources.purchase_count || 0} POs`,
+      hint: `${sources.sales_invoice_count ?? 0} sales · ${sources.shipment_invoice_count ?? 0} shipments · ${sources.purchase_count || 0} POs`,
     },
   ];
 
@@ -245,7 +267,7 @@ export default function Vat201Tab() {
     <div className="flex flex-col">
       <ErpToolbar
         title="VAT201"
-        description="UAE VAT return — auto-built from Sales invoices (output), Purchase Orders (input), and GL VAT accounts."
+        description="UAE VAT return — auto-built from shipment (booking) invoices, credit/debit notes and Sales invoices (output), Purchase Orders (input), and GL VAT accounts."
         onRefresh={() => void load()}
         refreshing={loading}
         actions={
@@ -288,7 +310,7 @@ export default function Vat201Tab() {
               Sales → Box 1–4
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              Approved invoices feed standard-rated supplies by emirate and output VAT (GL 2200).
+              Posted shipment invoices, credit/debit notes and approved sales invoices feed supplies and output VAT (GL 2200).
             </p>
           </Link>
           <Link
@@ -340,7 +362,7 @@ export default function Vat201Tab() {
             <div>
               <h3 className="text-base font-semibold text-slate-900">Compute VAT201 period</h3>
               <p className="mt-1 text-sm text-slate-500">
-                Pulls approved Sales invoices and taxed Purchase Orders in range, then reconciles to GL.
+                Pulls posted shipment invoices and notes, approved Sales invoices and taxed Purchase Orders in range, then reconciles to GL.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -479,29 +501,44 @@ export default function Vat201Tab() {
           <div className="space-y-6">
             <div className="overflow-x-auto rounded-3xl border border-slate-200/70 bg-white/90">
               <div className="border-b border-slate-100 px-5 py-3 text-sm font-semibold text-slate-800">
-                Sales invoices (output) · {sources.sales_count || 0}
+                Output supplies — sales &amp; shipment invoices · {sources.sales_count || 0}
+                <span className="ml-2 text-xs font-normal text-slate-400">
+                  {sources.sales_invoice_count ?? 0} sales invoices · {sources.shipment_invoice_count ?? 0} shipment
+                  invoices, plus credit/debit notes, cancellations and gateway charges
+                </span>
               </div>
               {(sources.sales_invoices || []).length === 0 ? (
                 <div className="p-6">
-                  <ErpEmptyState message="No approved sales invoices in this period." />
+                  <ErpEmptyState message="No sales or shipment invoices in this period." />
                 </div>
               ) : (
                 <Table className={erpTableClasses().table}>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Invoice</TableHead>
+                      <TableHead>Document</TableHead>
                       <TableHead>Customer / TRN</TableHead>
                       <TableHead>Box</TableHead>
-                      <TableHead className="text-right">Taxable</TableHead>
+                      <TableHead className="text-right">Standard-rated</TableHead>
+                      <TableHead className="text-right">Zero-rated</TableHead>
                       <TableHead className="text-right">Output VAT</TableHead>
                       <TableHead>JE</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {(sources.sales_invoices || []).map((s: any) => (
-                      <TableRow key={s.id || s.ref}>
+                      <TableRow key={`${s.type}-${s.id || s.ref}`}>
                         <TableCell>
-                          <div className="font-medium">{s.ref}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{s.ref}</span>
+                            <span
+                              className={cn(
+                                'rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase ring-1',
+                                VAT_SOURCE_TONE[s.type] || 'bg-slate-50 text-slate-600 ring-slate-200'
+                              )}
+                            >
+                              {VAT_SOURCE_LABEL[s.type] || 'Sales'}
+                            </span>
+                          </div>
                           <div className="text-xs text-slate-400">{fmtDate(s.date)}</div>
                         </TableCell>
                         <TableCell>
@@ -513,6 +550,9 @@ export default function Vat201Tab() {
                         <TableCell className="uppercase text-slate-500">{s.emirate_box}</TableCell>
                         <TableCell className="text-right tabular-nums">
                           {money(s.taxable_supplies)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-slate-500">
+                          {money(s.zero_rated)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums font-semibold">
                           {money(s.output_vat)}

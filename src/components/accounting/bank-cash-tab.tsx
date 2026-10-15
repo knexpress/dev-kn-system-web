@@ -1004,6 +1004,10 @@ export default function BankCashTab() {
                         <TableRow key={`${l.description}-${i}`}>
                           <TableCell>
                             <div>{l.description}</div>
+                            <div className="text-[11px] text-slate-400">
+                              GL {l.account_code || selectedPo.debit_account_code}
+                              {l.account_name ? ` — ${l.account_name}` : ''}
+                            </div>
                             {selectedPo.receive_later ? (
                               <div className="text-[11px] text-slate-400">
                                 {l.received_qty} of {l.quantity} received

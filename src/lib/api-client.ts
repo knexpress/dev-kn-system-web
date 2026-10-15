@@ -1607,9 +1607,25 @@ class ApiClient {
       sku?: string;
       quantity: number;
       unit_cost: number;
+      account_code?: string;
     }>;
   }) {
     return this.request('/accounting/purchase-orders', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async recordPurchaseOrderInvoice(
+    id: string,
+    payload: {
+      supplier_invoice_no: string;
+      supplier_invoice_date: string;
+      due_date?: string;
+      tax_amount?: number;
+    }
+  ) {
+    return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}/invoice`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -2235,6 +2251,30 @@ class ApiClient {
     return this.request('/accounting/inventory/items', {
       method: 'POST',
       body: JSON.stringify(itemData),
+    });
+  }
+
+  async updateInventoryItem(id: string, itemData: {
+    sku?: string;
+    name?: string;
+    unit?: string;
+    qty_on_hand?: number;
+    avg_cost?: number;
+    reorder_level?: number;
+    asset_account_code?: string;
+    cogs_account_code?: string;
+    income_account_code?: string;
+    is_active?: boolean;
+  }) {
+    return this.request(`/accounting/inventory/items/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(itemData),
+    });
+  }
+
+  async deleteInventoryItem(id: string) {
+    return this.request(`/accounting/inventory/items/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
     });
   }
 

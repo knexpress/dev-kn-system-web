@@ -5,6 +5,7 @@ import {
   Check,
   Loader2,
   Plus,
+  Printer,
   RefreshCw,
   Wallet,
   X,
@@ -47,6 +48,7 @@ import {
   erpTableClasses,
 } from './erp-shell';
 import { fmtDate, money } from './erp-format';
+import { PettyCashVoucherDialog } from './petty-cash-voucher-document';
 import { cn } from '@/lib/utils';
 
 type TabId = 'overview' | 'vouchers' | 'new-voucher' | 'replenish';
@@ -88,6 +90,7 @@ export default function PettyCashTab() {
     expense_account_code: '5100',
   });
   const [savingVoucher, setSavingVoucher] = useState(false);
+  const [printVoucher, setPrintVoucher] = useState<any | null>(null);
 
   const [reqForm, setReqForm] = useState({ amount: '', reason: '' });
   const [requesting, setRequesting] = useState(false);
@@ -196,6 +199,8 @@ export default function PettyCashTab() {
       expense_account_code: '5100',
     });
     setTab('vouchers');
+    const created = (result.data as any)?.voucher;
+    if (created) setPrintVoucher(created);
     await load();
   };
 
@@ -358,7 +363,9 @@ export default function PettyCashTab() {
                   {vouchers.slice(0, 6).map((v: any) => (
                     <li
                       key={v._id}
-                      className="flex items-center justify-between rounded-2xl bg-slate-50/80 px-3 py-2.5"
+                      className="flex cursor-pointer items-center justify-between rounded-2xl bg-slate-50/80 px-3 py-2.5 hover:bg-slate-100"
+                      title="Open printable voucher"
+                      onClick={() => setPrintVoucher(v)}
                     >
                       <div>
                         <p className="text-sm font-medium text-slate-900">{v.payee}</p>
@@ -390,11 +397,16 @@ export default function PettyCashTab() {
                     <TableHead>Category</TableHead>
                     <TableHead>Journal</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right">Print</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {vouchers.map((v: any) => (
-                    <TableRow key={v._id}>
+                    <TableRow
+                      key={v._id}
+                      className="cursor-pointer hover:bg-slate-50"
+                      onClick={() => setPrintVoucher(v)}
+                    >
                       <TableCell>
                         <div className="font-medium">{v.voucher_no}</div>
                         <div className="text-xs text-slate-400">{fmtDate(v.voucher_date)}</div>
@@ -409,6 +421,21 @@ export default function PettyCashTab() {
                       <TableCell className="text-slate-500">{v.journal_entry_no || '—'}</TableCell>
                       <TableCell className="text-right tabular-nums font-semibold">
                         AED {money(v.amount)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="rounded-xl"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPrintVoucher(v);
+                          }}
+                        >
+                          <Printer className="h-3.5 w-3.5" />
+                          Print
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -742,6 +769,11 @@ export default function PettyCashTab() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        <PettyCashVoucherDialog
+          voucher={printVoucher}
+          open={Boolean(printVoucher)}
+          onOpenChange={(open) => !open && setPrintVoucher(null)}
+        />
       </ErpModuleBody>
     </div>
   );

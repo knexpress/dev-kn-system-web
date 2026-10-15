@@ -51,9 +51,11 @@ import {
   erpTableClasses,
 } from './erp-shell';
 import { fmtDate, money } from './erp-format';
+import ShipmentInvoicesPanel from '@/components/invoices/shipment-invoices-panel';
+import AllInvoicesPanel from '@/components/invoices/all-invoices-panel';
 import { cn } from '@/lib/utils';
 
-type TabId = 'overview' | 'invoices' | 'create' | 'approvals' | 'traders';
+type TabId = 'overview' | 'all' | 'shipments' | 'invoices' | 'create' | 'approvals' | 'traders';
 
 type LineDraft = {
   key: string;
@@ -66,8 +68,10 @@ type LineDraft = {
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
-  { id: 'invoices', label: 'Invoices' },
-  { id: 'create', label: 'New invoice' },
+  { id: 'all', label: 'All invoices' },
+  { id: 'shipments', label: 'Shipment invoices' },
+  { id: 'invoices', label: 'Sales invoices' },
+  { id: 'create', label: 'New sales invoice' },
   { id: 'approvals', label: 'Approve / collect' },
   { id: 'traders', label: 'VAT traders' },
 ];
@@ -108,8 +112,20 @@ export default function SalesTab() {
   const { userProfile } = useAuth();
   const isFm = userProfile?.role === 'ADMIN' || userProfile?.role === 'SUPERADMIN';
 
-  const [tab, setTab] = useState<TabId>('overview');
+  const [tab, setTabState] = useState<TabId>('overview');
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get('tab') as TabId | null;
+    if (requested && TABS.some((t) => t.id === requested)) setTabState(requested);
+  }, []);
+
+  const setTab = useCallback((next: TabId) => {
+    setTabState(next);
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', next);
+    window.history.replaceState(null, '', url.toString());
+  }, []);
   const [overview, setOverview] = useState<any>(null);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
@@ -201,7 +217,7 @@ export default function SalesTab() {
 
   const stats = [
     {
-      label: 'Invoices',
+      label: 'Sales invoices',
       value: overview?.totals?.invoices || invoices.length,
       hint: `${overview?.totals?.pending || 0} pending`,
     },
@@ -428,7 +444,7 @@ export default function SalesTab() {
     <div className="flex flex-col">
       <ErpToolbar
         title="Sales"
-        description="Raise invoices, finance posts AR/Sales/VAT journals, then clear AR on receipt. Manage VAT-registered traders."
+        description="Shipment (booking) invoices and sales invoices in one place — payments, credit/debit notes, cancellations, AR/Sales/VAT journals and VAT-registered traders."
         onRefresh={() => void load()}
         refreshing={loading}
         actions={
@@ -451,7 +467,7 @@ export default function SalesTab() {
             </Button>
             <Button type="button" className={erpPrimaryButtonClass()} onClick={() => setTab('create')}>
               <Plus className="h-4 w-4" />
-              New invoice
+              New sales invoice
             </Button>
           </div>
         }
@@ -556,6 +572,12 @@ export default function SalesTab() {
             </div>
           </div>
         ) : null}
+
+        {tab === 'all' ? (
+          <AllInvoicesPanel salesInvoices={invoices} onOpenSalesInvoices={() => setTab('invoices')} />
+        ) : null}
+
+        {tab === 'shipments' ? <ShipmentInvoicesPanel /> : null}
 
         {tab === 'invoices' ? (
           <div className="overflow-x-auto rounded-3xl border border-slate-200/70 bg-white/90">

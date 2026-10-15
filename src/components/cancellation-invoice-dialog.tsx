@@ -179,7 +179,7 @@ export function CancellationInvoiceDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Cancellation invoice</AlertDialogTitle>
           <AlertDialogDescription>
-            Raise a fee invoice for a cancelled shipment or quotation. This is not sent to EMPOST.
+            Raise a fee invoice for a cancelled shipment or quotation. It is charged as domestic delivery fees (5% VAT) and sent to EMPOST.
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -236,7 +236,7 @@ export function CancellationInvoiceDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label>Fee (AED, before VAT) *</Label>
+              <Label>Domestic delivery fee (AED, before VAT) *</Label>
               <Input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
             </div>
             <div className="space-y-1">
