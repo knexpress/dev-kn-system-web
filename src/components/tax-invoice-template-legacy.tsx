@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import type { InvoiceGatewayChargeLine } from '@/lib/invoice-gateway-charge';
 import QRCode from './qr-code';
 
 interface InvoiceData {
@@ -41,6 +42,7 @@ interface InvoiceData {
     taxAmount: number;
     total: number;
   };
+  gatewayCharge?: InvoiceGatewayChargeLine | null;
   remarks: {
     boxNumbers: string;
     agent: string;
@@ -226,6 +228,12 @@ export default function TaxInvoiceTemplateLegacy({ data }: TaxInvoiceTemplatePro
                   </tr>
                 ) : null;
               })()}
+              {data.gatewayCharge && data.gatewayCharge.gross > 0 ? (
+                <tr>
+                  <td className="border border-gray-300 px-4 py-2 text-left">{data.gatewayCharge.label}</td>
+                  <td className="border border-gray-300 px-4 py-2 text-right">{data.gatewayCharge.net.toFixed(2)}</td>
+                </tr>
+              ) : null}
               {(() => {
                 const isPhToUae = data.isPhToUae || (data.serviceCode && data.serviceCode.toUpperCase().includes('PH_TO_UAE'));
                 // For PH TO UAE Tax Invoice: Show Subtotal (Delivery Charge only, no insurance)
@@ -267,17 +275,24 @@ export default function TaxInvoiceTemplateLegacy({ data }: TaxInvoiceTemplatePro
                 }
                 
                 // For other invoices: Show VAT first, then Total Amount
+                const gatewayVat = data.gatewayCharge?.vat || 0;
+                const gatewayGross =
+                  data.gatewayCharge && !data.gatewayCharge.includedInTotal
+                    ? data.gatewayCharge.gross
+                    : 0;
+                const taxShown = data.charges.taxAmount + gatewayVat;
+                const totalShown = data.charges.total + gatewayGross;
                 return (
                   <>
                     <tr>
                       <td className="border border-gray-300 px-4 py-2 text-left">VAT ({data.charges.taxRate}%)</td>
-                      <td className="border border-gray-300 px-4 py-2 text-right">{data.charges.taxAmount.toFixed(2)}</td>
+                      <td className="border border-gray-300 px-4 py-2 text-right">{taxShown.toFixed(2)}</td>
                     </tr>
                     <tr className="bg-gray-100">
                       <td className="border border-gray-300 px-4 py-2 text-left font-bold">
                         <div>Total Amount</div>
                       </td>
-                      <td className="border border-gray-300 px-4 py-2 text-right font-bold">{data.charges.total.toFixed(2)} AED</td>
+                      <td className="border border-gray-300 px-4 py-2 text-right font-bold">{totalShown.toFixed(2)} AED</td>
                     </tr>
                   </>
                 );

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import type { InvoiceGatewayChargeLine } from '@/lib/invoice-gateway-charge';
 import QRCode from './qr-code';
 
 export interface UaeToPhTaxInvoiceData {
@@ -44,6 +45,8 @@ export interface UaeToPhTaxInvoiceData {
     taxAmount: number;
     total: number;
   };
+  /** Tabby / Card fee line — shown after payment mode is decided and paid. */
+  gatewayCharge?: InvoiceGatewayChargeLine | null;
   remarks: {
     boxNumbers: string;
     agent: string;
@@ -67,6 +70,11 @@ function fmt(n: number) {
   return n.toFixed(2);
 }
 
+/** Unit price for gateway lines matches the tax-invoice style (e.g. 152.9143). */
+function fmtUnit(n: number) {
+  return n.toFixed(4);
+}
+
 function cellBorder() {
   return 'border border-gray-400 px-2 py-1.5 text-sm';
 }
@@ -82,13 +90,25 @@ export default function UaeToPhTaxInvoiceTemplate({ data }: UaeToPhTaxInvoiceTem
   const insurance = data.charges.insuranceCharge ?? 0;
   const delivery = data.charges.deliveryCharge ?? 0;
   const shipping = data.charges.shippingCharge ?? 0;
+  const gateway = data.gatewayCharge && data.gatewayCharge.gross > 0 ? data.gatewayCharge : null;
+  const gatewayNet = gateway?.net ?? 0;
+  const gatewayVat = gateway?.vat ?? 0;
+  const gatewayGross = gateway?.gross ?? 0;
+  const gatewayIncluded = gateway?.includedInTotal === true;
 
   const courierBundleAmount = Math.max(0, data.charges.subtotal - pickup);
-  const mainTaxLineAmount = courierBundleAmount;
-  const subtotal = data.charges.subtotal;
+  // Prepaid Card/Tabby: fee is inside the invoice total — carve it out of the main line.
+  const mainTaxLineAmount = gatewayIncluded
+    ? Math.max(0, courierBundleAmount - gatewayGross)
+    : courierBundleAmount;
   // UAE->PH rule: shipment detail lines are always zero-tax.
   // Tax is applied only on pickup/collection charges at 5%. Domestic delivery fees are taxed in full.
-  const taxAmount = isDomestic ? data.charges.taxAmount : pickup > 0 ? pickup * 0.05 : 0;
+  // Gateway fee is VAT-inclusive: net on the line, 5% VAT in the tax summary.
+  const baseTax = isDomestic ? data.charges.taxAmount : pickup > 0 ? pickup * 0.05 : 0;
+  const taxAmount = baseTax + gatewayVat;
+  const subtotal = gatewayIncluded
+    ? Math.max(0, data.charges.subtotal - gatewayVat)
+    : data.charges.subtotal + gatewayNet;
   const taxRate = isDomestic ? 5 : data.charges.taxRate;
   const taxSummaryLabel =
     taxAmount > 0 ? `TOTAL TAX ON SALES ${taxRate > 0 ? taxRate : 5}%` : 'TOTAL SALES TAX 0%';
@@ -196,6 +216,15 @@ export default function UaeToPhTaxInvoiceTemplate({ data }: UaeToPhTaxInvoiceTem
                   {taxRate > 0 ? `${taxRate}%` : '5%'}
                 </td>
                 <td className={`${cellBorder()} text-right`}>{fmt(pickup)}</td>
+              </tr>
+            )}
+            {gateway && (
+              <tr>
+                <td className={cellBorder()}>{gateway.label}</td>
+                <td className={`${cellBorder()} text-center`}>1.00</td>
+                <td className={`${cellBorder()} text-right`}>{fmtUnit(gateway.unitPrice)}</td>
+                <td className={`${cellBorder()} text-center`}>5%</td>
+                <td className={`${cellBorder()} text-right`}>{fmt(gateway.net)}</td>
               </tr>
             )}
           </tbody>

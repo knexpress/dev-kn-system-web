@@ -1547,21 +1547,41 @@ export default function QuotationsPage() {
                     Quotation total AED {money(quoteTotal)}
                   </p>
                   <div className="space-y-1">
-                    <Label>Amount received (AED) *</Label>
-                    <Input type="number" min="0.01" step="0.01" value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} className="bg-white" />
-                  </div>
-                  <div className="space-y-1">
                     <Label>Mode of payment *</Label>
-                    <Select value={advanceMode} onValueChange={(value) => setAdvanceMode(value as InvoicePaymentMode)}>
+                    <Select
+                      value={advanceMode}
+                      onValueChange={(value) => {
+                        const next = value as InvoicePaymentMode;
+                        setAdvanceMode(next);
+                        const rate = CANCEL_PAY_MODES.find((m) => m.value === next)?.rate || 0;
+                        if (quoteTotal > 0 && rate > 0) {
+                          setAdvanceAmount((Math.round(quoteTotal * (1 + rate) * 100) / 100).toFixed(2));
+                        } else if (quoteTotal > 0) {
+                          setAdvanceAmount(String(quoteTotal));
+                        }
+                      }}
+                    >
                       <SelectTrigger className="bg-white">
                         <SelectValue placeholder="Choose how the customer paid" />
                       </SelectTrigger>
                       <SelectContent>
                         {CANCEL_PAY_MODES.map((mode) => (
-                          <SelectItem key={mode.value} value={mode.value}>{mode.label}</SelectItem>
+                          <SelectItem key={mode.value} value={mode.value}>
+                            {mode.label}
+                            {mode.rate ? ` (${Math.round(mode.rate * 100)}% charges)` : ''}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Amount received (AED) *</Label>
+                    <Input type="number" min="0.01" step="0.01" value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} className="bg-white" />
+                    {advanceMode && (CANCEL_PAY_MODES.find((m) => m.value === advanceMode)?.rate || 0) > 0 && quoteTotal > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Quotation AED {money(quoteTotal)} + gateway charges. Amount above the quotation total posts to Payment Gateway Revenue (VAT-inclusive).
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-1">
                     <Label>Date paid *</Label>

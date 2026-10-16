@@ -1562,6 +1562,25 @@ class ApiClient {
     return this.request(`/accounting/purchase-orders${q}`, {}, false);
   }
 
+  async getPurchaseStatement(params: {
+    supplier_id?: string;
+    supplier_name?: string;
+    payment_status?: string;
+    from?: string;
+    to?: string;
+    q?: string;
+  }) {
+    const qs = new URLSearchParams();
+    if (params.supplier_id) qs.set('supplier_id', params.supplier_id);
+    if (params.supplier_name) qs.set('supplier_name', params.supplier_name);
+    if (params.payment_status) qs.set('payment_status', params.payment_status);
+    if (params.from) qs.set('from', params.from);
+    if (params.to) qs.set('to', params.to);
+    if (params.q) qs.set('q', params.q);
+    const q = qs.toString();
+    return this.request(`/accounting/purchase-orders/statement${q ? `?${q}` : ''}`, {}, false);
+  }
+
   async getPurchaseOrder(id: string) {
     return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}`, {}, false);
   }
@@ -1694,8 +1713,13 @@ class ApiClient {
     payee: string;
     category?: string;
     description?: string;
-    amount: number;
+    amount?: number;
     expense_account_code?: string;
+    lines?: Array<{
+      account_code: string;
+      amount: number;
+      description?: string;
+    }>;
   }) {
     return this.request('/accounting/petty-cash/vouchers', {
       method: 'POST',
@@ -1926,6 +1950,26 @@ class ApiClient {
   async getSalesInvoices(status?: string) {
     const q = status ? `?status=${encodeURIComponent(status)}` : '';
     return this.request(`/accounting/sales/invoices${q}`, {}, false);
+  }
+
+  async getUnpaidInvoiceSummary(params?: {
+    customer_id?: string;
+    customer_name?: string;
+    kind?: string;
+    /** ALL | UNPAID | PARTIAL | PAID */
+    payment_status?: string;
+    from?: string;
+    to?: string;
+  }) {
+    const qs = new URLSearchParams();
+    if (params?.customer_id) qs.set('customer_id', params.customer_id);
+    if (params?.customer_name) qs.set('customer_name', params.customer_name);
+    if (params?.kind) qs.set('kind', params.kind);
+    if (params?.payment_status) qs.set('payment_status', params.payment_status);
+    if (params?.from) qs.set('from', params.from);
+    if (params?.to) qs.set('to', params.to);
+    const q = qs.toString();
+    return this.request(`/accounting/sales/unpaid-summary${q ? `?${q}` : ''}`, {}, false);
   }
 
   async getSalesInvoice(id: string) {
@@ -2166,7 +2210,9 @@ class ApiClient {
     return this.request(`/accounting/journals/${encodeURIComponent(id)}`, {}, false);
   }
 
-  async createJournal(
+  private async submitJournalForm(
+    method: 'POST' | 'PUT',
+    path: string,
     journalData: {
       entry_date: string;
       memo?: string;
@@ -2198,7 +2244,7 @@ class ApiClient {
       formData.append('documents', file);
     }
 
-    const url = `${this.baseUrl}/accounting/journals`;
+    const url = `${this.baseUrl}${path}`;
     const headers: Record<string, string> = {};
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
@@ -2210,18 +2256,85 @@ class ApiClient {
 
     try {
       const response = await fetch(url, {
-        method: 'POST',
+        method,
         headers,
         body: formData,
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        return { success: false, error: data.error || data.message || 'Failed to create journal' };
+        return {
+          success: false,
+          error: data.error || data.message || `Failed to ${method === 'PUT' ? 'update' : 'create'} journal`,
+          period_key: data.period_key,
+          locked: data.locked,
+        };
       }
-      return { success: true, data: data.data || data };
+      return { success: true, data: data.data || data, meta: data.meta };
     } catch (error: any) {
-      return { success: false, error: error?.message || 'Failed to create journal' };
+      return {
+        success: false,
+        error: error?.message || `Failed to ${method === 'PUT' ? 'update' : 'create'} journal`,
+      };
     }
+  }
+
+  async getAccountingPeriods(monthsBack = 12, monthsForward = 6) {
+    const q = `?months_back=${monthsBack}&months_forward=${monthsForward}`;
+    return this.request(`/accounting/periods${q}`, {}, false);
+  }
+
+  async setAccountingPeriodStatus(
+    periodKey: string,
+    status: 'OPEN' | 'LOCKED',
+    notes?: string
+  ) {
+    return this.request(`/accounting/periods/${encodeURIComponent(periodKey)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, notes: notes || '' }),
+    });
+  }
+
+  async createJournal(
+    journalData: {
+      entry_date: string;
+      memo?: string;
+      source?: string;
+      status?: 'DRAFT' | 'POSTED';
+      source_reference?: string;
+      source_label?: string;
+      lines: Array<{
+        account_code: string;
+        debit?: number;
+        credit?: number;
+        description?: string;
+      }>;
+    },
+    documents: File[] = []
+  ) {
+    return this.submitJournalForm('POST', '/accounting/journals', journalData, documents);
+  }
+
+  async updateJournal(
+    id: string,
+    journalData: {
+      entry_date: string;
+      memo?: string;
+      status?: 'DRAFT' | 'POSTED';
+      lines: Array<{
+        account_code: string;
+        debit?: number;
+        credit?: number;
+        description?: string;
+      }>;
+    },
+    documents: File[] = []
+  ) {
+    return this.submitJournalForm(
+      'PUT',
+      `/accounting/journals/${encodeURIComponent(id)}`,
+      journalData,
+      documents
+    );
   }
 
   async getInventoryItems() {

@@ -7,6 +7,7 @@ import {
   Plus,
   Printer,
   RefreshCw,
+  Trash2,
   Wallet,
   X,
 } from 'lucide-react';
@@ -53,6 +54,22 @@ import { cn } from '@/lib/utils';
 
 type TabId = 'overview' | 'vouchers' | 'new-voucher' | 'replenish';
 
+type VoucherLineDraft = {
+  key: string;
+  description: string;
+  account_code: string;
+  amount: string;
+};
+
+function emptyVoucherLine(accountCode = '5100'): VoucherLineDraft {
+  return {
+    key: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    description: '',
+    account_code: accountCode,
+    amount: '',
+  };
+}
+
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'vouchers', label: 'Vouchers' },
@@ -86,9 +103,8 @@ export default function PettyCashTab() {
     payee: '',
     category: '',
     description: '',
-    amount: '',
-    expense_account_code: '5100',
   });
+  const [voucherLines, setVoucherLines] = useState<VoucherLineDraft[]>([emptyVoucherLine()]);
   const [savingVoucher, setSavingVoucher] = useState(false);
   const [printVoucher, setPrintVoucher] = useState<any | null>(null);
 
@@ -167,9 +183,34 @@ export default function PettyCashTab() {
     await load();
   };
 
+  const voucherTotal = useMemo(
+    () =>
+      voucherLines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0),
+    [voucherLines]
+  );
+
   const createVoucher = async () => {
-    if (!voucherForm.payee.trim() || !(Number(voucherForm.amount) > 0)) {
-      toast({ variant: 'destructive', title: 'Payee and amount are required' });
+    if (!voucherForm.payee.trim()) {
+      toast({ variant: 'destructive', title: 'Payee is required' });
+      return;
+    }
+    const lines = voucherLines
+      .map((l) => ({
+        account_code: l.account_code,
+        description: l.description.trim() || undefined,
+        amount: Number(l.amount) || 0,
+      }))
+      .filter((l) => l.account_code && l.amount > 0);
+    if (!lines.length) {
+      toast({
+        variant: 'destructive',
+        title: 'Add voucher lines',
+        description: 'Each line needs a COA account and an amount.',
+      });
+      return;
+    }
+    if (lines.some((l) => !l.account_code)) {
+      toast({ variant: 'destructive', title: 'Select a COA account on every line' });
       return;
     }
     setSavingVoucher(true);
@@ -178,8 +219,7 @@ export default function PettyCashTab() {
       payee: voucherForm.payee.trim(),
       category: voucherForm.category.trim() || undefined,
       description: voucherForm.description.trim() || undefined,
-      amount: Number(voucherForm.amount),
-      expense_account_code: voucherForm.expense_account_code,
+      lines,
     });
     setSavingVoucher(false);
     if (!result.success) {
@@ -195,9 +235,8 @@ export default function PettyCashTab() {
       payee: '',
       category: '',
       description: '',
-      amount: '',
-      expense_account_code: '5100',
     });
+    setVoucherLines([emptyVoucherLine()]);
     setTab('vouchers');
     const created = (result.data as any)?.voucher;
     if (created) setPrintVoucher(created);
@@ -394,7 +433,7 @@ export default function PettyCashTab() {
                   <TableRow>
                     <TableHead>Voucher</TableHead>
                     <TableHead>Payee</TableHead>
-                    <TableHead>Category</TableHead>
+                    <TableHead>COA</TableHead>
                     <TableHead>Journal</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
                     <TableHead className="text-right">Print</TableHead>
@@ -417,7 +456,14 @@ export default function PettyCashTab() {
                           <div className="text-xs text-slate-400">{v.description}</div>
                         ) : null}
                       </TableCell>
-                      <TableCell className="text-slate-500">{v.category || '—'}</TableCell>
+                      <TableCell className="text-xs text-slate-500">
+                        {Array.isArray(v.lines) && v.lines.length > 1
+                          ? `${v.lines.length} lines · ${v.lines
+                              .map((l: any) => l.account_code)
+                              .filter(Boolean)
+                              .join(', ')}`
+                          : v.expense_account_code || v.lines?.[0]?.account_code || '—'}
+                      </TableCell>
                       <TableCell className="text-slate-500">{v.journal_entry_no || '—'}</TableCell>
                       <TableCell className="text-right tabular-nums font-semibold">
                         AED {money(v.amount)}
@@ -446,11 +492,11 @@ export default function PettyCashTab() {
         ) : null}
 
         {tab === 'new-voucher' ? (
-          <div className="max-w-xl rounded-3xl border border-slate-200/70 bg-white/90 p-5 sm:p-6 space-y-4">
+          <div className="max-w-3xl rounded-3xl border border-slate-200/70 bg-white/90 p-5 sm:p-6 space-y-4">
             <div>
               <h3 className="text-base font-semibold text-slate-900">New petty cash voucher</h3>
               <p className="mt-1 text-sm text-slate-500">
-                Posts an expense journal and deducts from the petty cash float immediately.
+                Add one or more lines with a COA account each. Posts the journal and deducts the total from the float.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -473,17 +519,6 @@ export default function PettyCashTab() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Amount (AED)</Label>
-                <Input
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={voucherForm.amount}
-                  onChange={(e) => setVoucherForm((f) => ({ ...f, amount: e.target.value }))}
-                  className="rounded-xl"
-                />
-              </div>
-              <div className="space-y-2">
                 <Label>Category</Label>
                 <Input
                   value={voucherForm.category}
@@ -493,44 +528,128 @@ export default function PettyCashTab() {
                 />
               </div>
               <div className="space-y-2 sm:col-span-2">
-                <Label>Expense account</Label>
-                <Select
-                  value={voucherForm.expense_account_code}
-                  onValueChange={(v) =>
-                    setVoucherForm((f) => ({ ...f, expense_account_code: v }))
-                  }
-                >
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {glAccounts
-                      .filter((a) => a.type === 'Expense')
-                      .map((a) => (
-                        <SelectItem key={a.code} value={a.code}>
-                          {a.code} — {a.name}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label>Description</Label>
+                <Label>Memo (optional)</Label>
                 <Textarea
                   value={voucherForm.description}
                   onChange={(e) => setVoucherForm((f) => ({ ...f, description: e.target.value }))}
                   className="rounded-xl"
                   rows={2}
+                  placeholder="Overall note — line particulars can differ below"
                 />
               </div>
             </div>
-            <p className="text-xs text-slate-400">
-              Available float: <span className="font-semibold text-slate-700">AED {money(balance)}</span>
-            </p>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <Label className="text-sm font-semibold text-slate-900">Lines</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="rounded-xl"
+                  onClick={() =>
+                    setVoucherLines((rows) => [
+                      ...rows,
+                      emptyVoucherLine(rows[rows.length - 1]?.account_code || '5100'),
+                    ])
+                  }
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add line
+                </Button>
+              </div>
+              <div className="space-y-3">
+                {voucherLines.map((line, idx) => (
+                  <div
+                    key={line.key}
+                    className="grid gap-2 rounded-2xl border border-slate-100 bg-slate-50/60 p-3 sm:grid-cols-[1fr_minmax(12rem,1.4fr)_7rem_auto]"
+                  >
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-slate-500">Particulars</Label>
+                      <Input
+                        value={line.description}
+                        onChange={(e) =>
+                          setVoucherLines((rows) =>
+                            rows.map((r) =>
+                              r.key === line.key ? { ...r, description: e.target.value } : r
+                            )
+                          )
+                        }
+                        className="rounded-xl bg-white"
+                        placeholder={`Line ${idx + 1} description`}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-slate-500">COA account</Label>
+                      <Select
+                        value={line.account_code}
+                        onValueChange={(v) =>
+                          setVoucherLines((rows) =>
+                            rows.map((r) => (r.key === line.key ? { ...r, account_code: v } : r))
+                          )
+                        }
+                      >
+                        <SelectTrigger className="rounded-xl bg-white">
+                          <SelectValue placeholder="Select account" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {glAccounts.map((a) => (
+                            <SelectItem key={a.code} value={a.code}>
+                              {a.code} — {a.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-slate-500">Amount</Label>
+                      <Input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={line.amount}
+                        onChange={(e) =>
+                          setVoucherLines((rows) =>
+                            rows.map((r) =>
+                              r.key === line.key ? { ...r, amount: e.target.value } : r
+                            )
+                          )
+                        }
+                        className="rounded-xl bg-white"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="rounded-xl text-rose-600"
+                        disabled={voucherLines.length <= 1}
+                        onClick={() =>
+                          setVoucherLines((rows) => rows.filter((r) => r.key !== line.key))
+                        }
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <p className="text-xs text-slate-400">
+                  Available float:{' '}
+                  <span className="font-semibold text-slate-700">AED {money(balance)}</span>
+                </p>
+                <p className="font-semibold tabular-nums text-slate-900">
+                  Total AED {money(voucherTotal)}
+                </p>
+              </div>
+            </div>
+
             <Button
               type="button"
               className={erpPrimaryButtonClass()}
-              disabled={savingVoucher}
+              disabled={savingVoucher || voucherTotal <= 0}
               onClick={() => void createVoucher()}
             >
               {savingVoucher ? <Loader2 className="h-4 w-4 animate-spin" /> : null}

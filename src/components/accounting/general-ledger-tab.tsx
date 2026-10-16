@@ -51,6 +51,8 @@ export default function GeneralLedgerTab({
   const [newEntryOpen, setNewEntryOpen] = useState(false);
   const [selectedJournal, setSelectedJournal] = useState<any | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [editJournal, setEditJournal] = useState<any | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -150,6 +152,25 @@ export default function GeneralLedgerTab({
   const openJournal = (journal: any) => {
     setSelectedJournal(journal);
     setDetailOpen(true);
+  };
+
+  const startEditJournal = (journal: any) => {
+    setDetailOpen(false);
+    setEditJournal(journal);
+    setEditOpen(true);
+  };
+
+  const afterJournalEdited = async () => {
+    setEditOpen(false);
+    setEditJournal(null);
+    await handleJournalCreated();
+    if (selectedJournal?._id) {
+      const result = await apiClient.getJournal(String(selectedJournal._id));
+      if (result.success && result.data) {
+        setSelectedJournal(result.data);
+        setDetailOpen(true);
+      }
+    }
   };
 
   useEffect(() => {
@@ -366,6 +387,16 @@ export default function GeneralLedgerTab({
           open={detailOpen}
           onOpenChange={setDetailOpen}
           journal={selectedJournal}
+          onEdit={startEditJournal}
+        />
+        <NewJournalEntryDialog
+          open={editOpen}
+          onOpenChange={(open) => {
+            setEditOpen(open);
+            if (!open) setEditJournal(null);
+          }}
+          journal={editJournal}
+          onCreated={afterJournalEdited}
         />
       </div>
     );
@@ -506,6 +537,16 @@ export default function GeneralLedgerTab({
         open={detailOpen}
         onOpenChange={setDetailOpen}
         journal={selectedJournal}
+        onEdit={startEditJournal}
+      />
+      <NewJournalEntryDialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          setEditOpen(open);
+          if (!open) setEditJournal(null);
+        }}
+        journal={editJournal}
+        onCreated={afterJournalEdited}
       />
     </div>
   );

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
+  Download,
   FileCheck2,
   Loader2,
   RefreshCw,
@@ -235,6 +236,162 @@ export default function Vat201Tab() {
     await load();
   };
 
+  const [exporting, setExporting] = useState(false);
+
+  const downloadExcel = async () => {
+    setExporting(true);
+    try {
+      let data = computed;
+      if (!data) {
+        const result = await apiClient.computeVat201(from, to);
+        if (!result.success) {
+          toast({
+            variant: 'destructive',
+            title: 'Export failed',
+            description: result.error || 'Compute the period before exporting.',
+          });
+          return;
+        }
+        data = result.data;
+        setComputed(data);
+      }
+
+      const XLSX = await import('xlsx');
+      const wb = XLSX.utils.book_new();
+      const boxData = data?.boxes || {};
+      const src = data?.sources || {};
+      const glRec = data?.gl_reconciliation || {};
+      const netVat = Number(data?.net_vat_payable ?? boxData.box16_net_vat ?? 0);
+
+      const periodSheet = XLSX.utils.aoa_to_sheet([
+        ['VAT201 Period Compute'],
+        ['Period label', periodLabel || ''],
+        ['From', from],
+        ['To', to],
+        [],
+        ['Summary'],
+        ['Output VAT (box 11)', Number(boxData.box11_total_output_vat ?? boxData.box4_output_vat ?? 0)],
+        ['Input VAT (box 15)', Number(boxData.box15_total_recoverable ?? boxData.box13_input_vat ?? 0)],
+        ['Net VAT payable / (refundable)', netVat],
+        ['Sales invoice count', Number(src.sales_invoice_count ?? 0)],
+        ['Shipment invoice count', Number(src.shipment_invoice_count ?? 0)],
+        ['Output document count', Number(src.sales_count ?? 0)],
+        ['Purchase order count', Number(src.purchase_count ?? 0)],
+        [],
+        ['GL reconciliation'],
+        ['Output docs VAT', Number(glRec.doc_output_vat ?? 0)],
+        ['GL 2200 net', Number(glRec.gl_output_vat_net ?? 0)],
+        ['Output variance', Number(glRec.output_variance ?? 0)],
+        ['Input docs VAT', Number(glRec.doc_input_vat ?? 0)],
+        ['GL 1310 net', Number(glRec.gl_input_vat_net ?? 0)],
+        ['Input variance', Number(glRec.input_variance ?? 0)],
+        [],
+        ['Exported at', new Date().toISOString()],
+      ]);
+      XLSX.utils.book_append_sheet(wb, periodSheet, 'Period compute');
+
+      const boxesSheet = XLSX.utils.aoa_to_sheet([
+        ['Box', 'Section', 'Amount (AED)'],
+        ...BOX_ROWS.map((row) => [row.label, row.section, Number(boxData[row.key] || 0)]),
+      ]);
+      XLSX.utils.book_append_sheet(wb, boxesSheet, 'VAT201 boxes');
+
+      const outputRows = (src.sales_invoices || []).map((s: any) => [
+        s.ref || '',
+        VAT_SOURCE_LABEL[s.type] || s.type || '',
+        s.date ? String(s.date).slice(0, 10) : '',
+        s.customer || '',
+        s.customer_trn || '',
+        String(s.emirate_box || '').toUpperCase(),
+        Number(s.taxable_supplies || 0),
+        Number(s.zero_rated || 0),
+        Number(s.output_vat || 0),
+        s.journal_no || '',
+        s.status || '',
+      ]);
+      const outputSheet = XLSX.utils.aoa_to_sheet([
+        [
+          'Document',
+          'Type',
+          'Date',
+          'Customer',
+          'Customer TRN',
+          'Box',
+          'Standard-rated',
+          'Zero-rated',
+          'Output VAT',
+          'Journal',
+          'Status',
+        ],
+        ...(outputRows.length
+          ? outputRows
+          : [['No sales or shipment invoices in this period.', '', '', '', '', '', '', '', '', '', '']]),
+      ]);
+      XLSX.utils.book_append_sheet(wb, outputSheet, 'Source output');
+
+      const inputRows = (src.purchase_orders || []).map((p: any) => [
+        p.ref || '',
+        p.date ? String(p.date).slice(0, 10) : '',
+        p.supplier || '',
+        Number(p.expenses_ex_vat || 0),
+        Number(p.input_vat || 0),
+        p.journal_no || '',
+      ]);
+      const inputSheet = XLSX.utils.aoa_to_sheet([
+        ['PO', 'Date', 'Supplier', 'Excl. VAT', 'Input VAT', 'Journal'],
+        ...(inputRows.length
+          ? inputRows
+          : [['No taxed purchase orders in this period.', '', '', '', '', '']]),
+      ]);
+      XLSX.utils.book_append_sheet(wb, inputSheet, 'Source purchases');
+
+      const returnRows = returns.map((r) => [
+        r.return_no || '',
+        r.period_label || '',
+        r.period_start ? String(r.period_start).slice(0, 10) : '',
+        r.period_end ? String(r.period_end).slice(0, 10) : '',
+        Number(r.net_vat_payable || 0),
+        r.status || '',
+        r.settlement_journal_no || '',
+        r.filed_at ? String(r.filed_at).slice(0, 10) : '',
+        r.settled_at ? String(r.settled_at).slice(0, 10) : '',
+      ]);
+      const returnsSheet = XLSX.utils.aoa_to_sheet([
+        [
+          'Return',
+          'Period label',
+          'Period start',
+          'Period end',
+          'Net VAT',
+          'Status',
+          'Settlement JE',
+          'Filed at',
+          'Settled at',
+        ],
+        ...(returnRows.length ? returnRows : [['No saved VAT201 returns yet.', '', '', '', '', '', '', '', '']]),
+      ]);
+      XLSX.utils.book_append_sheet(wb, returnsSheet, 'Filed returns');
+
+      const safeLabel = String(periodLabel || `${from}_${to}`)
+        .replace(/[^\w\-]+/g, '_')
+        .replace(/_+/g, '_')
+        .slice(0, 40);
+      XLSX.writeFile(wb, `VAT201-${safeLabel || 'export'}.xlsx`);
+      toast({
+        title: 'Excel downloaded',
+        description: 'All VAT201 tabs exported (period, boxes, sources, returns).',
+      });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Export failed',
+        description: e?.message || 'Could not build Excel file',
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const boxes = computed?.boxes || {};
   const sources = computed?.sources || {};
   const gl = computed?.gl_reconciliation || {};
@@ -286,8 +443,18 @@ export default function Vat201Tab() {
             </Button>
             <Button
               type="button"
+              variant="outline"
+              className="rounded-xl"
+              disabled={exporting || computing}
+              onClick={() => void downloadExcel()}
+            >
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Download Excel
+            </Button>
+            <Button
+              type="button"
               className={erpPrimaryButtonClass()}
-              disabled={computing}
+              disabled={computing || exporting}
               onClick={() => void runCompute()}
             >
               {computing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}

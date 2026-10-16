@@ -9,6 +9,7 @@ import { secureLog } from '@/lib/secure-logger';
 import { isPhToUaeService, isUaeToPhService, canSeeQuotePricing } from '@/lib/invoice-request-utils';
 import { useAuth } from '@/hooks/use-auth';
 import { parseDecimal } from '@/lib/invoice-utils';
+import { gatewayChargeLineFromInvoice } from '@/lib/invoice-gateway-charge';
 import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, FileText, Receipt, AlertCircle, Download, Printer, FileSpreadsheet, Database, FileDiff } from 'lucide-react';
@@ -1563,6 +1564,7 @@ export default function InvoicePage() {
                 return total;
             })()
         },
+        gatewayCharge: gatewayChargeLineFromInvoice(invoice),
         // PH TO UAE totals from backend
         totalAmountCod: totalAmountCod ? parseDecimal(totalAmountCod, 2) : undefined,
         totalAmountTaxInvoice: totalAmountTaxInvoice ? parseDecimal(totalAmountTaxInvoice, 2) : undefined,

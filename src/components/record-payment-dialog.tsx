@@ -301,8 +301,15 @@ export function RecordPaymentDialog({ invoice, open, onOpenChange, onUpdated }: 
                     <span className="font-medium">{aed(preview.gateway)}</span>
                   </div>
                   {preview.gateway > 0 && (
-                    <div className="flex justify-between pl-3 text-xs text-slate-500">
-                      <span>Gateway revenue {aed(preview.gatewayNet)} + VAT 5% {aed(preview.gatewayVat)}</span>
+                    <div className="space-y-0.5 pl-3 text-xs text-slate-500">
+                      <div className="flex justify-between">
+                        <span>Payment gateway revenue (ex-VAT) → 4040</span>
+                        <span>{aed(preview.gatewayNet)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>VAT 5% on gateway charge → 2200</span>
+                        <span>{aed(preview.gatewayVat)}</span>
+                      </div>
                     </div>
                   )}
                   <div className="flex justify-between">

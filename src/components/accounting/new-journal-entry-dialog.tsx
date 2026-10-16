@@ -37,6 +37,8 @@ type NewJournalEntryDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: () => void;
+  /** When set, dialog edits this journal instead of creating a new one. */
+  journal?: any | null;
 };
 
 function money(n: number) {
@@ -53,12 +55,36 @@ function emptyLine(): JournalLineForm {
   };
 }
 
+function toInputDate(value: any) {
+  if (!value) return new Date().toISOString().slice(0, 10);
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function linesFromJournal(journal: any): JournalLineForm[] {
+  const raw = Array.isArray(journal?.lines) ? journal.lines : [];
+  if (!raw.length) return [emptyLine(), emptyLine()];
+  return raw.map((l: any, i: number) => ({
+    id: `edit-${i}-${l.account_code || i}`,
+    account_code: String(l.account_code || ''),
+    description: String(l.description || ''),
+    debit: l.debit ? String(l.debit) : '',
+    credit: l.credit ? String(l.credit) : '',
+  }));
+}
+
 export default function NewJournalEntryDialog({
   open,
   onOpenChange,
   onCreated,
+  journal = null,
 }: NewJournalEntryDialogProps) {
   const { toast } = useToast();
+  const editing = Boolean(journal?._id);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [entryDate, setEntryDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -74,11 +100,17 @@ export default function NewJournalEntryDialog({
         setAccounts(result.data.filter((a: any) => a.is_active !== false && a.is_postable !== false));
       }
     })();
-    setEntryDate(new Date().toISOString().slice(0, 10));
-    setMemo('');
-    setLines([emptyLine(), emptyLine()]);
+    if (journal?._id) {
+      setEntryDate(toInputDate(journal.entry_date));
+      setMemo(String(journal.memo || ''));
+      setLines(linesFromJournal(journal));
+    } else {
+      setEntryDate(new Date().toISOString().slice(0, 10));
+      setMemo('');
+      setLines([emptyLine(), emptyLine()]);
+    }
     setDocuments([]);
-  }, [open]);
+  }, [open, journal]);
 
   const totals = useMemo(() => {
     const debit = lines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0);
@@ -129,38 +161,67 @@ export default function NewJournalEntryDialog({
 
     setSaving(true);
     try {
-      const result = await apiClient.createJournal(
-        {
-          entry_date: entryDate,
-          memo,
-          source: 'MANUAL',
-          status,
-          source_label: 'Manual journal entry',
-          lines: payloadLines,
-        },
-        documents
-      );
+      const result = editing
+        ? await apiClient.updateJournal(
+            String(journal._id),
+            {
+              entry_date: entryDate,
+              memo,
+              status: status === 'POSTED' || journal.status === 'POSTED' ? 'POSTED' : status,
+              lines: payloadLines,
+            },
+            documents
+          )
+        : await apiClient.createJournal(
+            {
+              entry_date: entryDate,
+              memo,
+              source: 'MANUAL',
+              status,
+              source_label: 'Manual journal entry',
+              lines: payloadLines,
+            },
+            documents
+          );
 
       if (!result.success) {
         toast({
           variant: 'destructive',
           title: 'Save failed',
-          description: result.error || 'Could not create journal entry',
+          description: result.error || (editing ? 'Could not update journal entry' : 'Could not create journal entry'),
         });
         return;
       }
 
-      toast({
-        title: status === 'POSTED' ? 'Journal posted' : 'Draft saved',
-        description: `Entry ${(result.data as any)?.entry_no || ''} created successfully.`,
-      });
+      const meta = (result as any).meta;
+      if (meta?.adjustment) {
+        toast({
+          title: 'Adjustment posted',
+          description:
+            meta.message ||
+            `Period ${meta.locked_period} is locked. Created ${
+              (result.data as any)?.entry_no || ''
+            } in ${meta.adjustment_period}.`,
+        });
+      } else {
+        toast({
+          title: editing
+            ? 'Journal updated'
+            : status === 'POSTED'
+              ? 'Journal posted'
+              : 'Draft saved',
+          description: `Entry ${(result.data as any)?.entry_no || journal?.entry_no || ''} ${
+            editing ? 'saved' : 'created'
+          } successfully.`,
+        });
+      }
       onOpenChange(false);
       onCreated?.();
     } catch (e: any) {
       toast({
         variant: 'destructive',
         title: 'Save failed',
-        description: e?.message || 'Could not create journal entry',
+        description: e?.message || (editing ? 'Could not update journal entry' : 'Could not create journal entry'),
       });
     } finally {
       setSaving(false);
@@ -172,9 +233,15 @@ export default function NewJournalEntryDialog({
       <DialogContent className="max-w-4xl gap-0 p-0 max-h-[90vh] overflow-hidden flex flex-col">
         <div className="border-b border-border/60 px-4 py-3 shrink-0">
           <DialogHeader className="space-y-1">
-            <DialogTitle className="text-base">New Journal Entry</DialogTitle>
+            <DialogTitle className="text-base">
+              {editing ? `Edit ${journal?.entry_no || 'Journal Entry'}` : 'New Journal Entry'}
+            </DialogTitle>
             <DialogDescription className="text-xs">
-              Balanced debit/credit lines — posted entries update ledgers and reports.
+              {editing
+                ? journal?.source === 'INVENTORY'
+                  ? 'Update this stock-movement journal. Amount changes also update the linked movement cost.'
+                  : 'Update date, memo, accounts and amounts. Entry must stay balanced.'
+                : 'Balanced debit/credit lines — posted entries update ledgers and reports.'}
             </DialogDescription>
           </DialogHeader>
         </div>
@@ -378,18 +445,20 @@ export default function NewJournalEntryDialog({
           <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => handleSave('DRAFT')}
-            disabled={saving}
-          >
-            Save Draft
-          </Button>
+          {!editing && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => handleSave('DRAFT')}
+              disabled={saving}
+            >
+              Save Draft
+            </Button>
+          )}
           <Button type="button" size="sm" className="h-8 text-xs" onClick={() => handleSave('POSTED')} disabled={saving}>
-            {saving ? 'Saving...' : 'Post Entry'}
+            {saving ? 'Saving...' : editing ? 'Save changes' : 'Post Entry'}
           </Button>
         </DialogFooter>
       </DialogContent>

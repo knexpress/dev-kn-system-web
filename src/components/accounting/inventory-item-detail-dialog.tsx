@@ -11,6 +11,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { apiClient } from '@/lib/api-client';
 import JournalEntryDetailDialog from './journal-entry-detail-dialog';
+import NewJournalEntryDialog from './new-journal-entry-dialog';
 import {
   ErpDialogSection,
   ErpEmptyState,
@@ -39,6 +40,8 @@ export default function InventoryItemDetailDialog({
   const [stockValue, setStockValue] = useState(0);
   const [journalOpen, setJournalOpen] = useState(false);
   const [selectedJournal, setSelectedJournal] = useState<any | null>(null);
+  const [editJournalOpen, setEditJournalOpen] = useState(false);
+  const [editJournal, setEditJournal] = useState<any | null>(null);
 
   useEffect(() => {
     if (!open || !sku) return;
@@ -80,6 +83,35 @@ export default function InventoryItemDetailDialog({
     if (result.success && result.data) {
       setSelectedJournal(result.data);
       setJournalOpen(true);
+    }
+  };
+
+  const startEditJournal = (journal: any) => {
+    setJournalOpen(false);
+    setEditJournal(journal);
+    setEditJournalOpen(true);
+  };
+
+  const reloadItem = async () => {
+    if (!sku) return;
+    const result = await apiClient.getInventoryItem(sku);
+    if (result.success && result.data) {
+      setItem(result.data.item);
+      setMovements(result.data.movements || []);
+      setStockValue(result.data.stock_value || 0);
+    }
+  };
+
+  const afterJournalEdited = async () => {
+    setEditJournalOpen(false);
+    setEditJournal(null);
+    await reloadItem();
+    if (selectedJournal?._id) {
+      const result = await apiClient.getJournal(String(selectedJournal._id));
+      if (result.success && result.data) {
+        setSelectedJournal(result.data);
+        setJournalOpen(true);
+      }
     }
   };
 
@@ -220,6 +252,16 @@ export default function InventoryItemDetailDialog({
         open={journalOpen}
         onOpenChange={setJournalOpen}
         journal={selectedJournal}
+        onEdit={startEditJournal}
+      />
+      <NewJournalEntryDialog
+        open={editJournalOpen}
+        onOpenChange={(open) => {
+          setEditJournalOpen(open);
+          if (!open) setEditJournal(null);
+        }}
+        journal={editJournal}
+        onCreated={afterJournalEdited}
       />
     </>
   );

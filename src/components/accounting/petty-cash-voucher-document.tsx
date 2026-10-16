@@ -120,14 +120,26 @@ export function PettyCashVoucherDocument({ voucher }: { voucher: any }) {
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td className={`${cell()} h-20 align-top`}>{voucher.description || voucher.category || '—'}</td>
-            <td className={`${cell()} align-top`}>
-              {voucher.expense_account_code}
-              {voucher.expense_account_name ? ` — ${voucher.expense_account_name}` : ''}
-            </td>
-            <td className={`${cell()} text-right align-top`}>{money(voucher.amount)}</td>
-          </tr>
+          {(Array.isArray(voucher.lines) && voucher.lines.length
+            ? voucher.lines
+            : [
+                {
+                  description: voucher.description || voucher.category || '—',
+                  account_code: voucher.expense_account_code,
+                  account_name: voucher.expense_account_name,
+                  amount: voucher.amount,
+                },
+              ]
+          ).map((line: any, idx: number) => (
+            <tr key={`v-line-${idx}`}>
+              <td className={`${cell()} align-top`}>{line.description || voucher.category || '—'}</td>
+              <td className={`${cell()} align-top`}>
+                {line.account_code}
+                {line.account_name ? ` — ${line.account_name}` : ''}
+              </td>
+              <td className={`${cell()} text-right align-top`}>{money(line.amount)}</td>
+            </tr>
+          ))}
           <tr>
             <td className={`${cell()} text-right font-bold`} colSpan={2}>
               TOTAL AED

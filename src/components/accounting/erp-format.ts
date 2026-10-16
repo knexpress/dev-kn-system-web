@@ -29,6 +29,7 @@ export type AccountingModule =
   | 'coa'
   | 'journals'
   | 'ledger'
+  | 'periods'
   | 'inventory'
   | 'movements'
   | 'bank-cash'
@@ -66,6 +67,11 @@ export const ACCOUNTING_ROUTES: Record<
     href: '/dashboard/accounting/ledger',
     title: 'Account Ledger',
     subtitle: 'Running balance by account',
+  },
+  periods: {
+    href: '/dashboard/accounting/periods',
+    title: 'Period Lock',
+    subtitle: 'Lock months; edits post as next-period adjustments',
   },
   inventory: {
     href: '/dashboard/accounting/inventory',

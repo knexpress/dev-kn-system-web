@@ -7,8 +7,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Paperclip } from 'lucide-react';
+import { Pencil, Paperclip } from 'lucide-react';
 import {
   ErpDialogSection,
   ErpMetaGrid,
@@ -23,6 +24,7 @@ type JournalEntryDetailDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   journal: any | null;
+  onEdit?: (journal: any) => void;
 };
 
 function apiOrigin() {
@@ -34,20 +36,30 @@ const SOURCE_HELP: Record<string, string> = {
   INVOICE: 'Generated from an invoice posting',
   INVENTORY: 'Generated from an inventory stock movement',
   PAYMENT: 'Generated from a payment / remittance',
-  ADJUSTMENT: 'Created as an adjustment entry',
+  ADJUSTMENT: 'Period or manual adjustment (often next open month after a lock)',
   OPENING: 'Opening balance / system seed',
 };
+
+const EDITABLE_SOURCES = new Set(['MANUAL', 'INVENTORY', 'ADJUSTMENT', 'OPENING']);
+
+export function canEditJournal(journal: any | null | undefined) {
+  if (!journal) return false;
+  if (String(journal.status || '').toUpperCase() === 'DRAFT') return true;
+  return EDITABLE_SOURCES.has(String(journal.source || '').toUpperCase());
+}
 
 export default function JournalEntryDetailDialog({
   open,
   onOpenChange,
   journal,
+  onEdit,
 }: JournalEntryDetailDialogProps) {
   if (!journal) return null;
 
   const docs = journal.supporting_documents || [];
   const lines = journal.lines || [];
   const t = erpTableClasses();
+  const editable = Boolean(onEdit) && canEditJournal(journal);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -58,6 +70,18 @@ export default function JournalEntryDetailDialog({
               <span className="font-mono">{journal.entry_no}</span>
               <JournalStatusBadge status={journal.status} />
               <SourceBadge source={journal.source} />
+              {editable && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="ml-auto h-7 text-xs"
+                  onClick={() => onEdit?.(journal)}
+                >
+                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                  Edit JE
+                </Button>
+              )}
             </DialogTitle>
             <DialogDescription className="text-xs">
               Audit trail — origin, creator, and posting timeline
@@ -103,6 +127,26 @@ export default function JournalEntryDetailDialog({
                 { label: 'Journal date', value: fmtDate(journal.entry_date) },
                 { label: 'Updated', value: fmtDateTime(journal.updatedAt) },
                 { label: 'Memo', value: journal.memo || '—' },
+                ...(journal.adjusts_journal_no
+                  ? [
+                      {
+                        label: 'Adjusts',
+                        value: (
+                          <span className="font-mono">{journal.adjusts_journal_no}</span>
+                        ),
+                      },
+                    ]
+                  : []),
+                ...(journal.adjusted_by_journal_no
+                  ? [
+                      {
+                        label: 'Adjusted by',
+                        value: (
+                          <span className="font-mono">{journal.adjusted_by_journal_no}</span>
+                        ),
+                      },
+                    ]
+                  : []),
               ]}
             />
           </ErpDialogSection>

@@ -12,6 +12,7 @@ import {
   Banknote,
   Receipt,
   FileCode,
+  Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,9 +54,22 @@ import {
 import { fmtDate, money } from './erp-format';
 import ShipmentInvoicesPanel from '@/components/invoices/shipment-invoices-panel';
 import AllInvoicesPanel from '@/components/invoices/all-invoices-panel';
+import CustomerUnpaidSummaryPanel from '@/components/accounting/customer-unpaid-summary-panel';
+import {
+  PaymentReceiptVoucherDialog,
+  buildReceiptFromInvoicePayment,
+} from '@/components/accounting/payment-receipt-voucher-document';
 import { cn } from '@/lib/utils';
 
-type TabId = 'overview' | 'all' | 'shipments' | 'invoices' | 'create' | 'approvals' | 'traders';
+type TabId =
+  | 'overview'
+  | 'all'
+  | 'shipments'
+  | 'invoices'
+  | 'unpaid'
+  | 'create'
+  | 'approvals'
+  | 'traders';
 
 type LineDraft = {
   key: string;
@@ -71,6 +85,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'all', label: 'All invoices' },
   { id: 'shipments', label: 'Shipment invoices' },
   { id: 'invoices', label: 'Sales invoices' },
+  { id: 'unpaid', label: 'Customer statement' },
   { id: 'create', label: 'New sales invoice' },
   { id: 'approvals', label: 'Approve / collect' },
   { id: 'traders', label: 'VAT traders' },
@@ -168,6 +183,8 @@ export default function SalesTab() {
     payment_date: new Date().toISOString().slice(0, 10),
   });
   const [paying, setPaying] = useState(false);
+  const [receiptVoucher, setReceiptVoucher] = useState<any | null>(null);
+  const [receiptOpen, setReceiptOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -198,6 +215,28 @@ export default function SalesTab() {
     () => invoices.filter((i) => ['APPROVED', 'PARTIALLY_PAID'].includes(i.status)),
     [invoices]
   );
+
+  const recentReceipts = useMemo(() => {
+    const rows: any[] = [];
+    for (const inv of invoices) {
+      for (const p of inv.payments || []) {
+        rows.push(buildReceiptFromInvoicePayment(inv, p));
+      }
+    }
+    return rows
+      .filter(Boolean)
+      .sort(
+        (a, b) =>
+          new Date(b.payment_date || b.recorded_at || 0).getTime() -
+          new Date(a.payment_date || a.recorded_at || 0).getTime()
+      )
+      .slice(0, 40);
+  }, [invoices]);
+
+  const openReceipt = (receipt: any) => {
+    setReceiptVoucher(receipt);
+    setReceiptOpen(true);
+  };
 
   const lineCalc = useMemo(() => {
     let subtotal = 0;
@@ -377,11 +416,19 @@ export default function SalesTab() {
       toast({ variant: 'destructive', title: 'Payment failed', description: result.error });
       return;
     }
+    const payment = (result.data as any)?.payment;
+    const journalNo = (result.data as any)?.journal?.entry_no;
     toast({
-      title: 'Payment recorded — JE posted',
-      description: `Journal ${(result.data as any)?.journal?.entry_no} · Dr Bank / Cr AR`,
+      title: 'Payment recorded — receipt ready',
+      description: payment?.receipt_no
+        ? `${payment.receipt_no} · Journal ${journalNo || payment.journal_entry_no || ''}`
+        : `Journal ${journalNo} · Dr Bank / Cr AR`,
     });
     setPayOpen(false);
+    if (payment) {
+      setReceiptVoucher(payment);
+      setReceiptOpen(true);
+    }
     await load();
   };
 
@@ -465,6 +512,10 @@ export default function SalesTab() {
               <Building2 className="h-4 w-4" />
               VAT traders
             </Button>
+            <Button type="button" variant="outline" className="rounded-xl" onClick={() => setTab('unpaid')}>
+              <Download className="h-4 w-4" />
+              Customer statement
+            </Button>
             <Button type="button" className={erpPrimaryButtonClass()} onClick={() => setTab('create')}>
               <Plus className="h-4 w-4" />
               New sales invoice
@@ -499,6 +550,8 @@ export default function SalesTab() {
             <Loader2 className="h-6 w-6 animate-spin" />
           </div>
         ) : null}
+
+        {tab === 'unpaid' ? <CustomerUnpaidSummaryPanel customers={customers} /> : null}
 
         {tab === 'overview' ? (
           <div className="grid gap-4 lg:grid-cols-2">
@@ -992,6 +1045,62 @@ export default function SalesTab() {
                 </Table>
               )}
             </div>
+
+            <div className="overflow-x-auto rounded-3xl border border-slate-200/70 bg-white/90">
+              <div className="border-b border-slate-100 px-5 py-3 text-sm font-semibold text-slate-800">
+                Payment receipt vouchers
+              </div>
+              {recentReceipts.length === 0 ? (
+                <div className="p-6">
+                  <ErpEmptyState message="No customer receipts yet — record a receipt above." />
+                </div>
+              ) : (
+                <Table className={erpTableClasses().table}>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Receipt</TableHead>
+                      <TableHead>Invoice</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Deposited to</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">PDF</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recentReceipts.map((r) => (
+                      <TableRow key={String(r._id || `${r.invoice_no}-${r.journal_entry_no}`)}>
+                        <TableCell>
+                          <div className="font-medium">
+                            {r.receipt_no || r.journal_entry_no || 'Receipt'}
+                          </div>
+                          <div className="text-xs text-slate-400">{fmtDate(r.payment_date)}</div>
+                        </TableCell>
+                        <TableCell className="text-slate-600">{r.invoice_no}</TableCell>
+                        <TableCell>{r.customer_name}</TableCell>
+                        <TableCell className="text-slate-500 text-sm">
+                          {r.bank_cash_account_name || r.bank_cash_account_code || '—'}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums font-semibold">
+                          AED {money(r.amount)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="rounded-xl"
+                            onClick={() => openReceipt(r)}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            PDF / print
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
           </div>
         ) : null}
 
@@ -1197,8 +1306,8 @@ export default function SalesTab() {
               <DialogTitle>Record receipt — {payInv?.invoice_no}</DialogTitle>
             </DialogHeader>
             <p className="text-sm text-slate-500">
-              Posts <span className="font-medium text-slate-700">Dr Bank / Cr AR</span> and updates
-              paid status.
+              Posts <span className="font-medium text-slate-700">Dr Bank / Cr AR</span>, updates paid
+              status, and opens the payment receipt voucher PDF.
             </p>
             <div className="space-y-3">
               <div className="space-y-2">
@@ -1256,6 +1365,12 @@ export default function SalesTab() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <PaymentReceiptVoucherDialog
+          receipt={receiptVoucher}
+          open={receiptOpen}
+          onOpenChange={setReceiptOpen}
+        />
       </ErpModuleBody>
     </div>
   );

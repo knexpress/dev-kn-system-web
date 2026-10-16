@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { secureLog } from '@/lib/secure-logger';
+import type { InvoiceGatewayChargeLine } from '@/lib/invoice-gateway-charge';
 import QRCode from './qr-code';
 
 interface InvoiceData {
@@ -42,6 +43,7 @@ interface InvoiceData {
     taxAmount?: number;
     total: number;
   };
+  gatewayCharge?: InvoiceGatewayChargeLine | null;
   remarks: {
     boxNumbers: string;
     agent: string;
@@ -191,6 +193,20 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
                 <td className="border border-gray-300 px-4 py-2 text-left">Insurance Charge</td>
                 <td className="border border-gray-300 px-4 py-2 text-right">{(data.charges.insuranceCharge ?? 0).toFixed(2)}</td>
               </tr>
+              {data.gatewayCharge && data.gatewayCharge.gross > 0 && (
+                <>
+                  <tr>
+                    <td className="border border-gray-300 px-4 py-2 text-left">{data.gatewayCharge.label}</td>
+                    <td className="border border-gray-300 px-4 py-2 text-right">{data.gatewayCharge.net.toFixed(2)}</td>
+                  </tr>
+                  {data.gatewayCharge.vat > 0 && (
+                    <tr>
+                      <td className="border border-gray-300 px-4 py-2 text-left">VAT 5% on {data.gatewayCharge.label}</td>
+                      <td className="border border-gray-300 px-4 py-2 text-right">{data.gatewayCharge.vat.toFixed(2)}</td>
+                    </tr>
+                  )}
+                </>
+              )}
               <tr className="bg-gray-100">
                 <td className="border border-gray-300 px-4 py-2 text-left font-bold">
                   <div>Total Amount</div>
@@ -238,7 +254,15 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
                     
                     if (!totalValue) return null;
                     // Convert to number and check - handle both string "0" and number 0
-                    const numValue = typeof totalValue === 'string' ? parseFloat(totalValue) : Number(totalValue);
+                    let numValue = typeof totalValue === 'string' ? parseFloat(totalValue) : Number(totalValue);
+                    // Card/Tabby fee collected on top of the invoice amount
+                    if (
+                      data.gatewayCharge &&
+                      data.gatewayCharge.gross > 0 &&
+                      !data.gatewayCharge.includedInTotal
+                    ) {
+                      numValue += data.gatewayCharge.gross;
+                    }
                     // Only render if it's a valid positive number
                     if (isNaN(numValue) || !isFinite(numValue) || numValue <= 0) {
                       return null; // Don't render anything if total is 0, NaN, or invalid

@@ -5,6 +5,7 @@ import {
   Banknote,
   Building2,
   Check,
+  FileText,
   Loader2,
   Plus,
   Scale,
@@ -52,6 +53,7 @@ import {
 import { fmtDate, money } from './erp-format';
 import { cn } from '@/lib/utils';
 import BankReconciliationPanel from './bank-reconciliation-panel';
+import { SupplierPaymentVoucherDialog } from './supplier-payment-voucher-document';
 
 type TabId = 'overview' | 'accounts' | 'payables' | 'pay' | 'approvals' | 'history' | 'reconcile';
 
@@ -175,6 +177,8 @@ export default function BankCashTab() {
   const [actingId, setActingId] = useState<string | null>(null);
   const [reverseTarget, setReverseTarget] = useState<any>(null);
   const [reverseReason, setReverseReason] = useState('');
+  const [voucherPayment, setVoucherPayment] = useState<any | null>(null);
+  const [voucherOpen, setVoucherOpen] = useState(false);
   const [directPay, setDirectPay] = useState(false);
   const [invoiceFilter, setInvoiceFilter] = useState<'OUTSTANDING' | 'OVERDUE' | 'PENDING'>('OUTSTANDING');
   const [invoiceSearch, setInvoiceSearch] = useState('');
@@ -412,7 +416,7 @@ export default function BankCashTab() {
 
     const created = result.data as any;
     toast({
-      title: 'Draft payment created',
+      title: 'Draft payment voucher created',
       description: `${created?.payment?.payment_no || ''} — journal ${
         created?.journal?.entry_no || created?.payment?.journal_entry_no || ''
       } saved as DRAFT. ${isFm ? 'Clear it to post the payment.' : 'A Finance Manager will clear it.'}`,
@@ -426,6 +430,10 @@ export default function BankCashTab() {
       purchase_order_id: '',
     }));
     setDirectPay(false);
+    if (created?.payment) {
+      setVoucherPayment(created.payment);
+      setVoucherOpen(true);
+    }
     if (isFm) setTab('approvals');
     await load();
   };
@@ -1254,37 +1262,52 @@ export default function BankCashTab() {
                         {p.requested_by_name || p.requested_by_email || '—'}
                       </TableCell>
                       <TableCell className="text-right">
-                        {!isFm ? (
-                          <span className="text-xs text-slate-400">Awaiting Finance Manager</span>
-                        ) : (
-                        <div className="inline-flex gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="rounded-xl bg-emerald-600 hover:bg-emerald-700"
-                            disabled={actingId === p._id}
-                            onClick={() => void approvePayment(p._id)}
-                          >
-                            {actingId === p._id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Check className="h-3.5 w-3.5" />
-                            )}
-                            Clear / post
-                          </Button>
+                        <div className="inline-flex flex-wrap justify-end gap-2">
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
                             className="rounded-xl"
-                            disabled={actingId === p._id}
-                            onClick={() => void rejectPayment(p._id)}
+                            onClick={() => {
+                              setVoucherPayment(p);
+                              setVoucherOpen(true);
+                            }}
                           >
-                            <X className="h-3.5 w-3.5" />
-                            Reject
+                            <FileText className="h-3.5 w-3.5" />
+                            Voucher
                           </Button>
+                          {!isFm ? (
+                            <span className="self-center text-xs text-slate-400">Awaiting Finance Manager</span>
+                          ) : (
+                            <>
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="rounded-xl bg-emerald-600 hover:bg-emerald-700"
+                                disabled={actingId === p._id}
+                                onClick={() => void approvePayment(p._id)}
+                              >
+                                {actingId === p._id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Check className="h-3.5 w-3.5" />
+                                )}
+                                Clear / post
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="rounded-xl"
+                                disabled={actingId === p._id}
+                                onClick={() => void rejectPayment(p._id)}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                                Reject
+                              </Button>
+                            </>
+                          )}
                         </div>
-                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1361,6 +1384,20 @@ export default function BankCashTab() {
                           ) : null}
                         </TableCell>
                         <TableCell className="text-right">
+                          <div className="inline-flex flex-wrap justify-end gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="rounded-xl"
+                            onClick={() => {
+                              setVoucherPayment(p);
+                              setVoucherOpen(true);
+                            }}
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            Voucher
+                          </Button>
                           {isFm && p.status === 'APPROVED' ? (
                             <Button
                               type="button"
@@ -1377,6 +1414,7 @@ export default function BankCashTab() {
                               Reverse
                             </Button>
                           ) : null}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1388,6 +1426,19 @@ export default function BankCashTab() {
         ) : null}
 
         {tab === 'reconcile' ? <BankReconciliationPanel accounts={accounts} /> : null}
+
+        <SupplierPaymentVoucherDialog
+          payment={voucherPayment}
+          open={voucherOpen}
+          onOpenChange={setVoucherOpen}
+          canApprove={isFm}
+          onApprove={async (payment) => {
+            await approvePayment(payment._id);
+            const refreshed = payments.find((p) => p._id === payment._id);
+            if (refreshed) setVoucherPayment({ ...refreshed, status: 'APPROVED' });
+            else setVoucherPayment({ ...payment, status: 'APPROVED' });
+          }}
+        />
 
         <Dialog open={Boolean(reverseTarget)} onOpenChange={(open) => !open && setReverseTarget(null)}>
           <DialogContent className="max-w-md rounded-3xl">

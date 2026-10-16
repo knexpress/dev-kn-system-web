@@ -27,6 +27,7 @@ import AddInventoryItemDialog from './add-inventory-item-dialog';
 import RecordStockMovementDialog from './record-stock-movement-dialog';
 import InventoryItemDetailDialog from './inventory-item-detail-dialog';
 import JournalEntryDetailDialog from './journal-entry-detail-dialog';
+import NewJournalEntryDialog from './new-journal-entry-dialog';
 import {
   ErpEmptyState,
   ErpGrid,
@@ -54,6 +55,8 @@ export default function InventoryTab({ mode = 'items' }: InventoryTabProps) {
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
   const [journalOpen, setJournalOpen] = useState(false);
   const [selectedJournal, setSelectedJournal] = useState<any | null>(null);
+  const [editJournalOpen, setEditJournalOpen] = useState(false);
+  const [editJournal, setEditJournal] = useState<any | null>(null);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [editItem, setEditItem] = useState<any | null>(null);
@@ -124,6 +127,31 @@ export default function InventoryTab({ mode = 'items' }: InventoryTabProps) {
     if (result.success && result.data) {
       setSelectedJournal(result.data);
       setJournalOpen(true);
+    } else {
+      toast({
+        variant: 'destructive',
+        title: 'Could not open journal',
+        description: result.error || 'Journal entry not found',
+      });
+    }
+  };
+
+  const startEditJournal = (journal: any) => {
+    setJournalOpen(false);
+    setEditJournal(journal);
+    setEditJournalOpen(true);
+  };
+
+  const afterJournalEdited = async () => {
+    setEditJournalOpen(false);
+    setEditJournal(null);
+    await load();
+    if (selectedJournal?._id) {
+      const result = await apiClient.getJournal(String(selectedJournal._id));
+      if (result.success && result.data) {
+        setSelectedJournal(result.data);
+        setJournalOpen(true);
+      }
     }
   };
 
@@ -226,18 +254,19 @@ export default function InventoryTab({ mode = 'items' }: InventoryTabProps) {
                 <TableHead className={cn(t.head, 'text-right')}>Qty</TableHead>
                 <TableHead className={cn(t.head, 'text-right')}>Unit Cost</TableHead>
                 <TableHead className={t.head}>Journal</TableHead>
+                <TableHead className={cn(t.head, 'w-[90px]')} />
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7}>
+                  <TableCell colSpan={8}>
                     <ErpEmptyState message="Loading movements…" />
                   </TableCell>
                 </TableRow>
               ) : filteredTxns.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7}>
+                  <TableCell colSpan={8}>
                     <ErpEmptyState message="No stock movements yet." />
                   </TableCell>
                 </TableRow>
@@ -274,6 +303,33 @@ export default function InventoryTab({ mode = 'items' }: InventoryTabProps) {
                     <TableCell className={cn(t.cell, 'font-mono text-primary')}>
                       {txn.journal_entry_no || '—'}
                     </TableCell>
+                    <TableCell className={t.cell} onClick={(e) => e.stopPropagation()}>
+                      {txn.journal_entry_id ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={async () => {
+                            const result = await apiClient.getJournal(String(txn.journal_entry_id));
+                            if (result.success && result.data) {
+                              startEditJournal(result.data);
+                            } else {
+                              toast({
+                                variant: 'destructive',
+                                title: 'Could not open journal',
+                                description: result.error || 'Journal entry not found',
+                              });
+                            }
+                          }}
+                        >
+                          <Pencil className="mr-1 h-3.5 w-3.5" />
+                          Edit JE
+                        </Button>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -290,6 +346,16 @@ export default function InventoryTab({ mode = 'items' }: InventoryTabProps) {
           open={journalOpen}
           onOpenChange={setJournalOpen}
           journal={selectedJournal}
+          onEdit={startEditJournal}
+        />
+        <NewJournalEntryDialog
+          open={editJournalOpen}
+          onOpenChange={(open) => {
+            setEditJournalOpen(open);
+            if (!open) setEditJournal(null);
+          }}
+          journal={editJournal}
+          onCreated={afterJournalEdited}
         />
       </div>
     );

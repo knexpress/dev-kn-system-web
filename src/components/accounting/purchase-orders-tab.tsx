@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -34,6 +35,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -51,9 +53,11 @@ import {
 } from './erp-shell';
 import { fmtDate, money } from './erp-format';
 import { SupplierDialog } from './supplier-dialog';
+import { SupplierPaymentVoucherDialog } from './supplier-payment-voucher-document';
+import PurchaseStatementPanel from './purchase-statement-panel';
 import { cn } from '@/lib/utils';
 
-type TabId = 'overview' | 'orders' | 'create' | 'suppliers' | 'approvals';
+type TabId = 'overview' | 'orders' | 'create' | 'suppliers' | 'statement' | 'approvals';
 
 type LineDraft = {
   key: string;
@@ -67,6 +71,7 @@ type LineDraft = {
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'orders', label: 'All POs' },
+  { id: 'statement', label: 'Statement of purchase' },
   { id: 'create', label: 'New purchase order' },
   { id: 'suppliers', label: 'Suppliers' },
   { id: 'approvals', label: 'Approve / receive' },
@@ -156,8 +161,23 @@ export default function PurchaseOrdersTab() {
     amount: '',
     bank_cash_account_id: '',
     payment_date: new Date().toISOString().slice(0, 10),
+    print_voucher: true,
+    clear_now: false,
   });
   const [paying, setPaying] = useState(false);
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [approvePoRow, setApprovePoRow] = useState<any | null>(null);
+  const [approveVoucher, setApproveVoucher] = useState(false);
+  const [approvePayForm, setApprovePayForm] = useState({
+    amount: '',
+    bank_cash_account_id: '',
+    payment_date: new Date().toISOString().slice(0, 10),
+    clear_now: true,
+  });
+  const [approving, setApproving] = useState(false);
+  const [voucherPayment, setVoucherPayment] = useState<any | null>(null);
+  const [voucherPo, setVoucherPo] = useState<any | null>(null);
+  const [voucherOpen, setVoucherOpen] = useState(false);
   const [payables, setPayables] = useState<Record<string, any>>({});
 
   const [receiveOpen, setReceiveOpen] = useState(false);
@@ -398,21 +418,111 @@ export default function PurchaseOrdersTab() {
     await load();
   };
 
-  const approvePo = async (id: string) => {
-    setActingId(id);
-    const result = await apiClient.approvePurchaseOrder(id);
-    setActingId(null);
+  const openApprove = (po: any) => {
+    setApprovePoRow(po);
+    setApproveVoucher(false);
+    setApprovePayForm({
+      amount: Number(po.total_amount || 0) > 0 ? Number(po.total_amount).toFixed(2) : '',
+      bank_cash_account_id: wallets[0]?._id || '',
+      payment_date: new Date().toISOString().slice(0, 10),
+      clear_now: true,
+    });
+    setApproveOpen(true);
+  };
+
+  const confirmApprovePo = async () => {
+    if (!approvePoRow) return;
+    if (approveVoucher) {
+      if (!approvePayForm.bank_cash_account_id || !(Number(approvePayForm.amount) > 0)) {
+        toast({
+          variant: 'destructive',
+          title: 'Payment voucher details required',
+          description: 'Enter amount and bank/cash account, or turn off Create payment voucher.',
+        });
+        return;
+      }
+    }
+
+    setApproving(true);
+    setActingId(approvePoRow._id);
+    const result = await apiClient.approvePurchaseOrder(approvePoRow._id);
     if (!result.success) {
+      setApproving(false);
+      setActingId(null);
       toast({ variant: 'destructive', title: 'Approve failed', description: result.error });
       return;
     }
+
     const data = result.data as any;
+    const approvedPo = data?.purchase_order || approvePoRow;
+    let createdPayment: any = null;
+
+    if (approveVoucher) {
+      const payResult = await apiClient.createSupplierPayment({
+        payment_date: approvePayForm.payment_date,
+        supplier_name: approvedPo.supplier_name,
+        supplier_reference: approvedPo.supplier_invoice_no || approvedPo.po_no,
+        description: `Payment voucher for ${approvedPo.po_no}${
+          approvedPo.supplier_invoice_no ? ` / inv ${approvedPo.supplier_invoice_no}` : ''
+        }`,
+        amount: Number(approvePayForm.amount),
+        bank_cash_account_id: approvePayForm.bank_cash_account_id,
+        debit_account_code: approvedPo.credit_account_code || '2000',
+        purchase_order_id: approvedPo._id,
+      });
+      if (!payResult.success) {
+        setApproving(false);
+        setActingId(null);
+        toast({
+          variant: 'destructive',
+          title: 'Approved, but payment voucher failed',
+          description: payResult.error || 'Could not create payment draft',
+        });
+        setApproveOpen(false);
+        await load();
+        return;
+      }
+      createdPayment = (payResult.data as any)?.payment || null;
+      if (createdPayment && approvePayForm.clear_now && isFm) {
+        const clearResult = await apiClient.approveSupplierPayment(createdPayment._id);
+        if (clearResult.success) {
+          createdPayment =
+            (clearResult.data as any)?.payment || {
+              ...createdPayment,
+              status: 'APPROVED',
+              journal_entry_no:
+                (clearResult.data as any)?.journal?.entry_no || createdPayment.journal_entry_no,
+            };
+        } else {
+          toast({
+            variant: 'destructive',
+            title: 'Voucher created, clear failed',
+            description: clearResult.error || 'Clear it manually from the statement or Bank & Cash.',
+          });
+        }
+      }
+    }
+
+    setApproving(false);
+    setActingId(null);
+    setApproveOpen(false);
+
     toast({
       title: data?.posted ? 'Approved and posted to accounts' : 'Approved — awaiting goods',
-      description: data?.posted
-        ? `Journal ${data?.journal?.entry_no || ''} posted: AED ${money(data?.journal?.total_credit)} owed in Accounts Payable. It now shows under Bank & Cash → Pay supplier.`
-        : `Draft journal ${data?.journal?.entry_no || ''} — Accounts Payable posts as goods are received.`,
+      description: createdPayment
+        ? createdPayment.status === 'APPROVED'
+          ? `Payment ${createdPayment.payment_no} cleared — voucher PDF ready.`
+          : `Payment voucher ${createdPayment.payment_no} created (draft). Approve it here or under Statement of purchase.`
+        : data?.posted
+          ? `Journal ${data?.journal?.entry_no || ''} posted: AED ${money(data?.journal?.total_credit)} owed in Accounts Payable.`
+          : `Draft journal ${data?.journal?.entry_no || ''} — Accounts Payable posts as goods are received.`,
     });
+
+    if (createdPayment) {
+      setVoucherPayment(createdPayment);
+      setVoucherPo(approvedPo);
+      setVoucherOpen(true);
+    }
     await load();
   };
 
@@ -521,6 +631,8 @@ export default function PurchaseOrdersTab() {
       amount: suggested > 0 ? suggested.toFixed(2) : '',
       bank_cash_account_id: wallets[0]?._id || '',
       payment_date: new Date().toISOString().slice(0, 10),
+      print_voucher: true,
+      clear_now: isFm,
     });
     setPayOpen(true);
   };
@@ -534,25 +646,55 @@ export default function PurchaseOrdersTab() {
     const result = await apiClient.createSupplierPayment({
       payment_date: payForm.payment_date,
       supplier_name: payPo.supplier_name,
-      supplier_reference: payPo.po_no,
-      description: `Payment for ${payPo.po_no}`,
+      supplier_reference: payPo.supplier_invoice_no || payPo.po_no,
+      description: `Payment for ${payPo.po_no}${
+        payPo.supplier_invoice_no ? ` / inv ${payPo.supplier_invoice_no}` : ''
+      }`,
       amount: Number(payForm.amount),
       bank_cash_account_id: payForm.bank_cash_account_id,
       debit_account_code: payPo.credit_account_code || '2000',
       purchase_order_id: payPo._id,
     });
-    setPaying(false);
     if (!result.success) {
+      setPaying(false);
       toast({ variant: 'destructive', title: 'Payment failed', description: result.error });
       return;
     }
+    let payment = (result.data as any)?.payment;
+    if (payment && payForm.clear_now && isFm) {
+      const clearResult = await apiClient.approveSupplierPayment(payment._id);
+      if (clearResult.success) {
+        payment =
+          (clearResult.data as any)?.payment || {
+            ...payment,
+            status: 'APPROVED',
+            journal_entry_no:
+              (clearResult.data as any)?.journal?.entry_no || payment.journal_entry_no,
+          };
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Created, but approve failed',
+          description: clearResult.error || 'Approve it from Statement of purchase.',
+        });
+      }
+    }
+    setPaying(false);
     toast({
-      title: 'Payment draft created',
-      description: `${(result.data as any)?.payment?.payment_no || ''} with DRAFT journal ${
-        (result.data as any)?.journal?.entry_no || ''
-      } — a Finance Manager clears it under Bank & Cash → Clear payments.`,
+      title: payment?.status === 'APPROVED' ? 'Payment cleared' : 'Payment voucher draft created',
+      description:
+        payment?.status === 'APPROVED'
+          ? `${payment?.payment_no || ''} posted — download the voucher PDF.`
+          : `${payment?.payment_no || ''} with DRAFT journal ${
+              (result.data as any)?.journal?.entry_no || ''
+            }. Approve it here or under Statement of purchase.`,
     });
     setPayOpen(false);
+    if ((payForm.print_voucher || payment?.status === 'APPROVED') && payment) {
+      setVoucherPayment(payment);
+      setVoucherPo(payPo);
+      setVoucherOpen(true);
+    }
     await load();
   };
 
@@ -601,6 +743,10 @@ export default function PurchaseOrdersTab() {
           <div className="flex h-40 items-center justify-center text-slate-400">
             <Loader2 className="h-6 w-6 animate-spin" />
           </div>
+        ) : null}
+
+        {tab === 'statement' ? (
+          <PurchaseStatementPanel suppliers={suppliers} orders={orders} />
         ) : null}
 
         {tab === 'overview' ? (
@@ -744,7 +890,7 @@ export default function PurchaseOrdersTab() {
                               className="rounded-xl"
                               onClick={() => openPay(po)}
                             >
-                              Pay
+                              Pay / voucher
                             </Button>
                           ) : null}
                           {isFm && canCancel(po) ? (
@@ -1276,7 +1422,7 @@ export default function PurchaseOrdersTab() {
                                   size="sm"
                                   className="rounded-xl bg-emerald-600 hover:bg-emerald-700"
                                   disabled={actingId === po._id}
-                                  onClick={() => void approvePo(po._id)}
+                                  onClick={() => openApprove(po)}
                                 >
                                   {actingId === po._id ? (
                                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1376,7 +1522,7 @@ export default function PurchaseOrdersTab() {
                                 className="rounded-xl"
                                 onClick={() => openPay(po)}
                               >
-                                Pay
+                                Pay / voucher
                               </Button>
                             ) : null}
                             {isFm && canCancel(po) ? (
@@ -1403,10 +1549,134 @@ export default function PurchaseOrdersTab() {
           </div>
         ) : null}
 
+        <Dialog open={approveOpen} onOpenChange={(open) => !approving && setApproveOpen(open)}>
+          <DialogContent className="max-w-md rounded-3xl">
+            <DialogHeader>
+              <DialogTitle>Approve invoice — {approvePoRow?.po_no}</DialogTitle>
+              <DialogDescription>
+                Posts the purchase invoice to accounts. Optionally create a payment voucher draft at the
+                same time.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {approvePoRow ? (
+                <div className="rounded-2xl bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
+                  <p className="font-semibold text-slate-900">{approvePoRow.supplier_name}</p>
+                  <p className="mt-1 text-xs">
+                    Inv. {approvePoRow.supplier_invoice_no || '—'} · AED{' '}
+                    {money(approvePoRow.total_amount)}
+                  </p>
+                </div>
+              ) : null}
+              <label className="flex items-start gap-3 rounded-2xl border border-slate-200 px-4 py-3">
+                <Checkbox
+                  checked={approveVoucher}
+                  onCheckedChange={(v) => setApproveVoucher(v === true)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-slate-900">Create payment voucher</span>
+                  <span className="mt-0.5 block text-xs text-slate-500">
+                    Creates a draft supplier payment and opens a printable voucher. A Finance Manager still
+                    clears it under Bank &amp; Cash.
+                  </span>
+                </span>
+              </label>
+              {approveVoucher ? (
+                <div className="space-y-3 rounded-2xl border border-slate-100 bg-white px-4 py-3">
+                  <div className="space-y-2">
+                    <Label>Amount</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={approvePayForm.amount}
+                      onChange={(e) =>
+                        setApprovePayForm((f) => ({ ...f, amount: e.target.value }))
+                      }
+                      className="rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Pay from</Label>
+                    <Select
+                      value={approvePayForm.bank_cash_account_id}
+                      onValueChange={(v) =>
+                        setApprovePayForm((f) => ({ ...f, bank_cash_account_id: v }))
+                      }
+                    >
+                      <SelectTrigger className="rounded-xl">
+                        <SelectValue placeholder="Bank / cash" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {wallets.map((w) => (
+                          <SelectItem key={w._id} value={w._id}>
+                            {w.account_type} · {w.name} (AED {money(w.current_balance)})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Payment date</Label>
+                    <Input
+                      type="date"
+                      value={approvePayForm.payment_date}
+                      onChange={(e) =>
+                        setApprovePayForm((f) => ({ ...f, payment_date: e.target.value }))
+                      }
+                      className="rounded-xl"
+                    />
+                  </div>
+                  {isFm ? (
+                    <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
+                      <Checkbox
+                        checked={approvePayForm.clear_now}
+                        onCheckedChange={(v) =>
+                          setApprovePayForm((f) => ({ ...f, clear_now: v === true }))
+                        }
+                      />
+                      <span className="text-sm text-slate-700">
+                        Clear / approve payment now (posts bank JE)
+                      </span>
+                    </label>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-xl"
+                disabled={approving}
+                onClick={() => setApproveOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="rounded-xl bg-emerald-600 hover:bg-emerald-700"
+                disabled={approving}
+                onClick={() => void confirmApprovePo()}
+              >
+                {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {approveVoucher
+                  ? approvePayForm.clear_now
+                    ? 'Approve invoice & clear payment'
+                    : 'Approve & create voucher'
+                  : 'Approve invoice'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={payOpen} onOpenChange={setPayOpen}>
           <DialogContent className="max-w-md rounded-3xl">
             <DialogHeader>
-              <DialogTitle>Pay supplier for {payPo?.po_no}</DialogTitle>
+              <DialogTitle>Payment voucher — {payPo?.po_no}</DialogTitle>
+              <DialogDescription>
+                Create a draft supplier payment and printable voucher for this purchase invoice.
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               {payPo ? (
@@ -1475,6 +1745,24 @@ export default function PurchaseOrdersTab() {
                   className="rounded-xl"
                 />
               </div>
+              <label className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3">
+                <Checkbox
+                  checked={payForm.print_voucher}
+                  onCheckedChange={(v) => setPayForm((f) => ({ ...f, print_voucher: v === true }))}
+                />
+                <span className="text-sm text-slate-700">Open printable / PDF voucher after create</span>
+              </label>
+              {isFm ? (
+                <label className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3">
+                  <Checkbox
+                    checked={payForm.clear_now}
+                    onCheckedChange={(v) => setPayForm((f) => ({ ...f, clear_now: v === true }))}
+                  />
+                  <span className="text-sm text-slate-700">
+                    Clear / approve payment now (same place — posts bank JE)
+                  </span>
+                </label>
+              ) : null}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" className="rounded-xl" onClick={() => setPayOpen(false)}>
@@ -1487,11 +1775,47 @@ export default function PurchaseOrdersTab() {
                 onClick={() => void createPayment()}
               >
                 {paying ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Create payment draft
+                {payForm.clear_now && isFm ? 'Create & approve payment' : 'Create payment voucher'}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <SupplierPaymentVoucherDialog
+          payment={voucherPayment}
+          purchaseOrder={voucherPo}
+          open={voucherOpen}
+          onOpenChange={setVoucherOpen}
+          canApprove={isFm}
+          onApprove={async (payment) => {
+            setActingId(payment._id);
+            const result = await apiClient.approveSupplierPayment(payment._id);
+            setActingId(null);
+            if (!result.success) {
+              toast({
+                variant: 'destructive',
+                title: 'Approve failed',
+                description: result.error || 'Could not clear payment',
+              });
+              return;
+            }
+            const cleared =
+              (result.data as any)?.payment || {
+                ...payment,
+                status: 'APPROVED',
+                journal_entry_no:
+                  (result.data as any)?.journal?.entry_no || payment.journal_entry_no,
+              };
+            setVoucherPayment(cleared);
+            toast({
+              title: 'Payment cleared',
+              description: `${cleared.payment_no || payment.payment_no} — journal ${
+                (result.data as any)?.journal?.entry_no || ''
+              } posted.`,
+            });
+            await load();
+          }}
+        />
 
         <Dialog open={Boolean(invoicePo)} onOpenChange={(open) => !open && !savingInvoice && setInvoicePo(null)}>
           <DialogContent className="max-w-xl rounded-3xl">

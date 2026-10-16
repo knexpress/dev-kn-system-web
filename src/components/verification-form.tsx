@@ -443,15 +443,21 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     return declaredValue ? declaredValue.toString() : '';
   };
 
-  // Ops-entered quotation measurements win over booking/previous values on first verification
-  // (reverify keeps the already-verified values so edits are not lost)
+  // Prefer Finance quotation snapshot once quoted (including reverify). Before quote, Ops REQUESTED measurements.
   const getQuoteMeasurements = (req: any) => {
     const qr = req?.quotation_request;
-    if (isReverifyMode || !qr || !(Number(qr.actual_weight) > 0)) return null;
+    if (!qr) return null;
+    const fromFinanceQuote = qr.stage === 'QUOTED' || Boolean(qr.quotation_id);
+    // Reverify without a Finance quote keeps existing verification values
+    if (!fromFinanceQuote && isReverifyMode) return null;
+    if (!(Number(qr.actual_weight) > 0) && !(Number(qr.quotation_chargeable_weight) > 0)) return null;
     return {
-      actual_weight: String(qr.actual_weight),
+      actual_weight: Number(qr.actual_weight) > 0 ? String(qr.actual_weight) : '',
       volumetric_weight: Number(qr.volumetric_weight) > 0 ? String(qr.volumetric_weight) : '',
       number_of_boxes: Number(qr.number_of_boxes) > 0 ? Number(qr.number_of_boxes) : '',
+      chargeable_weight:
+        Number(qr.quotation_chargeable_weight) > 0 ? String(qr.quotation_chargeable_weight) : '',
+      from_finance_quote: fromFinanceQuote,
     };
   };
 
@@ -478,12 +484,15 @@ export default function VerificationForm({ request, onVerificationComplete, curr
       sender_details_complete: req.verification?.sender_details_complete ?? prev.sender_details_complete,
       receiver_details_complete: req.verification?.receiver_details_complete ?? prev.receiver_details_complete,
       number_of_boxes: quote?.number_of_boxes || req.verification?.number_of_boxes || prev.number_of_boxes,
-      total_kg: req.verification?.total_kg?.toString() || prev.total_kg,
+      total_kg:
+        quote?.chargeable_weight ||
+        req.verification?.total_kg?.toString() ||
+        prev.total_kg,
       verification_notes: req.verification?.verification_notes || prev.verification_notes,
       declared_value: req.verification?.declared_value?.toString() || getDeclaredValue() || prev.declared_value,
       insured: getInsuredValue() || prev.insured,
     }));
-  }, [fullRequestData, initialServiceCode, isInitialPhToUae]);
+  }, [fullRequestData, initialServiceCode, isInitialPhToUae, isReverifyMode]);
 
   const [verificationData, setVerificationData] = useState(() => {
     const req = request;
@@ -505,7 +514,7 @@ export default function VerificationForm({ request, onVerificationComplete, curr
       sender_details_complete: req.verification?.sender_details_complete || false,
       receiver_details_complete: req.verification?.receiver_details_complete || false,
       number_of_boxes: quote?.number_of_boxes || req.verification?.number_of_boxes || '',
-      total_kg: req.verification?.total_kg?.toString() || '',
+      total_kg: quote?.chargeable_weight || req.verification?.total_kg?.toString() || '',
       verification_notes: req.verification?.verification_notes || '',
       declared_value: req.verification?.declared_value?.toString() || getDeclaredValue() || '',
     insured: getInsuredValue(),
@@ -522,27 +531,46 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     return parseFloat(verificationData.volumetric_weight) || 0;
   }, [verificationData.volumetric_weight]);
 
-  // Auto-determine weight type and chargeable weight (comparing actual vs volumetric)
+  // Auto-determine weight type and chargeable weight (comparing actual vs volumetric).
+  // When Finance has quoted a chargeable weight, prefer that for verification defaults.
+  const quotedChargeableKg = Number(
+    (fullRequestData?.quotation_request || request?.quotation_request)?.quotation_chargeable_weight
+  ) || 0;
   const { chargeableWeight, determinedWeightType } = useMemo(() => {
     const volWeight = volumetricWeight;
     const actWeight = actualWeight;
-    
+    const fromQuote =
+      ((fullRequestData?.quotation_request || request?.quotation_request)?.stage === 'QUOTED' ||
+        Boolean((fullRequestData?.quotation_request || request?.quotation_request)?.quotation_id)) &&
+      quotedChargeableKg > 0;
+
+    if (fromQuote) {
+      const type =
+        actWeight >= volWeight && actWeight > 0
+          ? 'ACTUAL'
+          : volWeight > 0
+            ? 'VOLUMETRIC'
+            : actWeight > 0
+              ? 'ACTUAL'
+              : '';
+      return { chargeableWeight: quotedChargeableKg, determinedWeightType: type };
+    }
+
     if (actWeight === 0 && volWeight === 0) {
       return { chargeableWeight: 0, determinedWeightType: '' };
     }
-    
+
     if (actWeight >= volWeight) {
-      return { 
-        chargeableWeight: actWeight, 
-        determinedWeightType: 'ACTUAL'
-      };
-    } else {
-      return { 
-        chargeableWeight: volWeight, 
-        determinedWeightType: 'VOLUMETRIC'
+      return {
+        chargeableWeight: actWeight,
+        determinedWeightType: 'ACTUAL',
       };
     }
-  }, [actualWeight, volumetricWeight]);
+    return {
+      chargeableWeight: volWeight,
+      determinedWeightType: 'VOLUMETRIC',
+    };
+  }, [actualWeight, volumetricWeight, quotedChargeableKg, fullRequestData, request]);
 
   // Update service code when booking data is available
   useEffect(() => {
@@ -1093,6 +1121,14 @@ export default function VerificationForm({ request, onVerificationComplete, curr
               All 6 verification points must be completed before sending to Finance
             </div>
           </div>
+
+          {(quotationRequest?.stage === 'QUOTED' || quotationRequest?.quotation_id) && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+              Weights, boxes, items and chargeable kg are prefilled from Finance quotation{' '}
+              <span className="font-semibold">{quotationRequest?.quotation_number || 'quote'}</span>.
+              Adjust only if the physical shipment differs.
+            </div>
+          )}
 
           {/* Invoice & Tracking Verification */}
           <div className="border-l-4 border-purple-500 pl-4 space-y-4">
@@ -1751,8 +1787,8 @@ export default function VerificationForm({ request, onVerificationComplete, curr
               {quotedBoxes > 0 ? (
                 <p className={`text-xs mt-1 ${boxesMismatch ? 'text-amber-600 font-medium' : 'text-muted-foreground'}`}>
                   {boxesMismatch
-                    ? `⚠️ Quotation request has ${quotedBoxes} box${quotedBoxes === 1 ? '' : 'es'}`
-                    : `Matches quotation request (${quotedBoxes} box${quotedBoxes === 1 ? '' : 'es'})`}
+                    ? `⚠️ Finance quotation has ${quotedBoxes} box${quotedBoxes === 1 ? '' : 'es'}`
+                    : `Matches Finance quotation (${quotedBoxes} box${quotedBoxes === 1 ? '' : 'es'})`}
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground mt-1">
