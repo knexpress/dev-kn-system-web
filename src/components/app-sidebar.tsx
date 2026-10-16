@@ -287,7 +287,7 @@ export default function AppSidebar({ hasNew, markSeen }: ActivityBadgeProps) {
       </nav>
 
       <div className="flex h-[64px] shrink-0 items-center justify-center">
-        <span className="text-[10px] font-medium tracking-wide text-slate-400">v1.8.1</span>
+        <span className="text-[10px] font-medium tracking-wide text-slate-400">v2.0.0</span>
       </div>
     </aside>
   );
