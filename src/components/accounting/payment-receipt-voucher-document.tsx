@@ -49,7 +49,7 @@ export function PaymentReceiptVoucherDocument({ receipt }: { receipt: any }) {
     receipt.receipt_account_code ||
     '—';
   const arLabel = [
-    receipt.ar_account_code || '1300',
+    receipt.ar_account_code || '11000',
     receipt.ar_account_name || 'Accounts Receivable',
   ]
     .filter(Boolean)

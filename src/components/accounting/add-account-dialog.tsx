@@ -27,12 +27,12 @@ import { useToast } from '@/hooks/use-toast';
 const ACCOUNT_TYPES = ['Asset', 'Liability', 'Equity', 'Revenue', 'Expense'] as const;
 
 const SUBTYPES_BY_TYPE: Record<(typeof ACCOUNT_TYPES)[number], string[]> = {
-  Asset: ['Current Asset', 'Fixed Asset', 'Other Asset'],
+  Asset: ['Bank', 'Current Asset', 'Prepayment', 'Fixed Asset', 'Non-current Asset', 'Other Asset'],
   Liability: ['Current Liability', 'Long-term Liability', 'Other Liability'],
   Equity: ['Equity', 'Retained Earnings'],
-  Revenue: ['Operating Revenue', 'Other Revenue'],
-  Expense: ['COGS', 'Operating Expense', 'Other Expense'],
-};
+  Revenue: ['Revenue', 'Other Income', 'Operating Revenue', 'Other Revenue'],
+  Expense: ['Direct Costs', 'Expense', 'Other Expense', 'COGS', 'Operating Expense'],
+}
 
 type AddAccountDialogProps = {
   open: boolean;
@@ -49,6 +49,8 @@ export default function AddAccountDialog({
   const [saving, setSaving] = useState(false);
   const [existingAccounts, setExistingAccounts] = useState<any[]>([]);
   const [code, setCode] = useState('');
+  const [codeTouched, setCodeTouched] = useState(false);
+  const [suggested, setSuggested] = useState('');
   const [name, setName] = useState('');
   const [type, setType] = useState<(typeof ACCOUNT_TYPES)[number]>('Asset');
   const [subtype, setSubtype] = useState('Current Asset');
@@ -70,6 +72,8 @@ export default function AddAccountDialog({
   useEffect(() => {
     if (!open) return;
     setCode('');
+    setCodeTouched(false);
+    setSuggested('');
     setName('');
     setType('Asset');
     setSubtype('Current Asset');
@@ -87,11 +91,39 @@ export default function AddAccountDialog({
     })();
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      const result = await apiClient.getNextAccountCode(type, subtype);
+      const next = (result.data as any)?.suggested || '';
+      if (cancelled) return;
+      setSuggested(next);
+      if (!codeTouched) setCode(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, type, subtype, codeTouched]);
+
   const handleTypeChange = (next: (typeof ACCOUNT_TYPES)[number]) => {
     setType(next);
     const options = SUBTYPES_BY_TYPE[next] || [];
     setSubtype(options[0] || '');
+    setCodeTouched(false);
   };
+
+  const nearby = useMemo(() => {
+    const n = Number(code);
+    if (!Number.isFinite(n)) return [];
+    return existingAccounts
+      .filter((a) => {
+        const c = Number(a.code);
+        return Number.isFinite(c) && Math.abs(c - n) <= 50;
+      })
+      .sort((a, b) => String(a.code).localeCompare(String(b.code)))
+      .slice(0, 4);
+  }, [existingAccounts, code]);
 
   const handleSave = async () => {
     const trimmedCode = code.trim();
@@ -101,11 +133,11 @@ export default function AddAccountDialog({
       toast({ variant: 'destructive', title: 'Code required', description: 'Enter an account code.' });
       return;
     }
-    if (!/^[A-Za-z0-9.-]{2,20}$/.test(trimmedCode)) {
+    if (!/^\d{5}$/.test(trimmedCode)) {
       toast({
         variant: 'destructive',
         title: 'Invalid code',
-        description: 'Use 2–20 characters: letters, numbers, . or -.',
+        description: 'Use a 5-digit code (e.g. 10130) so new accounts can be inserted later.',
       });
       return;
     }
@@ -160,7 +192,7 @@ export default function AddAccountDialog({
           <DialogHeader className="space-y-1">
             <DialogTitle className="text-base">Add Account</DialogTitle>
             <DialogDescription className="text-xs">
-              Create a CoA account — codes must be unique.
+              Add a ledger account. Codes are 5 digits with room to insert later (e.g. 10130).
             </DialogDescription>
           </DialogHeader>
         </div>
@@ -171,12 +203,37 @@ export default function AddAccountDialog({
               <Label htmlFor="account-code" className="text-[11px]">Code *</Label>
               <Input
                 id="account-code"
-                placeholder="e.g. 1150"
+                placeholder="e.g. 10130"
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                maxLength={5}
+                inputMode="numeric"
+                onChange={(e) => {
+                  setCodeTouched(true);
+                  setCode(e.target.value.replace(/\D/g, '').slice(0, 5));
+                }}
                 className="h-8 font-mono text-xs"
                 autoFocus
               />
+              {suggested ? (
+                <p className="text-[10px] text-slate-500">
+                  Next free code:{' '}
+                  <button
+                    type="button"
+                    className="font-mono text-sky-600"
+                    onClick={() => {
+                      setCode(suggested);
+                      setCodeTouched(true);
+                    }}
+                  >
+                    {suggested}
+                  </button>
+                </p>
+              ) : null}
+              {nearby.length ? (
+                <p className="text-[10px] text-slate-400">
+                  Nearby: {nearby.map((a) => `${a.code} ${a.name}`).join(' · ')}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1">
               <Label className="text-[11px]">Type *</Label>

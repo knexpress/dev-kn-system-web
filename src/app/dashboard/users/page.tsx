@@ -40,6 +40,8 @@ import {
   erpPrimaryButtonClass,
   erpTableClasses,
 } from '@/components/dashboard/maglo-shell';
+import { GoogleDriveTokenCard } from '@/components/dashboard/google-drive-token-card';
+import { useAuth } from '@/hooks/use-auth';
 import { cn } from '@/lib/utils';
 
 interface Employee {
@@ -79,6 +81,8 @@ export default function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('users');
   const { toast } = useToast();
+  const { userProfile } = useAuth();
+  const isSuperAdmin = userProfile?.role === 'SUPERADMIN';
 
   // Reset password form state
   const [resetPasswordData, setResetPasswordData] = useState({
@@ -385,9 +389,15 @@ export default function UserManagement() {
       <div className="flex h-full min-h-0 flex-col">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <div className="px-5 pt-5 sm:px-6">
-            <TabsList className="grid w-full max-w-md grid-cols-2 rounded-xl bg-slate-100/80 p-1">
+            <TabsList className={cn(
+              'grid w-full rounded-xl bg-slate-100/80 p-1',
+              isSuperAdmin ? 'max-w-xl grid-cols-3' : 'max-w-md grid-cols-2'
+            )}>
               <TabsTrigger value="users" className="rounded-lg">Users</TabsTrigger>
               <TabsTrigger value="reset-password" className="rounded-lg">Reset Password</TabsTrigger>
+              {isSuperAdmin ? (
+                <TabsTrigger value="integrations" className="rounded-lg">Integrations</TabsTrigger>
+              ) : null}
             </TabsList>
           </div>
 
@@ -719,6 +729,12 @@ export default function UserManagement() {
               </form>
             </div>
           </TabsContent>
+
+          {isSuperAdmin ? (
+            <TabsContent value="integrations" className="mt-0 space-y-0">
+              <GoogleDriveTokenCard />
+            </TabsContent>
+          ) : null}
         </Tabs>
       </div>
     </DashboardPageShell>

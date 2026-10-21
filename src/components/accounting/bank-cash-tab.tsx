@@ -52,6 +52,7 @@ import {
 } from './erp-shell';
 import { fmtDate, money } from './erp-format';
 import { cn } from '@/lib/utils';
+import { COA } from '@/lib/coa-codes';
 import BankReconciliationPanel from './bank-reconciliation-panel';
 import { SupplierPaymentVoucherDialog } from './supplier-payment-voucher-document';
 
@@ -170,7 +171,7 @@ export default function BankCashTab() {
     description: '',
     amount: '',
     bank_cash_account_id: '',
-    debit_account_code: '2000',
+    debit_account_code: COA.ap,
     purchase_order_id: '',
   });
   const [submittingPay, setSubmittingPay] = useState(false);
@@ -290,7 +291,7 @@ export default function BankCashTab() {
       supplier_reference: po.supplier_invoice_no || po.po_no,
       description: `Payment for invoice ${po.supplier_invoice_no || po.po_no}`,
       amount: suggested > 0 ? suggested.toFixed(2) : '',
-      debit_account_code: '2000',
+      debit_account_code: COA.ap,
       bank_cash_account_id: f.bank_cash_account_id || activeWallets[0]?._id || '',
     }));
   };
@@ -304,7 +305,7 @@ export default function BankCashTab() {
       supplier_reference: '',
       description: '',
       amount: '',
-      debit_account_code: '2000',
+      debit_account_code: COA.ap,
     }));
   };
 
@@ -400,7 +401,7 @@ export default function BankCashTab() {
       description: payForm.description.trim() || undefined,
       amount: Number(payForm.amount),
       bank_cash_account_id: payForm.bank_cash_account_id,
-      debit_account_code: payForm.debit_account_code || '2000',
+      debit_account_code: payForm.debit_account_code || COA.ap,
       purchase_order_id: payForm.purchase_order_id || undefined,
     });
     setSubmittingPay(false);

@@ -321,7 +321,8 @@ export default function QuotationsPage() {
     loadQuotations();
     toast({
       title: 'Advance recorded',
-      description: result.message || 'Credited to Customer Payment Due.',
+      description:
+        (result as { message?: string }).message || 'Credited to Customer Payment Due.',
     });
   };
 

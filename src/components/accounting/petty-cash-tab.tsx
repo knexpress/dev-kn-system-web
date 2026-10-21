@@ -51,6 +51,7 @@ import {
 import { fmtDate, money } from './erp-format';
 import { PettyCashVoucherDialog } from './petty-cash-voucher-document';
 import { cn } from '@/lib/utils';
+import { COA } from '@/lib/coa-codes';
 
 type TabId = 'overview' | 'vouchers' | 'new-voucher' | 'replenish';
 
@@ -93,7 +94,7 @@ export default function PettyCashTab() {
   const [funding, setFunding] = useState(false);
   const [fundForm, setFundForm] = useState({
     amount: '',
-    funding_account_code: '1100',
+    funding_account_code: COA.bank,
     entry_date: new Date().toISOString().slice(0, 10),
     memo: 'Petty cash funding',
   });

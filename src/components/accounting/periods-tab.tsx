@@ -44,8 +44,7 @@ export default function PeriodsTab() {
   const { userProfile } = useAuth();
   const canLock =
     userProfile?.role === 'ADMIN' ||
-    userProfile?.role === 'SUPERADMIN' ||
-    userProfile?.department?.name === 'Finance';
+    userProfile?.role === 'SUPERADMIN';
 
   const [loading, setLoading] = useState(true);
   const [actingKey, setActingKey] = useState<string | null>(null);
@@ -78,13 +77,25 @@ export default function PeriodsTab() {
       toast({
         variant: 'destructive',
         title: 'Not allowed',
-        description: 'Only Finance or admins can lock or unlock periods.',
+        description: 'Only an Admin or Super Admin can lock or unlock periods.',
       });
       return;
     }
+    let reason = '';
+    if (status === 'OPEN') {
+      reason = window.prompt('Reason for unlocking this period (required):', '') || '';
+      if (reason.trim().length < 8) {
+        toast({
+          variant: 'destructive',
+          title: 'Reason required',
+          description: 'Unlocking a period needs a written reason of at least 8 characters.',
+        });
+        return;
+      }
+    }
     setActingKey(periodKey);
     try {
-      const res = await apiClient.setAccountingPeriodStatus(periodKey, status);
+      const res = await apiClient.setAccountingPeriodStatus(periodKey, status, reason);
       if (!res.success) {
         toast({
           variant: 'destructive',

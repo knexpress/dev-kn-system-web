@@ -41,6 +41,7 @@ import {
 } from './erp-shell';
 import { fmtDate, money } from './erp-format';
 import { cn } from '@/lib/utils';
+import { COA } from '@/lib/coa-codes';
 
 type TabId = 'overview' | 'register' | 'add' | 'history';
 
@@ -83,7 +84,7 @@ export default function FixedAssetsTab() {
   const [disposeForm, setDisposeForm] = useState({
     proceeds: '0',
     disposal_date: new Date().toISOString().slice(0, 10),
-    proceeds_account_code: '1100',
+    proceeds_account_code: COA.bank,
   });
 
   const year = new Date().getFullYear();
@@ -97,7 +98,7 @@ export default function FixedAssetsTab() {
     acquisition_cost: '',
     salvage_value: '0',
     useful_life_months: '36',
-    funding_account_code: '1100',
+    funding_account_code: COA.bank,
     notes: '',
   });
 
@@ -187,7 +188,7 @@ export default function FixedAssetsTab() {
       acquisition_cost: '',
       salvage_value: '0',
       useful_life_months: '36',
-      funding_account_code: '1100',
+      funding_account_code: COA.bank,
       notes: '',
     });
     setTab('register');
@@ -229,7 +230,7 @@ export default function FixedAssetsTab() {
     setDisposeForm({
       proceeds: '0',
       disposal_date: new Date().toISOString().slice(0, 10),
-      proceeds_account_code: '1100',
+      proceeds_account_code: COA.bank,
     });
     setDisposeOpen(true);
   };

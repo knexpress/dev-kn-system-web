@@ -11,6 +11,7 @@ export interface UserProfile {
   isActive: boolean;
   lastLogin?: string;
   employee_id?: string;
+  must_change_password?: boolean;
 }
 
 // New schema types

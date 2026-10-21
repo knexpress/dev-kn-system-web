@@ -6,6 +6,7 @@ import { AlertCircle } from 'lucide-react';
 import { ACCOUNTING_MODULES } from '@/components/accounting/erp-shell';
 import { ACCOUNTING_ROUTES } from '@/components/accounting/erp-format';
 import { MagloHero, MagloModuleTile } from '@/components/dashboard/maglo-shell';
+import { SlidersHorizontal } from 'lucide-react';
 
 const ALLOWED_DEPARTMENTS = new Set(['Finance', 'Management', 'Auditor', 'IT']);
 
@@ -36,6 +37,12 @@ export default function AccountingHubPage() {
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+        <MagloModuleTile
+          href="/dashboard/finance-setup"
+          title="Finance Setup"
+          description="Readiness, opening balances, and go-live"
+          icon={SlidersHorizontal}
+        />
         {ACCOUNTING_MODULES.map((m) => {
           const route = ACCOUNTING_ROUTES[m.id];
           return (

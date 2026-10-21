@@ -131,7 +131,7 @@ export function SupplierPaymentVoucherDocument({
               ) : null}
             </td>
             <td className={`${cell()} align-top`}>
-              {payment.debit_account_code || '2000'}
+              {payment.debit_account_code || '21010'}
               {payment.debit_account_name ? ` — ${payment.debit_account_name}` : ' — Accounts Payable'}
             </td>
             <td className={`${cell()} text-right align-top`}>{money(payment.amount)}</td>

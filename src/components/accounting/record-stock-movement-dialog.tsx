@@ -23,6 +23,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
+import { COA } from '@/lib/coa-codes';
 
 type MovementType = 'RECEIPT' | 'ISSUE' | 'ADJUSTMENT';
 
@@ -52,7 +53,7 @@ export default function RecordStockMovementDialog({
   const [qty, setQty] = useState('');
   const [unitCost, setUnitCost] = useState('');
   const [notes, setNotes] = useState('');
-  const [offsetAccount, setOffsetAccount] = useState('2000');
+  const [offsetAccount, setOffsetAccount] = useState(COA.ap);
   const [postJournal, setPostJournal] = useState(true);
 
   const selectedItem = useMemo(
@@ -91,7 +92,7 @@ export default function RecordStockMovementDialog({
     setQty('');
     setUnitCost('');
     setNotes('');
-    setOffsetAccount('2000');
+    setOffsetAccount(COA.ap);
     setPostJournal(true);
 
     (async () => {
@@ -107,7 +108,7 @@ export default function RecordStockMovementDialog({
       if (accountsRes.success && Array.isArray(accountsRes.data)) {
         setAccounts(accountsRes.data);
         const codes = new Set(accountsRes.data.map((a: any) => a.code));
-        if (!codes.has('2000')) {
+        if (!codes.has(COA.ap)) {
           const ap = accountsRes.data.find((a: any) => a.type === 'Liability');
           if (ap) setOffsetAccount(ap.code);
         }
@@ -128,9 +129,9 @@ export default function RecordStockMovementDialog({
 
   useEffect(() => {
     if (type === 'RECEIPT') {
-      setOffsetAccount((prev) => prev || '2000');
+      setOffsetAccount((prev) => prev || COA.ap);
     } else if (type === 'ADJUSTMENT' && selectedItem) {
-      setOffsetAccount(selectedItem.cogs_account_code || '5000');
+      setOffsetAccount(selectedItem.cogs_account_code || COA.cogs);
     }
   }, [type, selectedItem]);
 

@@ -14,6 +14,7 @@ import {
   FileDown,
   BookOpen,
   Receipt,
+  SlidersHorizontal,
 } from 'lucide-react';
 import type { Department, DepartmentData } from './types';
 
@@ -72,6 +73,12 @@ const allLinks: NavLink[] = [
     label: 'Accounting',
     icon: BookOpen,
     departments: ['Finance', 'Management', 'Auditor', 'IT'],
+  },
+  {
+    href: '/dashboard/finance-setup',
+    label: 'Finance Setup',
+    icon: SlidersHorizontal,
+    departments: ['Finance', 'Management', 'IT'],
   },
   {
     href: '/dashboard/price-brackets',

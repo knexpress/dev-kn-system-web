@@ -22,6 +22,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { apiClient } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
+import { COA } from '@/lib/coa-codes';
 
 const UNITS = ['PCS', 'BOX', 'PACK', 'ROLL', 'KG', 'M', 'L'] as const;
 
@@ -54,9 +55,9 @@ export default function AddInventoryItemDialog({
   const [qtyOnHand, setQtyOnHand] = useState('0');
   const [avgCost, setAvgCost] = useState('0');
   const [reorderLevel, setReorderLevel] = useState('0');
-  const [assetAccount, setAssetAccount] = useState('1200');
-  const [cogsAccount, setCogsAccount] = useState('5000');
-  const [incomeAccount, setIncomeAccount] = useState('4000');
+  const [assetAccount, setAssetAccount] = useState(COA.inventory);
+  const [cogsAccount, setCogsAccount] = useState(COA.cogs);
+  const [incomeAccount, setIncomeAccount] = useState(COA.revenue);
   const [isActive, setIsActive] = useState(true);
 
   const postableAccounts = useMemo(
@@ -85,9 +86,9 @@ export default function AddInventoryItemDialog({
     setQtyOnHand(String(item?.qty_on_hand ?? 0));
     setAvgCost(String(item?.avg_cost ?? 0));
     setReorderLevel(String(item?.reorder_level ?? 0));
-    setAssetAccount(item?.asset_account_code || '1200');
-    setCogsAccount(item?.cogs_account_code || '5000');
-    setIncomeAccount(item?.income_account_code || '4000');
+    setAssetAccount(item?.asset_account_code || COA.inventory);
+    setCogsAccount(item?.cogs_account_code || COA.cogs);
+    setIncomeAccount(item?.income_account_code || COA.revenue);
     setIsActive(item ? item.is_active !== false : true);
 
     (async () => {
@@ -96,15 +97,15 @@ export default function AddInventoryItemDialog({
         setAccounts(result.data);
         if (item) return;
         const codes = new Set(result.data.map((a: any) => a.code));
-        if (!codes.has('1200')) {
+        if (!codes.has(COA.inventory)) {
           const firstAsset = result.data.find((a: any) => a.type === 'Asset');
           if (firstAsset) setAssetAccount(firstAsset.code);
         }
-        if (!codes.has('5000')) {
+        if (!codes.has(COA.cogs)) {
           const firstExp = result.data.find((a: any) => a.type === 'Expense');
           if (firstExp) setCogsAccount(firstExp.code);
         }
-        if (!codes.has('4000')) {
+        if (!codes.has(COA.revenue)) {
           const firstRev = result.data.find((a: any) => a.type === 'Revenue');
           if (firstRev) setIncomeAccount(firstRev.code);
         }

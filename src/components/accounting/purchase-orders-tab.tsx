@@ -56,6 +56,7 @@ import { SupplierDialog } from './supplier-dialog';
 import { SupplierPaymentVoucherDialog } from './supplier-payment-voucher-document';
 import PurchaseStatementPanel from './purchase-statement-panel';
 import { cn } from '@/lib/utils';
+import { COA } from '@/lib/coa-codes';
 
 type TabId = 'overview' | 'orders' | 'create' | 'suppliers' | 'statement' | 'approvals';
 
@@ -94,8 +95,8 @@ function emptyForm() {
     supplier_reference: '',
     tax_amount: '0',
     notes: '',
-    debit_account_code: '1200',
-    credit_account_code: '2000',
+    debit_account_code: COA.inventory,
+    credit_account_code: COA.ap,
   };
 }
 
@@ -467,7 +468,7 @@ export default function PurchaseOrdersTab() {
         }`,
         amount: Number(approvePayForm.amount),
         bank_cash_account_id: approvePayForm.bank_cash_account_id,
-        debit_account_code: approvedPo.credit_account_code || '2000',
+        debit_account_code: approvedPo.credit_account_code || COA.ap,
         purchase_order_id: approvedPo._id,
       });
       if (!payResult.success) {
@@ -652,7 +653,7 @@ export default function PurchaseOrdersTab() {
       }`,
       amount: Number(payForm.amount),
       bank_cash_account_id: payForm.bank_cash_account_id,
-      debit_account_code: payPo.credit_account_code || '2000',
+      debit_account_code: payPo.credit_account_code || COA.ap,
       purchase_order_id: payPo._id,
     });
     if (!result.success) {

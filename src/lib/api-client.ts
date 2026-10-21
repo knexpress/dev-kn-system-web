@@ -133,7 +133,7 @@ class ApiClient {
     options: RequestInit = {},
     useCache: boolean = true,
     cacheTTL?: number
-  ): Promise<{ success: boolean; data?: T; error?: string }> {
+  ): Promise<{ success: boolean; data?: T; error?: string; message?: string }> {
     // For GET requests, check cache first
     const isGetRequest = !options.method || options.method === 'GET';
     if (isGetRequest && useCache) {
@@ -175,7 +175,7 @@ class ApiClient {
   private async executeRequest<T>(
     endpoint: string,
     options: RequestInit = {}
-  ): Promise<{ success: boolean; data?: T; error?: string }> {
+  ): Promise<{ success: boolean; data?: T; error?: string; message?: string }> {
     try {
       // Do not client-rate-limit invoice-request details (Excel export opens many distinct URLs;
       // a per-path bucket still allows each once, but backend 429 is the real constraint — avoid double-throttling).
@@ -202,6 +202,7 @@ class ApiClient {
       // Sanitize request body if present
       // NOTE: Base64 image strings in identityDocuments are handled specially
       // by sanitizeString to avoid truncation
+      const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
       let sanitizedBody = options.body;
       if (options.body && typeof options.body === 'string') {
         try {
@@ -215,9 +216,12 @@ class ApiClient {
 
       const url = `${this.baseUrl}${endpoint}`;
       const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         ...(options.headers as Record<string, string>),
       };
+      if (isFormData) {
+        delete headers['Content-Type'];
+      }
 
       // Add CSRF token for state-changing operations
       const isStateChanging = options.method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(options.method);
@@ -1394,6 +1398,14 @@ class ApiClient {
     return this.request('/accounting/accounts', {}, false);
   }
 
+  async getNextAccountCode(type?: string, subtype?: string) {
+    const qs = new URLSearchParams();
+    if (type) qs.set('type', type);
+    if (subtype) qs.set('subtype', subtype);
+    const q = qs.toString();
+    return this.request(`/accounting/accounts/next-code${q ? `?${q}` : ''}`, {}, false);
+  }
+
   async createAccount(accountData: {
     code: string;
     name: string;
@@ -2290,7 +2302,7 @@ class ApiClient {
   ) {
     return this.request(`/accounting/periods/${encodeURIComponent(periodKey)}`, {
       method: 'PUT',
-      body: JSON.stringify({ status, notes: notes || '' }),
+      body: JSON.stringify({ status, notes: notes || '', reason: notes || '' }),
     });
   }
 
@@ -2644,6 +2656,133 @@ class ApiClient {
     return this.request('/system-settings/booking-auto-review', {
       method: 'PUT',
       body: JSON.stringify({ enabled }),
+    });
+  }
+
+  async getGoogleDriveRefreshTokenStatus() {
+    return this.request('/system-settings/google-drive-refresh-token', {}, true, 30000);
+  }
+
+  async setGoogleDriveRefreshToken(refreshToken: string) {
+    return this.request('/system-settings/google-drive-refresh-token', {
+      method: 'PUT',
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+  }
+
+  async getFinanceSetup() {
+    return this.request('/finance-setup', {}, false, 0);
+  }
+
+  async saveFinanceSetupProfile(payload: Record<string, unknown>) {
+    return this.request('/finance-setup/profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async uploadFinanceSetupLogo(file: File) {
+    const form = new FormData();
+    form.append('logo', file);
+    return this.request('/finance-setup/profile/logo', {
+      method: 'POST',
+      body: form as unknown as BodyInit,
+      headers: {},
+    });
+  }
+
+  async saveFinanceFoundations(payload: Record<string, unknown>) {
+    return this.request('/finance-setup/foundations', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async saveFinancePermissions(payload: Record<string, unknown>) {
+    return this.request('/finance-setup/permissions', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async saveFinanceApprovals(payload: Record<string, unknown>) {
+    return this.request('/finance-setup/approvals', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async saveFinanceMappings(payload: Record<string, unknown>) {
+    return this.request('/finance-setup/mappings', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async markFinanceStepNotApplicable(stepKey: string, reason: string) {
+    return this.request(`/finance-setup/steps/${stepKey}/not-applicable`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async reviewFinanceStep(stepKey: string, comments: string) {
+    return this.request(`/finance-setup/steps/${stepKey}/review`, {
+      method: 'PUT',
+      body: JSON.stringify({ comments }),
+    });
+  }
+
+  async previewOpeningBalances(payload: Record<string, unknown>) {
+    return this.request('/finance-setup/opening-balances/preview', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async approveOpeningBalances(batchId: string) {
+    return this.request(`/finance-setup/opening-balances/${encodeURIComponent(batchId)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async reverseOpeningBalances(batchId: string, reason: string) {
+    return this.request(`/finance-setup/opening-balances/${encodeURIComponent(batchId)}/reverse`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async listOpeningBalanceBatches() {
+    return this.request('/finance-setup/opening-balances', {}, false, 0);
+  }
+
+  async runFinanceWorkflowValidation(manual?: Record<string, unknown>) {
+    return this.request('/finance-setup/workflow-validation/run', {
+      method: 'POST',
+      body: JSON.stringify({ manual: manual || {} }),
+    });
+  }
+
+  async checkFinanceDriveConnection() {
+    return this.request('/finance-setup/integrations/google-drive/check', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async saveFinanceBackupReview(payload: { reviewed: boolean; notes?: string }) {
+    return this.request('/finance-setup/backup-review', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async approveFinanceGoLive(payload: { comments: string; enable_enforcement?: boolean }) {
+    return this.request('/finance-setup/go-live/approve', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 
