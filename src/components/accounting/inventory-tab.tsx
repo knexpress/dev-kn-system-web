@@ -347,6 +347,10 @@ export default function InventoryTab({ mode = 'items' }: InventoryTabProps) {
           onOpenChange={setJournalOpen}
           journal={selectedJournal}
           onEdit={startEditJournal}
+          onPosted={(posted) => {
+            setSelectedJournal(posted);
+            load();
+          }}
         />
         <NewJournalEntryDialog
           open={editJournalOpen}

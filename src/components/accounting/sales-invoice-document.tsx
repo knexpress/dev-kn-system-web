@@ -2,6 +2,12 @@
 
 import { fmtDate, money } from './erp-format';
 import { PrintDocumentDialog } from './print-document-dialog';
+import { InvoicePrintExtras } from '@/components/invoice-print-extras';
+import { InvoicePrintOptionsPanel } from '@/components/invoice-print-options-panel';
+import { invoicePrintOptionsFrom, type InvoicePrintOptions } from '@/lib/invoice-print-options';
+import { apiClient } from '@/lib/api-client';
+import { useToast } from '@/hooks/use-toast';
+import { useEffect, useState } from 'react';
 
 function cell() {
   return 'border border-gray-400 px-3 py-2 text-sm';
@@ -118,7 +124,12 @@ export function SalesInvoiceDocument({ invoice }: { invoice: any }) {
         </div>
       </div>
 
-      {invoice.notes ? <p className="mt-6 text-xs">Notes: {invoice.notes}</p> : null}
+      <InvoicePrintExtras
+        notes={invoice.notes}
+        disclaimer={invoice.disclaimer}
+        includeNotes={invoice.include_notes}
+        includeDisclaimer={invoice.include_disclaimer}
+      />
     </div>
   );
 }
@@ -128,13 +139,44 @@ export function SalesInvoiceDocumentDialog({
   open,
   onOpenChange,
   onDocumentsChange,
+  onInvoiceChange,
 }: {
   invoice: any | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDocumentsChange?: (id: string, docs: any[]) => void;
+  onInvoiceChange?: (id: string, patch: Record<string, unknown>) => void;
 }) {
+  const { toast } = useToast();
+  const [options, setOptions] = useState<Required<InvoicePrintOptions>>(() => invoicePrintOptionsFrom(invoice));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setOptions(invoicePrintOptionsFrom(invoice));
+  }, [invoice?._id, invoice?.notes, invoice?.disclaimer, invoice?.include_notes, invoice?.include_disclaimer]);
+
   if (!invoice) return null;
+
+  const preview = {
+    ...invoice,
+    notes: options.notes,
+    disclaimer: options.disclaimer,
+    include_notes: options.include_notes,
+    include_disclaimer: options.include_disclaimer,
+  };
+
+  const saveOptions = async () => {
+    setSaving(true);
+    const result = await apiClient.updateSalesInvoice(String(invoice._id), options);
+    setSaving(false);
+    if (!result.success) {
+      toast({ variant: 'destructive', title: 'Could not save print options', description: result.error });
+      return;
+    }
+    onInvoiceChange?.(String(invoice._id), options);
+    toast({ title: 'Print options saved' });
+  };
+
   return (
     <PrintDocumentDialog
       open={open}
@@ -146,8 +188,19 @@ export function SalesInvoiceDocumentDialog({
       attachmentId={String(invoice._id)}
       documents={invoice.supporting_documents}
       onDocumentsChange={(docs) => onDocumentsChange?.(String(invoice._id), docs)}
+      extra={
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <InvoicePrintOptionsPanel
+            value={options}
+            onChange={setOptions}
+            onSave={() => void saveOptions()}
+            saving={saving}
+            compact
+          />
+        </div>
+      }
     >
-      <SalesInvoiceDocument invoice={invoice} />
+      <SalesInvoiceDocument invoice={preview} />
     </PrintDocumentDialog>
   );
 }

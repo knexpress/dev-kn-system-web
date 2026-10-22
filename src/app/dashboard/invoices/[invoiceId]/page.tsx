@@ -38,6 +38,8 @@ import {
     erpPrimaryButtonClass,
 } from '@/components/dashboard/maglo-shell';
 import { cn } from '@/lib/utils';
+import { InvoicePrintOptionsPanel } from '@/components/invoice-print-options-panel';
+import { invoicePrintOptionsFrom, type InvoicePrintOptions } from '@/lib/invoice-print-options';
 
 export default function InvoicePage() {
     const { userProfile } = useAuth();
@@ -172,6 +174,40 @@ export default function InvoicePage() {
         notes: ''
     });
     const { toast } = useToast();
+    const [printOptions, setPrintOptions] = useState<Required<InvoicePrintOptions>>(() =>
+        invoicePrintOptionsFrom(null)
+    );
+    const [savingPrintOptions, setSavingPrintOptions] = useState(false);
+
+    useEffect(() => {
+        if (!invoice) return;
+        setPrintOptions(invoicePrintOptionsFrom(invoice));
+    }, [
+        invoice?._id,
+        invoice?.notes,
+        invoice?.disclaimer,
+        invoice?.include_notes,
+        invoice?.include_disclaimer,
+    ]);
+
+    const savePrintOptions = async () => {
+        if (!invoice?._id) return;
+        setSavingPrintOptions(true);
+        const result = await apiClient.updateInvoiceUnified(String(invoice._id), {
+            notes: printOptions.notes,
+            disclaimer: printOptions.disclaimer,
+            include_notes: printOptions.include_notes,
+            include_disclaimer: printOptions.include_disclaimer,
+        });
+        setSavingPrintOptions(false);
+        if (!result.success) {
+            toast({ variant: 'destructive', title: 'Could not save print options', description: result.error });
+            return;
+        }
+        setInvoice((prev: any) => (prev ? { ...prev, ...printOptions } : prev));
+        setEditForm((prev) => ({ ...prev, notes: printOptions.notes }));
+        toast({ title: 'Print options saved' });
+    };
 
     useEffect(() => {
         const fetchInvoice = async () => {
@@ -1581,8 +1617,12 @@ export default function InvoicePage() {
         remarks: {
         boxNumbers: '', // Removed - no longer displayed in invoice template
         agent: requestDataSources?.invoiceRequest?.verification?.agents_name || invoice.request_id?.verification?.agents_name || invoice.created_by?.full_name || 'SYSTEM',
-        items: itemsFromBookingData || requestDataSources?.invoiceRequest?.verification?.listed_commodities || invoice.request_id?.verification?.listed_commodities || invoice.notes || 'No remarks'
+        items: itemsFromBookingData || requestDataSources?.invoiceRequest?.verification?.listed_commodities || invoice.request_id?.verification?.listed_commodities || ''
         },
+        notes: printOptions.notes,
+        disclaimer: printOptions.disclaimer,
+        includeNotes: printOptions.include_notes,
+        includeDisclaimer: printOptions.include_disclaimer,
         termsAndConditions: 'Cash Upon Receipt of Goods',
         qrCode: qrCodeData ? {
             url: qrCodeData.qr_url || '',
@@ -2809,13 +2849,24 @@ export default function InvoicePage() {
             </div>
 
             {invoice?._id ? (
-                <div className="no-print mb-4 rounded-2xl border border-slate-200/70 bg-white p-4">
+                <div className="no-print mb-4 space-y-4">
+                    <div className="rounded-2xl border border-slate-200/70 bg-white p-4">
+                        <p className="mb-3 text-sm font-semibold text-slate-900">Disclaimer and notes</p>
+                        <InvoicePrintOptionsPanel
+                            value={printOptions}
+                            onChange={setPrintOptions}
+                            onSave={() => void savePrintOptions()}
+                            saving={savingPrintOptions}
+                        />
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/70 bg-white p-4">
                     <SupportingDocumentsPanel
                         kind="shipment-invoice"
                         id={String(invoice._id)}
                         documents={invoice.supporting_documents}
                         onChange={(docs) => setInvoice((prev: any) => (prev ? { ...prev, supporting_documents: docs } : prev))}
                     />
+                    </div>
                 </div>
             ) : null}
 

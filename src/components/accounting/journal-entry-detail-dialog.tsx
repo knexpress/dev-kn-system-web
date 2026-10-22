@@ -9,7 +9,10 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Pencil, Paperclip } from 'lucide-react';
+import { Pencil, Paperclip, CheckCircle2 } from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
+import { useToast } from '@/hooks/use-toast';
+import { useState } from 'react';
 import {
   ErpDialogSection,
   ErpMetaGrid,
@@ -25,6 +28,7 @@ type JournalEntryDetailDialogProps = {
   onOpenChange: (open: boolean) => void;
   journal: any | null;
   onEdit?: (journal: any) => void;
+  onPosted?: (journal: any) => void;
 };
 
 function apiOrigin() {
@@ -53,13 +57,32 @@ export default function JournalEntryDetailDialog({
   onOpenChange,
   journal,
   onEdit,
+  onPosted,
 }: JournalEntryDetailDialogProps) {
+  const { toast } = useToast();
+  const [posting, setPosting] = useState(false);
   if (!journal) return null;
 
   const docs = journal.supporting_documents || [];
   const lines = journal.lines || [];
   const t = erpTableClasses();
   const editable = Boolean(onEdit) && canEditJournal(journal);
+  const isDraft = String(journal.status || '').toUpperCase() === 'DRAFT';
+
+  const postDraft = async () => {
+    setPosting(true);
+    const result = await apiClient.postJournal(String(journal._id));
+    setPosting(false);
+    if (!result.success) {
+      toast({ variant: 'destructive', title: 'Could not post journal', description: result.error });
+      return;
+    }
+    toast({
+      title: 'Journal posted',
+      description: `Entry ${(result.data as any)?.entry_no || journal.entry_no} is now on the ledgers.`,
+    });
+    onPosted?.(result.data);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -70,17 +93,33 @@ export default function JournalEntryDetailDialog({
               <span className="font-mono">{journal.entry_no}</span>
               <JournalStatusBadge status={journal.status} />
               <SourceBadge source={journal.source} />
-              {editable && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="ml-auto h-7 text-xs"
-                  onClick={() => onEdit?.(journal)}
-                >
-                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                  Edit JE
-                </Button>
+              {(editable || isDraft) && (
+                <span className="ml-auto inline-flex items-center gap-1.5">
+                  {isDraft && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={posting}
+                      onClick={() => void postDraft()}
+                    >
+                      <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                      {posting ? 'Posting...' : 'Post Entry'}
+                    </Button>
+                  )}
+                  {editable && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => onEdit?.(journal)}
+                    >
+                      <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                      Edit JE
+                    </Button>
+                  )}
+                </span>
               )}
             </DialogTitle>
             <DialogDescription className="text-xs">

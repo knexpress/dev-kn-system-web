@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { InvoiceGatewayChargeLine } from '@/lib/invoice-gateway-charge';
 import QRCode from './qr-code';
+import { InvoicePrintExtras } from '@/components/invoice-print-extras';
 
 export interface UaeToPhTaxInvoiceData {
   invoiceNumber: string;
@@ -56,6 +57,10 @@ export interface UaeToPhTaxInvoiceData {
     items?: string;
   };
   termsAndConditions: string;
+  notes?: string;
+  disclaimer?: string;
+  includeNotes?: boolean;
+  includeDisclaimer?: boolean;
   qrCode?: {
     url: string;
     code: string;
@@ -289,6 +294,12 @@ export default function UaeToPhTaxInvoiceTemplate({ data }: UaeToPhTaxInvoiceTem
           <p className="pt-2 text-center text-base font-bold">
             This is a computer generated document and does not require a signature
           </p>
+          <InvoicePrintExtras
+            notes={data.notes}
+            disclaimer={data.disclaimer}
+            includeNotes={data.includeNotes}
+            includeDisclaimer={data.includeDisclaimer}
+          />
         </div>
       </div>
 

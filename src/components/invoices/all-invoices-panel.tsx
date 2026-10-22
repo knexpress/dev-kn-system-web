@@ -298,6 +298,9 @@ export default function AllInvoicesPanel({ salesInvoices, onOpenSalesInvoices }:
         invoice={pdfInvoice}
         open={Boolean(pdfInvoice)}
         onOpenChange={(open) => !open && setPdfInvoice(null)}
+        onInvoiceChange={(id, patch) => {
+          setPdfInvoice((prev: any) => (prev && String(prev._id) === id ? { ...prev, ...patch } : prev));
+        }}
       />
     </div>
   );

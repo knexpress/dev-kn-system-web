@@ -24,6 +24,7 @@ export function PrintDocumentDialog({
   attachmentId,
   documents,
   onDocumentsChange,
+  extra,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -35,6 +36,7 @@ export function PrintDocumentDialog({
   attachmentId?: string;
   documents?: any[];
   onDocumentsChange?: (docs: any[]) => void;
+  extra?: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
@@ -97,6 +99,7 @@ export function PrintDocumentDialog({
             {children}
           </div>
         </div>
+        {extra}
         {attachmentKind && attachmentId ? (
           <SupportingDocumentsPanel
             kind={attachmentKind}

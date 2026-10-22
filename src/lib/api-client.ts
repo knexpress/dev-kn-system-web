@@ -2063,6 +2063,9 @@ class ApiClient {
     customer_name?: string;
     currency?: string;
     notes?: string;
+    disclaimer?: string;
+    include_notes?: boolean;
+    include_disclaimer?: boolean;
     ar_account_code?: string;
     revenue_account_code?: string;
     vat_account_code?: string;
@@ -2077,6 +2080,21 @@ class ApiClient {
   }) {
     return this.request('/accounting/sales/invoices', {
       method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateSalesInvoice(
+    id: string,
+    payload: {
+      notes?: string;
+      disclaimer?: string;
+      include_notes?: boolean;
+      include_disclaimer?: boolean;
+    }
+  ) {
+    return this.request(`/accounting/sales/invoices/${encodeURIComponent(id)}`, {
+      method: 'PUT',
       body: JSON.stringify(payload),
     });
   }
@@ -2313,7 +2331,7 @@ class ApiClient {
     formData.append('entry_date', journalData.entry_date);
     formData.append('memo', journalData.memo || '');
     formData.append('source', journalData.source || 'MANUAL');
-    formData.append('status', journalData.status || 'POSTED');
+    formData.append('status', journalData.status || 'DRAFT');
     formData.append('source_reference', journalData.source_reference || '');
     formData.append(
       'source_label',
@@ -2415,6 +2433,13 @@ class ApiClient {
       journalData,
       documents
     );
+  }
+
+  async postJournal(id: string) {
+    return this.request(`/accounting/journals/${encodeURIComponent(id)}/post`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
   }
 
   async getInventoryItems() {
