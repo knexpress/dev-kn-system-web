@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Loader2 } from 'lucide-react';
+import { Download, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -17,6 +17,7 @@ import { apiClient } from '@/lib/api-client';
 import { ErpEmptyState, erpTableClasses } from '@/components/accounting/erp-shell';
 import { fmtDate, money } from '@/components/accounting/erp-format';
 import { cn } from '@/lib/utils';
+import { SalesInvoiceDocumentDialog } from '@/components/accounting/sales-invoice-document';
 
 const SHIPMENT_PAGE_SIZE = 100;
 
@@ -76,6 +77,7 @@ export default function AllInvoicesPanel({ salesInvoices, onOpenSalesInvoices }:
   const [debounced, setDebounced] = useState('');
   const [kind, setKind] = useState<'ALL' | 'SHIPMENT' | 'SALES'>('ALL');
   const [status, setStatus] = useState('all');
+  const [pdfInvoice, setPdfInvoice] = useState<any | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(search.trim()), 400);
@@ -249,7 +251,7 @@ export default function AllInvoicesPanel({ salesInvoices, onOpenSalesInvoices }:
                   <TableCell className={cn(t.cell, 'text-right')}>
                     {r.kind === 'SHIPMENT' ? (
                       <Button type="button" size="sm" variant="outline" className="rounded-xl" asChild>
-                        <Link href={`/dashboard/invoices/${r.id}`}>View</Link>
+                        <Link href={`/dashboard/invoices/${r.id}`}>View / PDF</Link>
                       </Button>
                     ) : (
                       <Button
@@ -257,9 +259,12 @@ export default function AllInvoicesPanel({ salesInvoices, onOpenSalesInvoices }:
                         size="sm"
                         variant="outline"
                         className="rounded-xl"
-                        onClick={onOpenSalesInvoices}
+                        onClick={() =>
+                          setPdfInvoice(salesInvoices.find((inv) => String(inv._id) === r.id) || null)
+                        }
                       >
-                        Open
+                        <Download className="mr-1 h-3.5 w-3.5" />
+                        PDF
                       </Button>
                     )}
                   </TableCell>
@@ -288,6 +293,12 @@ export default function AllInvoicesPanel({ salesInvoices, onOpenSalesInvoices }:
           </Button>
         </div>
       ) : null}
+
+      <SalesInvoiceDocumentDialog
+        invoice={pdfInvoice}
+        open={Boolean(pdfInvoice)}
+        onOpenChange={(open) => !open && setPdfInvoice(null)}
+      />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { fmtDate, money } from './erp-format';
+import { SupportingDocumentsPanel } from './supporting-documents-panel';
 
 const ONES = [
   '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
@@ -240,6 +241,16 @@ export function PettyCashVoucherDialog({ voucher, open, onOpenChange }: DialogPr
             </div>
           </div>
         )}
+        {voucher?._id ? (
+          <SupportingDocumentsPanel
+            kind="petty-cash"
+            id={String(voucher._id)}
+            documents={voucher.supporting_documents}
+            onChange={(docs) => {
+              voucher.supporting_documents = docs;
+            }}
+          />
+        ) : null}
         <DialogFooter className="gap-2">
           <Button type="button" variant="outline" className="rounded-xl" onClick={() => onOpenChange(false)}>
             Close

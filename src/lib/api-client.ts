@@ -69,6 +69,7 @@ export type InvoiceNote = {
   void_reason?: string;
   void_journal_no?: string;
   void_refund_journal_no?: string;
+  supporting_documents?: any[];
 };
 
 export type InvoiceNotePayload = {
@@ -1430,12 +1431,63 @@ class ApiClient {
     );
   }
 
+  async uploadAccountingAttachments(
+    kind:
+      | 'purchase-order'
+      | 'sales-invoice'
+      | 'supplier-payment'
+      | 'petty-cash'
+      | 'invoice-note'
+      | 'journal'
+      | 'shipment-invoice',
+    id: string,
+    files: File[]
+  ) {
+    const formData = new FormData();
+    for (const file of files) formData.append('documents', file);
+    return this.request(`/accounting/attachments/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async deleteAccountingAttachment(
+    kind: string,
+    id: string,
+    docId: string
+  ) {
+    return this.request(
+      `/accounting/attachments/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/${encodeURIComponent(docId)}`,
+      { method: 'DELETE' }
+    );
+  }
+
   async getBankCashOverview() {
     return this.request('/accounting/bank-cash/overview', {}, false);
   }
 
   async getBankCashAccounts() {
     return this.request('/accounting/bank-cash/accounts', {}, false);
+  }
+
+  async getBankCashEntries() {
+    return this.request('/accounting/bank-cash/entries', {}, false);
+  }
+
+  async createBankCashEntry(payload: {
+    entry_date?: string;
+    direction: 'IN' | 'OUT' | 'TRANSFER';
+    amount: number;
+    bank_cash_account_id: string;
+    to_bank_cash_account_id?: string;
+    counter_account_code?: string;
+    reference?: string;
+    memo?: string;
+  }) {
+    return this.request('/accounting/bank-cash/entries', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   }
 
   async createBankCashAccount(accountData: {
@@ -1495,6 +1547,22 @@ class ApiClient {
     return this.request(`/accounting/bank-cash/payments/${encodeURIComponent(id)}/reverse`, {
       method: 'POST',
       body: JSON.stringify({ reason: reason || '' }),
+    });
+  }
+
+  async getGatewayClearance(status?: 'open' | 'settled' | 'all') {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/accounting/gateway-clearance${q}`, {}, false);
+  }
+
+  async settleGatewayClearance(payload: {
+    id: string;
+    bank_cash_account_id?: string;
+    settled_at?: string;
+  }) {
+    return this.request('/accounting/gateway-clearance/settle', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 
@@ -1630,7 +1698,7 @@ class ApiClient {
     currency?: string;
     tax_amount?: number;
     notes?: string;
-    debit_account_code?: string;
+    debit_account_code?: string | null;
     credit_account_code?: string;
     submit?: boolean;
     lines: Array<{

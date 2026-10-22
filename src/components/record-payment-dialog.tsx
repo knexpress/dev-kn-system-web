@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
 import { apiClient, type InvoicePaymentMode } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 
@@ -32,6 +33,7 @@ export const PAYMENT_MODES: { value: InvoicePaymentMode; label: string; rate: nu
   { value: 'BANK_TRANSFER', label: 'Bank transfer', rate: 0 },
 ];
 const GATEWAY_VAT_RATE = 0.05;
+const SETTLEMENT_DAYS: Partial<Record<InvoicePaymentMode, number>> = { CARD: 1, TABBY: 10 };
 
 const num = (v: unknown) => {
   const n = parseFloat(String(v ?? '').toString());
@@ -87,6 +89,8 @@ type Props = {
 
 export function RecordPaymentDialog({ invoice, open, onOpenChange, onUpdated }: Props) {
   const { toast } = useToast();
+  const { userProfile } = useAuth();
+  const canCloseGateway = userProfile?.role === 'ADMIN' || userProfile?.role === 'SUPERADMIN';
   const [mode, setMode] = useState<InvoicePaymentMode | ''>('');
   const [paymentType, setPaymentType] = useState<'FULL' | 'PARTIAL'>('FULL');
   const [amount, setAmount] = useState('');
@@ -94,6 +98,7 @@ export function RecordPaymentDialog({ invoice, open, onOpenChange, onUpdated }: 
   const [collectedAt, setCollectedAt] = useState(today());
   const [saving, setSaving] = useState(false);
   const [voidingId, setVoidingId] = useState<string | null>(null);
+  const [settlingId, setSettlingId] = useState<string | null>(null);
   const [dateEdits, setDateEdits] = useState<Record<string, string>>({});
   const [savingDateId, setSavingDateId] = useState<string | null>(null);
 
@@ -153,9 +158,12 @@ export function RecordPaymentDialog({ invoice, open, onOpenChange, onUpdated }: 
       toast({ variant: 'destructive', title: 'Could not record payment', description: result.error });
       return;
     }
+    const days = SETTLEMENT_DAYS[mode];
     toast({
       title: 'Payment recorded',
-      description: `${result.message || ''}${result.journal_no ? ` · Finance JE ${result.journal_no} posted` : ''}`,
+      description: days
+        ? `${result.journal_no ? `JE ${result.journal_no}. ` : ''}Held in ${modeConfig?.label} clearance until the merchant remits (expected ${days} day${days === 1 ? '' : 's'}). Close it from Bank & Cash → Card & Tabby.`
+        : `${result.message || ''}${result.journal_no ? ` · Finance JE ${result.journal_no} posted` : ''}`,
     });
     onUpdated(result.data);
     onOpenChange(false);
@@ -190,6 +198,26 @@ export function RecordPaymentDialog({ invoice, open, onOpenChange, onUpdated }: 
     }
     toast({ title: 'Payment date updated', description: 'The payment journal now uses this date.' });
     onUpdated(result.data);
+  };
+
+  const closeGatewayPayment = async (payment: any) => {
+    if (!invoice?._id || !payment?._id) return;
+    setSettlingId(payment._id);
+    const result: any = await apiClient.settleGatewayClearance({
+      id: `inv:${invoice._id}:${payment._id}`,
+    });
+    setSettlingId(null);
+    if (!result.success) {
+      toast({ variant: 'destructive', title: 'Could not close remittance', description: result.error });
+      return;
+    }
+    toast({
+      title: 'Remittance closed',
+      description: result.data?.journal_no
+        ? `${result.data.journal_no} posted — amount moved from clearance into the bank.`
+        : 'Amount moved from clearance into the bank.',
+    });
+    if (result.data?.invoice) onUpdated(result.data.invoice);
   };
 
   const payments: any[] = invoice?.payments || [];
@@ -278,6 +306,9 @@ export function RecordPaymentDialog({ invoice, open, onOpenChange, onUpdated }: 
                 <Input type="date" value={collectedAt} onChange={(e) => setCollectedAt(e.target.value)} className="rounded-xl" />
                 <p className="text-xs text-slate-500">
                   The day money was received. Use an earlier date when the customer paid in advance.
+                  {mode && SETTLEMENT_DAYS[mode]
+                    ? ` ${modeConfig?.label} stays in clearance until the merchant remits — expected in ${SETTLEMENT_DAYS[mode]} day${SETTLEMENT_DAYS[mode] === 1 ? '' : 's'}.`
+                    : ''}
                 </p>
               </div>
               <div className="space-y-2 sm:col-span-2">
@@ -329,6 +360,8 @@ export function RecordPaymentDialog({ invoice, open, onOpenChange, onUpdated }: 
                 {payments.map((p) => {
                   const label = PAYMENT_MODES.find((m) => m.value === p.mode)?.label || p.mode;
                   const isVoid = p.status === 'VOID';
+                  const isGateway = p.mode === 'TABBY' || p.mode === 'CARD';
+                  const settled = Boolean(p.settle_journal_id || p.settled_at);
                   return (
                     <div key={p._id} className={cn('flex items-center justify-between gap-3 p-3 text-sm', isVoid && 'opacity-50')}>
                       <div className="min-w-0">
@@ -337,6 +370,11 @@ export function RecordPaymentDialog({ invoice, open, onOpenChange, onUpdated }: 
                           {isVoid && <Badge variant="secondary" className="ml-2">VOID</Badge>}
                           {p.mode === 'CASH' && !isVoid && (
                             <Badge variant="secondary" className="ml-2">{p.remitted ? 'Remitted' : 'With driver'}</Badge>
+                          )}
+                          {isGateway && !isVoid && (
+                            <Badge variant="secondary" className="ml-2">
+                              {settled ? `Closed ${p.settle_journal_no || ''}`.trim() : 'In clearance'}
+                            </Badge>
                           )}
                         </p>
                         <p className="truncate text-xs text-slate-500">
@@ -370,16 +408,30 @@ export function RecordPaymentDialog({ invoice, open, onOpenChange, onUpdated }: 
                           </div>
                         )}
                       </div>
-                      {!isVoid && !p.remitted && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="rounded-xl self-start"
-                          disabled={voidingId === p._id}
-                          onClick={() => voidPayment(p)}
-                        >
-                          {voidingId === p._id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Void'}
-                        </Button>
+                      {!isVoid && (
+                        <div className="flex shrink-0 flex-col gap-2 self-start">
+                          {isGateway && !settled && canCloseGateway && (
+                            <Button
+                              size="sm"
+                              className="rounded-xl"
+                              disabled={settlingId === p._id}
+                              onClick={() => closeGatewayPayment(p)}
+                            >
+                              {settlingId === p._id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Close to bank'}
+                            </Button>
+                          )}
+                          {!p.remitted && !settled && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="rounded-xl"
+                              disabled={voidingId === p._id}
+                              onClick={() => voidPayment(p)}
+                            >
+                              {voidingId === p._id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Void'}
+                            </Button>
+                          )}
+                        </div>
                       )}
                     </div>
                   );

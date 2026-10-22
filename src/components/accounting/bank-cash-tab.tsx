@@ -2,9 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ArrowDownLeft,
+  ArrowLeftRight,
+  ArrowUpRight,
   Banknote,
   Building2,
   Check,
+  CreditCard,
   FileText,
   Loader2,
   Plus,
@@ -47,6 +51,7 @@ import {
   ErpModuleBody,
   ErpStatStrip,
   ErpToolbar,
+  erpOutlineControlClass,
   erpPrimaryButtonClass,
   erpTableClasses,
 } from './erp-shell';
@@ -56,14 +61,25 @@ import { COA } from '@/lib/coa-codes';
 import BankReconciliationPanel from './bank-reconciliation-panel';
 import { SupplierPaymentVoucherDialog } from './supplier-payment-voucher-document';
 
-type TabId = 'overview' | 'accounts' | 'payables' | 'pay' | 'approvals' | 'history' | 'reconcile';
+type TabId =
+  | 'overview'
+  | 'accounts'
+  | 'entries'
+  | 'payables'
+  | 'pay'
+  | 'approvals'
+  | 'clearance'
+  | 'history'
+  | 'reconcile';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'accounts', label: 'Accounts' },
+  { id: 'entries', label: 'Entries' },
   { id: 'payables', label: 'Payables' },
   { id: 'pay', label: 'Pay supplier' },
   { id: 'approvals', label: 'Clear payments' },
+  { id: 'clearance', label: 'Card & Tabby' },
   { id: 'history', label: 'Payment history' },
   { id: 'reconcile', label: 'Reconciliation' },
 ];
@@ -138,6 +154,27 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+type EntryDirection = 'IN' | 'OUT' | 'TRANSFER';
+
+const ENTRY_KINDS: { id: EntryDirection; label: string; hint: string }[] = [
+  { id: 'IN', label: 'Money in', hint: 'Deposit into a wallet' },
+  { id: 'OUT', label: 'Money out', hint: 'Pay from a wallet' },
+  { id: 'TRANSFER', label: 'Transfer', hint: 'Move between wallets' },
+];
+
+function entryKindFromMemo(memo: string): EntryDirection {
+  const text = String(memo || '');
+  if (/^Transfer\b/i.test(text)) return 'TRANSFER';
+  if (/^Money out\b/i.test(text)) return 'OUT';
+  return 'IN';
+}
+
+function entryKindTone(kind: EntryDirection) {
+  if (kind === 'IN') return 'bg-emerald-50 text-emerald-800 ring-emerald-200';
+  if (kind === 'OUT') return 'bg-rose-50 text-rose-700 ring-rose-200';
+  return 'bg-sky-50 text-sky-800 ring-sky-200';
+}
+
 export default function BankCashTab() {
   const { toast } = useToast();
   const { userProfile } = useAuth();
@@ -149,7 +186,26 @@ export default function BankCashTab() {
   const [payments, setPayments] = useState<any[]>([]);
   const [glAccounts, setGlAccounts] = useState<any[]>([]);
   const [payables, setPayables] = useState<any>(null);
+  const [clearance, setClearance] = useState<any>(null);
+  const [clearanceFilter, setClearanceFilter] = useState<'open' | 'settled' | 'all'>('open');
+  const [settleTarget, setSettleTarget] = useState<any>(null);
+  const [settleBankId, setSettleBankId] = useState('');
+  const [settleDate, setSettleDate] = useState(new Date().toISOString().slice(0, 10));
   const [historyFilter, setHistoryFilter] = useState('ALL');
+
+  const [entries, setEntries] = useState<any[]>([]);
+  const [entryOpen, setEntryOpen] = useState(false);
+  const [savingEntry, setSavingEntry] = useState(false);
+  const [entryForm, setEntryForm] = useState({
+    entry_date: new Date().toISOString().slice(0, 10),
+    direction: 'IN' as EntryDirection,
+    amount: '',
+    bank_cash_account_id: '',
+    to_bank_cash_account_id: '',
+    counter_account_code: '',
+    reference: '',
+    memo: '',
+  });
 
   const [addOpen, setAddOpen] = useState(false);
   const [savingAccount, setSavingAccount] = useState(false);
@@ -186,24 +242,28 @@ export default function BankCashTab() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [ov, acc, pay, gl, ap] = await Promise.all([
+    const [ov, acc, pay, gl, ap, gw, en] = await Promise.all([
       apiClient.getBankCashOverview(),
       apiClient.getBankCashAccounts(),
       apiClient.getSupplierPayments(),
       apiClient.getAccounts(),
       apiClient.getPayablesSummary(),
+      apiClient.getGatewayClearance(clearanceFilter),
+      apiClient.getBankCashEntries(),
     ]);
 
     if (ov.success) setOverview(ov.data);
     if (acc.success) setAccounts((acc.data as any[]) || []);
     if (pay.success) setPayments((pay.data as any[]) || []);
     if (ap.success) setPayables(ap.data);
+    if (gw.success) setClearance(gw.data);
+    if (en.success) setEntries((en.data as any[]) || []);
     if (gl.success) {
       const list = ((gl.data as any[]) || []).filter((a) => a.is_active !== false && a.is_postable !== false);
       setGlAccounts(list);
     }
     setLoading(false);
-  }, []);
+  }, [clearanceFilter]);
 
   useEffect(() => {
     void load();
@@ -217,6 +277,10 @@ export default function BankCashTab() {
   const activeWallets = useMemo(
     () => accounts.filter((a) => a.is_active !== false),
     [accounts]
+  );
+  const bankWallets = useMemo(
+    () => activeWallets.filter((a) => String(a.account_type).toUpperCase() === 'BANK'),
+    [activeWallets]
   );
 
   const openInvoices = useMemo(
@@ -336,6 +400,14 @@ export default function BankCashTab() {
       value: String(overview?.totals?.pending_approval_count || pending.length || 0),
       hint: `AED ${money(overview?.totals?.pending_approval_amount)}`,
     },
+    {
+      label: 'Card & Tabby',
+      value: `AED ${money(clearance?.totals?.open_amount)}`,
+      hint:
+        clearance?.totals?.overdue_count > 0
+          ? `${clearance.totals.open_count || 0} open · ${clearance.totals.overdue_count} overdue`
+          : `${clearance?.totals?.open_count || 0} waiting on merchant`,
+    },
   ];
 
   const createAccount = async () => {
@@ -381,6 +453,86 @@ export default function BankCashTab() {
       opening_balance: '0',
       notes: '',
     });
+    await load();
+  };
+
+  const openEntry = (direction: EntryDirection = 'IN') => {
+    setEntryForm({
+      entry_date: new Date().toISOString().slice(0, 10),
+      direction,
+      amount: '',
+      bank_cash_account_id: activeWallets[0]?._id || '',
+      to_bank_cash_account_id: '',
+      counter_account_code: '',
+      reference: '',
+      memo: '',
+    });
+    setEntryOpen(true);
+  };
+
+  const submitEntry = async () => {
+    const amount = Number(entryForm.amount);
+    if (!entryForm.bank_cash_account_id || !(amount > 0)) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing fields',
+        description: 'Choose an account and enter an amount greater than 0.',
+      });
+      return;
+    }
+    if (entryForm.direction === 'TRANSFER' && !entryForm.to_bank_cash_account_id) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing fields',
+        description: 'Choose the account to transfer into.',
+      });
+      return;
+    }
+    if (entryForm.direction !== 'TRANSFER' && !entryForm.counter_account_code) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing fields',
+        description: 'Choose a counterpart GL account.',
+      });
+      return;
+    }
+    if (activeWallets.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No wallets',
+        description: 'Add a bank or cash account first.',
+      });
+      return;
+    }
+
+    setSavingEntry(true);
+    const result = await apiClient.createBankCashEntry({
+      entry_date: entryForm.entry_date,
+      direction: entryForm.direction,
+      amount,
+      bank_cash_account_id: entryForm.bank_cash_account_id,
+      to_bank_cash_account_id:
+        entryForm.direction === 'TRANSFER' ? entryForm.to_bank_cash_account_id : undefined,
+      counter_account_code:
+        entryForm.direction === 'TRANSFER' ? undefined : entryForm.counter_account_code,
+      reference: entryForm.reference.trim() || undefined,
+      memo: entryForm.memo.trim() || undefined,
+    });
+    setSavingEntry(false);
+
+    if (!result.success) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not post entry',
+        description: result.error || 'Try again',
+      });
+      return;
+    }
+
+    const kind = ENTRY_KINDS.find((k) => k.id === entryForm.direction)?.label || 'Entry';
+    toast({ title: `${kind} posted`, description: `AED ${money(amount)}` });
+    setEntryOpen(false);
+    setTab('entries');
     await load();
   };
 
@@ -464,6 +616,42 @@ export default function BankCashTab() {
     await load();
   };
 
+  const openSettle = (item: any) => {
+    const adcb = bankWallets.find((a) => a.code === 'ADCB');
+    setSettleBankId(adcb?._id || bankWallets[0]?._id || '');
+    setSettleDate(new Date().toISOString().slice(0, 10));
+    setSettleTarget(item);
+  };
+
+  const settleClearance = async () => {
+    if (!settleTarget) return;
+    setActingId(settleTarget.id);
+    const result: any = await apiClient.settleGatewayClearance({
+      id: settleTarget.id,
+      bank_cash_account_id: settleBankId || undefined,
+      settled_at: settleDate || undefined,
+    });
+    setActingId(null);
+    if (!result.success) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not close remittance',
+        description: result.error || 'Try again',
+      });
+      return;
+    }
+    const bankName =
+      bankWallets.find((a) => a._id === settleBankId)?.name || settleTarget.settle_bank_name || 'bank';
+    toast({
+      title: `${settleTarget.mode_label} closed`,
+      description: `AED ${money(settleTarget.amount)} moved from ${settleTarget.clearing_code} into ${bankName}${
+        result.data?.journal_no ? ` · ${result.data.journal_no}` : ''
+      }.`,
+    });
+    setSettleTarget(null);
+    await load();
+  };
+
   const approvePayment = async (id: string) => {
     setActingId(id);
     const result = await apiClient.approveSupplierPayment(id);
@@ -508,14 +696,25 @@ export default function BankCashTab() {
         onRefresh={() => void load()}
         refreshing={loading}
         actions={
-          <Button
-            type="button"
-            className={erpPrimaryButtonClass()}
-            onClick={() => setAddOpen(true)}
-          >
-            <Plus className="h-4 w-4" />
-            Add account
-          </Button>
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              className={erpOutlineControlClass()}
+              onClick={() => openEntry('IN')}
+            >
+              <Banknote className="h-4 w-4" />
+              Add entry
+            </Button>
+            <Button
+              type="button"
+              className={erpPrimaryButtonClass()}
+              onClick={() => setAddOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+              Add account
+            </Button>
+          </>
         }
       />
 
@@ -539,6 +738,11 @@ export default function BankCashTab() {
               {t.id === 'approvals' && pending.length > 0 ? (
                 <span className="ml-2 rounded-full bg-amber-400/90 px-1.5 py-0.5 text-[10px] text-slate-900">
                   {pending.length}
+                </span>
+              ) : null}
+              {t.id === 'clearance' && (clearance?.totals?.open_count || 0) > 0 ? (
+                <span className="ml-2 rounded-full bg-amber-400/90 px-1.5 py-0.5 text-[10px] text-slate-900">
+                  {clearance.totals.open_count}
                 </span>
               ) : null}
             </button>
@@ -656,6 +860,61 @@ export default function BankCashTab() {
                 </div>
               )}
             </section>
+
+            <section className="rounded-3xl border border-slate-200/70 bg-white/90 p-5">
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <ArrowLeftRight className="h-4 w-4 text-brand-600" />
+                  <h3 className="text-sm font-semibold text-slate-900">Recent entries</h3>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-8 text-xs text-brand-600"
+                  onClick={() => setTab('entries')}
+                >
+                  View all
+                </Button>
+              </div>
+              {entries.length === 0 ? (
+                <ErpEmptyState message="No manual entries yet. Use Add entry to post money in, money out, or a transfer." />
+              ) : (
+                <ul className="space-y-2">
+                  {entries.slice(0, 6).map((entry) => {
+                    const kind = entryKindFromMemo(entry.memo);
+                    return (
+                      <li
+                        key={entry._id}
+                        className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50/80 px-4 py-3"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={cn(
+                                'inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1',
+                                entryKindTone(kind)
+                              )}
+                            >
+                              {ENTRY_KINDS.find((k) => k.id === kind)?.label}
+                            </span>
+                            <span className="truncate text-sm font-medium text-slate-900">
+                              {entry.memo || entry.entry_no}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-xs text-slate-400">
+                            {fmtDate(entry.entry_date)}
+                            {entry.entry_no ? ` · ${entry.entry_no}` : ''}
+                          </p>
+                        </div>
+                        <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">
+                          AED {money(entry.total_debit)}
+                        </p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
           </div>
         ) : null}
 
@@ -696,6 +955,81 @@ export default function BankCashTab() {
                       </TableCell>
                     </TableRow>
                   ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        ) : null}
+
+        {tab === 'entries' ? (
+          <div className="overflow-x-auto rounded-3xl border border-slate-200/70 bg-white/90">
+            {entries.length === 0 ? (
+              <div className="p-6">
+                <ErpEmptyState message="No posted entries yet. Add a money in, money out, or transfer against a bank or cash account." />
+                <div className="mt-4 flex justify-center">
+                  <Button
+                    type="button"
+                    className={erpPrimaryButtonClass()}
+                    onClick={() => openEntry('IN')}
+                  >
+                    <Banknote className="h-4 w-4" />
+                    Add entry
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Table className={erpTableClasses().table}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Journal</TableHead>
+                    <TableHead>Memo</TableHead>
+                    <TableHead>Accounts</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {entries.map((entry) => {
+                    const kind = entryKindFromMemo(entry.memo);
+                    const debit = (entry.lines || []).find((l: any) => Number(l.debit) > 0);
+                    const credit = (entry.lines || []).find((l: any) => Number(l.credit) > 0);
+                    return (
+                      <TableRow key={entry._id}>
+                        <TableCell className="whitespace-nowrap text-slate-600">
+                          {fmtDate(entry.entry_date)}
+                        </TableCell>
+                        <TableCell>
+                          <span
+                            className={cn(
+                              'inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1',
+                              entryKindTone(kind)
+                            )}
+                          >
+                            {ENTRY_KINDS.find((k) => k.id === kind)?.label}
+                          </span>
+                        </TableCell>
+                        <TableCell className="font-medium">{entry.entry_no || '—'}</TableCell>
+                        <TableCell>
+                          <div className="max-w-xs truncate">{entry.memo || '—'}</div>
+                          {entry.source_reference ? (
+                            <div className="text-xs text-slate-400">{entry.source_reference}</div>
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="text-xs text-slate-500">
+                          <div>
+                            Dr {debit?.account_code} {debit?.account_name}
+                          </div>
+                          <div>
+                            Cr {credit?.account_code} {credit?.account_name}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums font-semibold">
+                          AED {money(entry.total_debit)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
@@ -1318,6 +1652,136 @@ export default function BankCashTab() {
           </div>
         ) : null}
 
+        {tab === 'clearance' ? (
+          <div className="space-y-4">
+            <div className="rounded-3xl border border-slate-200/70 bg-white/90 p-4 text-sm text-slate-600">
+              <div className="mb-1 flex items-center gap-2 font-semibold text-slate-900">
+                <CreditCard className="h-4 w-4 text-sky-600" />
+                Merchant remittances
+              </div>
+              Card collections sit in {clearance?.items?.find((i: any) => i.mode === 'CARD')?.clearing_code || '11020'}{' '}
+              and are due the next day. Tabby sits in{' '}
+              {clearance?.items?.find((i: any) => i.mode === 'TABBY')?.clearing_code || '11030'} and is due in 10 days.
+              Close a line when that payment hits the bank — Dr ADCB / Cr clearance.
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Open in clearance</p>
+                <p className="text-lg font-semibold text-slate-900">AED {money(clearance?.totals?.open_amount)}</p>
+                <p className="text-xs text-slate-500">{clearance?.totals?.open_count || 0} payments</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Card (1 day)</p>
+                <p className="text-lg font-semibold text-slate-900">AED {money(clearance?.totals?.card_open_amount)}</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tabby (10 days)</p>
+                <p className="text-lg font-semibold text-slate-900">AED {money(clearance?.totals?.tabby_open_amount)}</p>
+              </div>
+            </div>
+            <div className="flex gap-2 overflow-x-auto">
+              {(['open', 'settled', 'all'] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setClearanceFilter(s)}
+                  className={cn(
+                    'shrink-0 rounded-full px-3 py-1.5 text-[11px] font-semibold ring-1 transition-all',
+                    clearanceFilter === s
+                      ? 'bg-slate-900 text-white ring-slate-900'
+                      : 'bg-white text-slate-500 ring-slate-200 hover:text-slate-800'
+                  )}
+                >
+                  {s === 'open' ? 'Waiting on merchant' : s === 'settled' ? 'Closed' : 'All'}
+                </button>
+              ))}
+            </div>
+            <div className="overflow-x-auto rounded-3xl border border-slate-200/70 bg-white/90">
+              {(clearance?.items || []).length === 0 ? (
+                <div className="p-6">
+                  <ErpEmptyState message="No Tabby or card payments in this view. Record a card/Tabby receipt on an invoice and it will appear here until the merchant remits." />
+                </div>
+              ) : (
+                <Table className={erpTableClasses().table}>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Payment</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Collected</TableHead>
+                      <TableHead>Expected in bank</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(clearance.items as any[]).map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <div className="font-semibold text-slate-900">{item.ref}</div>
+                          <div className="text-xs text-slate-500">
+                            {item.mode_label}
+                            {item.source === 'advance' || item.source === 'quotation' ? ' advance' : ''}
+                            {item.payment_reference ? ` · ${item.payment_reference}` : ''}
+                            {item.journal_no ? ` · ${item.journal_no}` : ''}
+                          </div>
+                          <div className="text-[11px] text-slate-400">
+                            {item.clearing_code} {item.clearing_name}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm text-slate-800">{item.customer_name || '—'}</div>
+                          {item.awb_number ? <div className="text-xs text-slate-400">{item.awb_number}</div> : null}
+                        </TableCell>
+                        <TableCell>{fmtDate(item.collected_at)}</TableCell>
+                        <TableCell>
+                          {item.status === 'SETTLED' ? (
+                            <div>
+                              <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200">
+                                Closed {fmtDate(item.settled_at)}
+                              </span>
+                              <div className="mt-1 text-[11px] text-slate-400">
+                                {item.settle_bank_name}
+                                {item.settle_journal_no ? ` · ${item.settle_journal_no}` : ''}
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <DueBadge days={item.days_until_due} />
+                              <div className="mt-1 text-[11px] text-slate-400">{fmtDate(item.expected_settlement_at)}</div>
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums font-semibold">
+                          AED {money(item.amount)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {item.status === 'OPEN' ? (
+                            isFm ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="rounded-xl bg-emerald-600 hover:bg-emerald-700"
+                                disabled={actingId === item.id}
+                                onClick={() => openSettle(item)}
+                              >
+                                Close
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-slate-400">Awaiting Finance Manager</span>
+                            )
+                          ) : (
+                            <span className="text-xs text-slate-400">Settled</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          </div>
+        ) : null}
+
         {tab === 'history' ? (
           <div className="space-y-3">
             <div className="flex gap-2 overflow-x-auto">
@@ -1441,6 +1905,59 @@ export default function BankCashTab() {
           }}
         />
 
+        <Dialog open={Boolean(settleTarget)} onOpenChange={(open) => !open && setSettleTarget(null)}>
+          <DialogContent className="max-w-md rounded-3xl">
+            <DialogHeader>
+              <DialogTitle>Close {settleTarget?.mode_label} remittance</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-slate-600">
+              {settleTarget?.ref} — AED {money(settleTarget?.amount)} leaves {settleTarget?.clearing_code}{' '}
+              {settleTarget?.clearing_name} and posts into the bank you choose. Use this after the merchant has
+              remitted that specific payment.
+            </p>
+            <div className="grid gap-3">
+              <div className="space-y-2">
+                <Label>Bank received</Label>
+                <Select value={settleBankId} onValueChange={setSettleBankId}>
+                  <SelectTrigger className="rounded-xl">
+                    <SelectValue placeholder="Select bank" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {bankWallets.map((a) => (
+                      <SelectItem key={a._id} value={a._id}>
+                        {a.name} ({a.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Date received in bank</Label>
+                <Input
+                  type="date"
+                  value={settleDate}
+                  onChange={(e) => setSettleDate(e.target.value)}
+                  className="rounded-xl"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" className="rounded-xl" onClick={() => setSettleTarget(null)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="rounded-xl bg-emerald-600 hover:bg-emerald-700"
+                disabled={!settleTarget || !settleBankId || actingId === settleTarget?.id}
+                onClick={() => void settleClearance()}
+              >
+                {actingId === settleTarget?.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Close to bank
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={Boolean(reverseTarget)} onOpenChange={(open) => !open && setReverseTarget(null)}>
           <DialogContent className="max-w-md rounded-3xl">
             <DialogHeader>
@@ -1476,6 +1993,194 @@ export default function BankCashTab() {
               >
                 {actingId === reverseTarget?._id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 Reverse payment
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={entryOpen} onOpenChange={setEntryOpen}>
+          <DialogContent className="max-w-lg rounded-3xl">
+            <DialogHeader>
+              <DialogTitle>Add bank & cash entry</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-3">
+              <div className="grid grid-cols-3 gap-2">
+                {ENTRY_KINDS.map((kind) => {
+                  const Icon =
+                    kind.id === 'IN' ? ArrowDownLeft : kind.id === 'OUT' ? ArrowUpRight : ArrowLeftRight;
+                  const active = entryForm.direction === kind.id;
+                  return (
+                    <button
+                      key={kind.id}
+                      type="button"
+                      onClick={() =>
+                        setEntryForm((f) => ({
+                          ...f,
+                          direction: kind.id,
+                          to_bank_cash_account_id:
+                            kind.id === 'TRANSFER' ? f.to_bank_cash_account_id : '',
+                          counter_account_code: kind.id === 'TRANSFER' ? '' : f.counter_account_code,
+                        }))
+                      }
+                      className={cn(
+                        'flex flex-col items-center gap-1 rounded-2xl px-2 py-3 text-center text-xs font-semibold ring-1 transition',
+                        active
+                          ? 'bg-brand-50 text-brand-700 ring-brand-200'
+                          : 'bg-white text-slate-500 ring-slate-200 hover:text-brand-600'
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {kind.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Date</Label>
+                  <Input
+                    type="date"
+                    value={entryForm.entry_date}
+                    onChange={(e) => setEntryForm((f) => ({ ...f, entry_date: e.target.value }))}
+                    className="rounded-xl"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Amount (AED)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={entryForm.amount}
+                    onChange={(e) => setEntryForm((f) => ({ ...f, amount: e.target.value }))}
+                    placeholder="0.00"
+                    className="rounded-xl"
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>
+                    {entryForm.direction === 'IN'
+                      ? 'Deposit into'
+                      : entryForm.direction === 'OUT'
+                        ? 'Pay from'
+                        : 'Transfer from'}
+                  </Label>
+                  <Select
+                    value={entryForm.bank_cash_account_id}
+                    onValueChange={(v) =>
+                      setEntryForm((f) => ({
+                        ...f,
+                        bank_cash_account_id: v,
+                        to_bank_cash_account_id:
+                          f.to_bank_cash_account_id === v ? '' : f.to_bank_cash_account_id,
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="rounded-xl">
+                      <SelectValue placeholder="Select bank or cash account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeWallets.map((a) => (
+                        <SelectItem key={a._id} value={a._id}>
+                          {a.name} · AED {money(a.current_balance)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {entryForm.direction === 'TRANSFER' ? (
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label>Transfer into</Label>
+                    <Select
+                      value={entryForm.to_bank_cash_account_id}
+                      onValueChange={(v) =>
+                        setEntryForm((f) => ({ ...f, to_bank_cash_account_id: v }))
+                      }
+                    >
+                      <SelectTrigger className="rounded-xl">
+                        <SelectValue placeholder="Select destination account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activeWallets
+                          .filter((a) => a._id !== entryForm.bank_cash_account_id)
+                          .map((a) => (
+                            <SelectItem key={a._id} value={a._id}>
+                              {a.name} · AED {money(a.current_balance)}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label>
+                      {entryForm.direction === 'IN' ? 'Credit from (source)' : 'Debit to (paid for)'}
+                    </Label>
+                    <Select
+                      value={entryForm.counter_account_code}
+                      onValueChange={(v) =>
+                        setEntryForm((f) => ({ ...f, counter_account_code: v }))
+                      }
+                    >
+                      <SelectTrigger className="rounded-xl">
+                        <SelectValue placeholder="Select counterpart GL" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {glAccounts
+                          .filter((a) => {
+                            const wallet = activeWallets.find(
+                              (w) => w._id === entryForm.bank_cash_account_id
+                            );
+                            return !wallet || a.code !== wallet.gl_account_code;
+                          })
+                          .map((a) => (
+                            <SelectItem key={a.code} value={a.code}>
+                              {a.code} — {a.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Reference</Label>
+                  <Input
+                    value={entryForm.reference}
+                    onChange={(e) => setEntryForm((f) => ({ ...f, reference: e.target.value }))}
+                    placeholder="Cheque, receipt no."
+                    className="rounded-xl"
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Memo</Label>
+                  <Textarea
+                    value={entryForm.memo}
+                    onChange={(e) => setEntryForm((f) => ({ ...f, memo: e.target.value }))}
+                    placeholder="Optional note"
+                    className="rounded-xl"
+                    rows={2}
+                  />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-xl"
+                onClick={() => setEntryOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className={erpPrimaryButtonClass()}
+                disabled={savingEntry}
+                onClick={() => void submitEntry()}
+              >
+                {savingEntry ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Post entry
               </Button>
             </DialogFooter>
           </DialogContent>

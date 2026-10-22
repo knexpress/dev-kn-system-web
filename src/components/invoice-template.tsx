@@ -38,6 +38,9 @@ interface InvoiceData {
     pickupCharge?: number;
     deliveryCharge: number;
     insuranceCharge?: number;
+    discountAmount?: number;
+    discountType?: string;
+    discountValue?: number;
     subtotal?: number;
     taxRate?: number;
     taxAmount?: number;
@@ -183,6 +186,18 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
                 <tr>
                   <td className="border border-gray-300 px-4 py-2 text-left">Pickup Charge</td>
                   <td className="border border-gray-300 px-4 py-2 text-right">{data.charges.pickupCharge.toFixed(2)}</td>
+                </tr>
+              )}
+              {Number(data.charges.discountAmount) > 0 && (
+                <tr>
+                  <td className="border border-gray-300 px-4 py-2 text-left">
+                    {data.charges.discountType === 'PERCENT' && Number(data.charges.discountValue) > 0
+                      ? `Sales Discount (${Number(data.charges.discountValue)}%)`
+                      : 'Sales Discount'}
+                  </td>
+                  <td className="border border-gray-300 px-4 py-2 text-right">
+                    -{Number(data.charges.discountAmount).toFixed(2)}
+                  </td>
                 </tr>
               )}
               <tr>

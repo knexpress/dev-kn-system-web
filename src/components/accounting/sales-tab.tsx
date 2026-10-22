@@ -59,6 +59,7 @@ import {
   PaymentReceiptVoucherDialog,
   buildReceiptFromInvoicePayment,
 } from '@/components/accounting/payment-receipt-voucher-document';
+import { SalesInvoiceDocumentDialog } from '@/components/accounting/sales-invoice-document';
 import { cn } from '@/lib/utils';
 
 type TabId =
@@ -185,6 +186,7 @@ export default function SalesTab() {
   const [paying, setPaying] = useState(false);
   const [receiptVoucher, setReceiptVoucher] = useState<any | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [pdfInvoice, setPdfInvoice] = useState<any | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -650,6 +652,7 @@ export default function SalesTab() {
                     <TableHead className="text-right">Paid</TableHead>
                     <TableHead>JE</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead className="text-right">PDF</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -690,6 +693,18 @@ export default function SalesTab() {
                         >
                           {String(inv.status || '').replace(/_/g, ' ')}
                         </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="rounded-xl"
+                          onClick={() => setPdfInvoice(inv)}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          PDF
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -944,6 +959,16 @@ export default function SalesTab() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="inline-flex flex-wrap justify-end gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="rounded-xl"
+                              onClick={() => setPdfInvoice(inv)}
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              PDF
+                            </Button>
                             {inv.status === 'DRAFT' ? (
                               <Button
                                 type="button"
@@ -1028,6 +1053,17 @@ export default function SalesTab() {
                             {inv.invoice_journal_no || '—'}
                           </TableCell>
                           <TableCell className="text-right">
+                            <div className="inline-flex gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="rounded-xl"
+                              onClick={() => setPdfInvoice(inv)}
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              PDF
+                            </Button>
                             <Button
                               type="button"
                               size="sm"
@@ -1037,6 +1073,7 @@ export default function SalesTab() {
                               <Banknote className="h-3.5 w-3.5" />
                               Record receipt
                             </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -1370,6 +1407,16 @@ export default function SalesTab() {
           receipt={receiptVoucher}
           open={receiptOpen}
           onOpenChange={setReceiptOpen}
+        />
+
+        <SalesInvoiceDocumentDialog
+          invoice={pdfInvoice}
+          open={Boolean(pdfInvoice)}
+          onOpenChange={(open) => !open && setPdfInvoice(null)}
+          onDocumentsChange={(id, docs) => {
+            setInvoices((prev) => prev.map((inv) => (inv._id === id ? { ...inv, supporting_documents: docs } : inv)));
+            setPdfInvoice((prev: any) => (prev && prev._id === id ? { ...prev, supporting_documents: docs } : prev));
+          }}
         />
       </ErpModuleBody>
     </div>

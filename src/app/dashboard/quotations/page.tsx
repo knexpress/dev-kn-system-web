@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { apiClient, type InvoicePaymentMode } from '@/lib/api-client';
+import { computeSalesDiscount, salesDiscountLabel } from '@/lib/sales-discount';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -73,6 +74,9 @@ type SavedQuotation = {
   pickup_vat?: number;
   delivery_charge?: number;
   insurance_charge?: number;
+  discount_type?: 'PERCENT' | 'AMOUNT' | '';
+  discount_value?: number;
+  discount_amount?: number;
   total_amount?: number;
   currency?: string;
   notes?: string;
@@ -197,6 +201,8 @@ export default function QuotationsPage() {
   const [pickupLocation, setPickupLocation] = useState<'INSIDE_DUBAI' | 'OUTSIDE_DUBAI' | 'DROP_OFF' | ''>('');
   const [deliveryCharge, setDeliveryCharge] = useState('');
   const [insuranceCharge, setInsuranceCharge] = useState('');
+  const [discountType, setDiscountType] = useState<'PERCENT' | 'AMOUNT' | ''>('');
+  const [discountValue, setDiscountValue] = useState('');
   const [items, setItems] = useState<QuoteItem[]>([{ id: '1', boxNumber: '1', name: '', quantity: 1 }]);
   const [numberQuery, setNumberQuery] = useState('');
   const [senderQuery, setSenderQuery] = useState('');
@@ -322,7 +328,9 @@ export default function QuotationsPage() {
     toast({
       title: 'Advance recorded',
       description:
-        (result as { message?: string }).message || 'Credited to Customer Payment Due.',
+        advanceMode === 'TABBY' || advanceMode === 'CARD'
+          ? `${(result as { message?: string }).message || 'Posted to clearance.'} Close it from Accounting → Bank & Cash → Card & Tabby when the merchant remits.`
+          : (result as { message?: string }).message || 'Credited to Customer Payment Due.',
     });
   };
 
@@ -381,7 +389,8 @@ export default function QuotationsPage() {
   const pickupVat = Math.round(pickupCharge * 0.05 * 100) / 100;
   const delivery = Math.max(parseFloat(deliveryCharge) || 0, 0);
   const insurance = Math.max(parseFloat(insuranceCharge) || 0, 0);
-  const finalAmount = Math.round((shippingAmount + pickupCharge + pickupVat + delivery + insurance) * 100) / 100;
+  const discount = computeSalesDiscount(shippingAmount, discountType, discountValue);
+  const finalAmount = Math.round((shippingAmount + pickupCharge + pickupVat + delivery + insurance - discount.amount) * 100) / 100;
 
   const resetForm = () => {
     setSenderName('');
@@ -399,6 +408,8 @@ export default function QuotationsPage() {
     setPickupLocation('');
     setDeliveryCharge('');
     setInsuranceCharge('');
+    setDiscountType('');
+    setDiscountValue('');
     setItems([{ id: '1', boxNumber: '1', name: '', quantity: 1 }]);
     setEditingId(null);
     setLinkedRequest(null);
@@ -430,6 +441,10 @@ export default function QuotationsPage() {
     );
     setNotes(qr.notes || '');
     setNumberOfBoxes(qr.number_of_boxes ? String(qr.number_of_boxes) : '');
+    if (qr.quotation_discount_type === 'PERCENT' || qr.quotation_discount_type === 'AMOUNT') {
+      setDiscountType(qr.quotation_discount_type);
+      setDiscountValue(qr.quotation_discount_value ? String(qr.quotation_discount_value) : '');
+    }
     setLinkedRequest(request);
     setShowForm(true);
     window.setTimeout(() => document.getElementById('quotation-form')?.scrollIntoView({ behavior: 'smooth' }), 50);
@@ -560,6 +575,8 @@ export default function QuotationsPage() {
     setPickupLocation(quote.pickup_location || '');
     setDeliveryCharge(quote.delivery_charge ? String(quote.delivery_charge) : '');
     setInsuranceCharge(quote.insurance_charge ? String(quote.insurance_charge) : '');
+    setDiscountType(quote.discount_type === 'PERCENT' || quote.discount_type === 'AMOUNT' ? quote.discount_type : '');
+    setDiscountValue(quote.discount_value ? String(quote.discount_value) : '');
     setItems(
       (quote.items || []).length
         ? quote.items.map((item, index) => ({
@@ -622,6 +639,8 @@ export default function QuotationsPage() {
       pickup_location: pickupLocation,
       delivery_charge: delivery,
       insurance_charge: insurance,
+      discount_type: discount.type || '',
+      discount_value: discount.value || 0,
       notes: notes.trim(),
     };
 
@@ -886,10 +905,15 @@ export default function QuotationsPage() {
                           <div>
                             <p className="font-semibold text-emerald-900">Advance received</p>
                             <p className="text-xs text-emerald-800">
-                              AED {money(Number(qr.advance?.amount || 0))} via {qr.advance?.mode || '—'}
+                              AED {money(Number(qr.advance?.amount_collected || qr.advance?.amount || 0))} via {qr.advance?.mode || '—'}
                               {qr.advance?.collected_at ? ` · ${new Date(qr.advance.collected_at).toLocaleDateString()}` : ''}
                               {qr.advance?.journal_no ? ` · ${qr.advance.journal_no}` : ''}
                               {' '}on Customer Payment Due. Applied when the invoice journal posts, using this paid date.
+                              {qr.advance?.mode === 'TABBY' || qr.advance?.mode === 'CARD'
+                                ? qr.advance?.settle_journal_id
+                                  ? ` Closed to bank${qr.advance?.settle_journal_no ? ` · ${qr.advance.settle_journal_no}` : ''}.`
+                                  : ' Sitting in clearance until the merchant remits — close it from Bank & Cash → Card & Tabby.'
+                                : ''}
                             </p>
                           </div>
                         </div>
@@ -1144,12 +1168,51 @@ export default function QuotationsPage() {
                     <Input id="insurance_charge" type="number" min="0" step="0.01" placeholder="0.00" value={insuranceCharge} onChange={(e) => setInsuranceCharge(e.target.value)} />
                   </div>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label>Sales discount</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['PERCENT', 'AMOUNT'] as const).map((kind) => (
+                        <Button
+                          key={kind}
+                          type="button"
+                          variant={discountType === kind ? 'default' : 'outline'}
+                          onClick={() => setDiscountType((current) => (current === kind ? '' : kind))}
+                        >
+                          {kind === 'PERCENT' ? '% off' : 'AED off'}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <Label htmlFor="discount_value">
+                      {discountType === 'PERCENT' ? 'Discount %' : discountType === 'AMOUNT' ? 'Discount amount (AED)' : 'Discount'}
+                    </Label>
+                    <Input
+                      id="discount_value"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder={discountType === 'PERCENT' ? 'e.g. 10' : '0.00'}
+                      value={discountValue}
+                      onChange={(e) => setDiscountValue(e.target.value)}
+                      disabled={!discountType}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Applied to the shipping charge only.</p>
+                  </div>
+                </div>
                 <div className="rounded-lg border bg-muted/40 p-4 text-sm space-y-1">
                   <div className="flex justify-between"><span>Shipping</span><span>AED {money(shippingAmount)}</span></div>
                   <div className="flex justify-between"><span>Pickup</span><span>AED {money(pickupCharge)}</span></div>
                   <div className="flex justify-between"><span>VAT 5% on pickup</span><span>AED {money(pickupVat)}</span></div>
                   <div className="flex justify-between"><span>Delivery</span><span>AED {money(delivery)}</span></div>
                   <div className="flex justify-between"><span>Insurance</span><span>AED {money(insurance)}</span></div>
+                  {discount.amount > 0 ? (
+                    <div className="flex justify-between text-rose-700">
+                      <span>{salesDiscountLabel(discount.type, discount.value, discount.amount)}</span>
+                      <span>- AED {money(discount.amount)}</span>
+                    </div>
+                  ) : null}
                   <div className="flex justify-between font-semibold pt-1"><span>Final price</span><span>AED {money(finalAmount)}</span></div>
                 </div>
               </div>
@@ -1416,6 +1479,16 @@ export default function QuotationsPage() {
                           <td className="border border-gray-300">Insurance Charge</td>
                           <td className="border border-gray-300 text-right">{Number(printTarget.insurance_charge || 0).toFixed(2)}</td>
                         </tr>
+                        {Number(printTarget.discount_amount || 0) > 0 ? (
+                          <tr>
+                            <td className="border border-gray-300">
+                              {salesDiscountLabel(printTarget.discount_type, printTarget.discount_value, printTarget.discount_amount)}
+                            </td>
+                            <td className="border border-gray-300 text-right">
+                              -{Number(printTarget.discount_amount).toFixed(2)}
+                            </td>
+                          </tr>
+                        ) : null}
                         <tr className="bg-gray-100">
                           <td className="border border-gray-300 font-bold">Total Amount</td>
                           <td className="border border-gray-300 text-right font-bold">{Number(printTarget.total_amount ?? printTarget.shipping_amount).toFixed(2)} AED</td>
@@ -1587,6 +1660,12 @@ export default function QuotationsPage() {
                   <div className="space-y-1">
                     <Label>Date paid *</Label>
                     <Input type="date" value={advanceDate} onChange={(e) => setAdvanceDate(e.target.value)} className="bg-white" />
+                    {advanceMode === 'CARD' || advanceMode === 'TABBY' ? (
+                      <p className="text-xs text-muted-foreground">
+                        {advanceMode === 'CARD' ? 'Card' : 'Tabby'} sits in clearance until the merchant remits
+                        ({advanceMode === 'CARD' ? '1 day' : '10 days'}). Close that payment from Bank & Cash → Card & Tabby.
+                      </p>
+                    ) : null}
                   </div>
                   <div className="space-y-1">
                     <Label>Reference (optional)</Label>

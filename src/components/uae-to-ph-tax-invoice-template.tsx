@@ -40,6 +40,9 @@ export interface UaeToPhTaxInvoiceData {
     pickupCharge?: number;
     deliveryCharge: number;
     insuranceCharge?: number;
+    discountAmount?: number;
+    discountType?: string;
+    discountValue?: number;
     subtotal: number;
     taxRate: number;
     taxAmount: number;
@@ -90,13 +93,18 @@ export default function UaeToPhTaxInvoiceTemplate({ data }: UaeToPhTaxInvoiceTem
   const insurance = data.charges.insuranceCharge ?? 0;
   const delivery = data.charges.deliveryCharge ?? 0;
   const shipping = data.charges.shippingCharge ?? 0;
+  const discountAmount = data.charges.discountAmount ?? 0;
+  const discountLabel =
+    discountAmount > 0 && data.charges.discountType === 'PERCENT' && Number(data.charges.discountValue) > 0
+      ? `Sales Discount (${Number(data.charges.discountValue)}%)`
+      : 'Sales Discount';
   const gateway = data.gatewayCharge && data.gatewayCharge.gross > 0 ? data.gatewayCharge : null;
   const gatewayNet = gateway?.net ?? 0;
   const gatewayVat = gateway?.vat ?? 0;
   const gatewayGross = gateway?.gross ?? 0;
   const gatewayIncluded = gateway?.includedInTotal === true;
 
-  const courierBundleAmount = Math.max(0, data.charges.subtotal - pickup);
+  const courierBundleAmount = Math.max(0, data.charges.subtotal - pickup + discountAmount);
   // Prepaid Card/Tabby: fee is inside the invoice total — carve it out of the main line.
   const mainTaxLineAmount = gatewayIncluded
     ? Math.max(0, courierBundleAmount - gatewayGross)
@@ -207,6 +215,15 @@ export default function UaeToPhTaxInvoiceTemplate({ data }: UaeToPhTaxInvoiceTem
               <td className={`${cellBorder()} text-center`}>{isDomestic ? '5%' : 'Tax on Sales'}</td>
               <td className={`${cellBorder()} text-right`}>{fmt(mainTaxLineAmount)}</td>
             </tr>
+            {discountAmount > 0 && (
+              <tr>
+                <td className={cellBorder()}>{discountLabel}</td>
+                <td className={`${cellBorder()} text-center`}>1</td>
+                <td className={`${cellBorder()} text-right`}>-{fmt(discountAmount)}</td>
+                <td className={`${cellBorder()} text-center`}>0</td>
+                <td className={`${cellBorder()} text-right`}>-{fmt(discountAmount)}</td>
+              </tr>
+            )}
             {pickup > 0 && (
               <tr>
                 <td className={cellBorder()}>Pick up Charges</td>
@@ -332,6 +349,16 @@ export default function UaeToPhTaxInvoiceTemplate({ data }: UaeToPhTaxInvoiceTem
               <td className={`${cellBorder()} text-center`}>0</td>
               <td className={`${cellBorder()} text-right`}>{fmt(shipping)}</td>
             </tr>
+            {discountAmount > 0 && (
+              <tr>
+                <td className={cellBorder()}>{discountLabel}</td>
+                <td className={`${cellBorder()} text-center`}>—</td>
+                <td className={cellBorder()}>—</td>
+                <td className={`${cellBorder()} text-center`}>—</td>
+                <td className={`${cellBorder()} text-center`}>0</td>
+                <td className={`${cellBorder()} text-right`}>-{fmt(discountAmount)}</td>
+              </tr>
+            )}
           </tbody>
         </table>
 

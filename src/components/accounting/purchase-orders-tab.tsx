@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Check,
   ClipboardList,
+  Download,
   Loader2,
   PackageCheck,
   Pencil,
@@ -54,6 +55,7 @@ import {
 import { fmtDate, money } from './erp-format';
 import { SupplierDialog } from './supplier-dialog';
 import { SupplierPaymentVoucherDialog } from './supplier-payment-voucher-document';
+import { PurchaseOrderDocumentDialog } from './purchase-order-document';
 import PurchaseStatementPanel from './purchase-statement-panel';
 import { cn } from '@/lib/utils';
 import { COA } from '@/lib/coa-codes';
@@ -121,7 +123,7 @@ function statusTone(status: string) {
   }
 }
 
-function emptyLine(accountCode = '1200'): LineDraft {
+function emptyLine(accountCode = COA.inventory): LineDraft {
   return {
     key: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     description: '',
@@ -130,6 +132,10 @@ function emptyLine(accountCode = '1200'): LineDraft {
     unit_cost: '0',
     account_code: accountCode,
   };
+}
+
+function uniqueLineDebits(drafts: LineDraft[]) {
+  return [...new Set(drafts.map((l) => String(l.account_code || '').trim()).filter(Boolean))];
 }
 
 export default function PurchaseOrdersTab() {
@@ -146,7 +152,7 @@ export default function PurchaseOrdersTab() {
   const [actingId, setActingId] = useState<string | null>(null);
 
   const [form, setForm] = useState(emptyForm);
-  const [lines, setLines] = useState<LineDraft[]>([emptyLine()]);
+  const [lines, setLines] = useState<LineDraft[]>([emptyLine(COA.inventory)]);
   const [saving, setSaving] = useState(false);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [supplierSearch, setSupplierSearch] = useState('');
@@ -179,6 +185,7 @@ export default function PurchaseOrdersTab() {
   const [voucherPayment, setVoucherPayment] = useState<any | null>(null);
   const [voucherPo, setVoucherPo] = useState<any | null>(null);
   const [voucherOpen, setVoucherOpen] = useState(false);
+  const [pdfPo, setPdfPo] = useState<any | null>(null);
   const [payables, setPayables] = useState<Record<string, any>>({});
 
   const [receiveOpen, setReceiveOpen] = useState(false);
@@ -252,20 +259,37 @@ export default function PurchaseOrdersTab() {
     [glAccounts]
   );
 
+  const lineDebitCodes = useMemo(() => uniqueLineDebits(lines), [lines]);
+  const mixedLineDebits = lineDebitCodes.length > 1;
+  const lineDebitsOverrideHeader =
+    mixedLineDebits ||
+    (lineDebitCodes.length === 1 &&
+      Boolean(form.debit_account_code) &&
+      lineDebitCodes[0] !== form.debit_account_code);
+
   const totalsByAccount = useMemo(() => {
     const map = new Map<string, number>();
     for (const l of lines) {
       const amount = (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0);
       if (!amount) continue;
       const code = l.account_code || form.debit_account_code;
+      if (!code) continue;
       map.set(code, (map.get(code) || 0) + amount);
     }
     return [...map.entries()];
   }, [lines, form.debit_account_code]);
 
+  useEffect(() => {
+    if (!form.debit_account_code || !lineDebitsOverrideHeader) return;
+    setForm((f) => ({ ...f, debit_account_code: '' }));
+  }, [form.debit_account_code, lineDebitsOverrideHeader]);
+
   const setDefaultDebitAccount = (code: string) => {
+    if (mixedLineDebits) return;
     setLines((prev) =>
-      prev.map((l) => (l.account_code === form.debit_account_code ? { ...l, account_code: code } : l))
+      prev.map((l) =>
+        !l.account_code || l.account_code === form.debit_account_code ? { ...l, account_code: code } : l
+      )
     );
     setForm((f) => ({ ...f, debit_account_code: code }));
   };
@@ -324,6 +348,14 @@ export default function PurchaseOrdersTab() {
       toast({ variant: 'destructive', title: 'Add at least one line item' });
       return;
     }
+    if (built.some((l) => !l.account_code)) {
+      toast({
+        variant: 'destructive',
+        title: 'Debit account required',
+        description: 'Each line item needs a debit GL account.',
+      });
+      return;
+    }
 
     setSaving(true);
     const result = await apiClient.createPurchaseOrder({
@@ -333,7 +365,7 @@ export default function PurchaseOrdersTab() {
       supplier_reference: form.supplier_reference.trim() || undefined,
       tax_amount: Number(form.tax_amount) || 0,
       notes: form.notes.trim() || undefined,
-      debit_account_code: form.debit_account_code,
+      debit_account_code: form.debit_account_code || undefined,
       credit_account_code: form.credit_account_code,
       lines: built,
     });
@@ -871,6 +903,16 @@ export default function PurchaseOrdersTab() {
                       </TableCell>
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="inline-flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="rounded-xl"
+                            onClick={() => setPdfPo(po)}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            PDF
+                          </Button>
                           {po.status === 'DRAFT' ? (
                             <Button
                               type="button"
@@ -1033,9 +1075,19 @@ export default function PurchaseOrdersTab() {
               </div>
               <div className="space-y-2">
                 <Label>Default debit account (new lines)</Label>
-                <Select value={form.debit_account_code} onValueChange={setDefaultDebitAccount}>
+                <Select
+                  value={form.debit_account_code || undefined}
+                  onValueChange={setDefaultDebitAccount}
+                  disabled={mixedLineDebits}
+                >
                   <SelectTrigger className="rounded-xl">
-                    <SelectValue />
+                    <SelectValue
+                      placeholder={
+                        mixedLineDebits || lineDebitCodes.length
+                          ? 'Using line item accounts'
+                          : 'Select default debit'
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {debitAccounts.map((a) => (
@@ -1045,6 +1097,11 @@ export default function PurchaseOrdersTab() {
                     ))}
                   </SelectContent>
                 </Select>
+                {mixedLineDebits || (!form.debit_account_code && lineDebitCodes.length > 0) ? (
+                  <p className="text-[11px] text-slate-500">
+                    Journal debits come from the line items below. Header default is cleared.
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-2">
                 <Label>Credit account (AP)</Label>
@@ -1110,7 +1167,7 @@ export default function PurchaseOrdersTab() {
                   </div>
                   <div className="sm:col-span-4">
                     <Select
-                      value={line.account_code || form.debit_account_code}
+                      value={line.account_code || form.debit_account_code || undefined}
                       onValueChange={(v) =>
                         setLines((prev) =>
                           prev.map((l, i) => (i === idx ? { ...l, account_code: v } : l))
@@ -1394,6 +1451,16 @@ export default function PurchaseOrdersTab() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="inline-flex flex-wrap justify-end gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="rounded-xl"
+                              onClick={() => setPdfPo(po)}
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              PDF
+                            </Button>
                             {po.status === 'DRAFT' && !po.supplier_invoice_no ? (
                               <Button
                                 type="button"
@@ -1505,6 +1572,16 @@ export default function PurchaseOrdersTab() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="inline-flex gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="rounded-xl"
+                              onClick={() => setPdfPo(po)}
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              PDF
+                            </Button>
                             <Button
                               type="button"
                               size="sm"
@@ -1815,6 +1892,16 @@ export default function PurchaseOrdersTab() {
               } posted.`,
             });
             await load();
+          }}
+        />
+
+        <PurchaseOrderDocumentDialog
+          order={pdfPo}
+          open={Boolean(pdfPo)}
+          onOpenChange={(open) => !open && setPdfPo(null)}
+          onDocumentsChange={(id, docs) => {
+            setOrders((prev) => prev.map((p) => (p._id === id ? { ...p, supporting_documents: docs } : p)));
+            setPdfPo((prev: any) => (prev && prev._id === id ? { ...prev, supporting_documents: docs } : prev));
           }}
         />
 

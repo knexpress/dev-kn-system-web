@@ -31,6 +31,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { secureLog } from '@/lib/secure-logger';
 import { getAwbNumber, isPhToUaeService, isUaeToPhService, canSeeQuotePricing } from '@/lib/invoice-request-utils';
+import { computeSalesDiscount, salesDiscountLabel } from '@/lib/sales-discount';
 import InvoiceRequestCard from '@/components/invoice-request-card';
 import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText, ArrowRight, Phone, MapPin, AlertTriangle, Hash, Download, ChevronLeft, ChevronRight, Loader2, ArrowUp, X } from 'lucide-react';
 import {
@@ -2470,6 +2471,9 @@ export default function InvoiceRequestsPage() {
         notes: invoiceData.notes,
         created_by: (userProfile as any)?.employee_id || (userProfile as any)?._id, // REQUIRED
         due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+        discount_type: (invoiceData as any)?.charges?.discountType || undefined,
+        discount_value: (invoiceData as any)?.charges?.discountValue || undefined,
+        discount_amount: (invoiceData as any)?.charges?.discountAmount || undefined,
         // PH TO UAE: Send delivery_base_amount, pickup_base_amount, and calculated totals
         // NOTE: Backend should automatically calculate total_amount_cod using:
         // - amount (shipping) + pickup_base_amount + delivery_base_amount (when weight < 15kg)
@@ -2852,6 +2856,12 @@ export default function InvoiceRequestsPage() {
     }
     
     const shippingCharge = weight * rate;
+    const quoteForDiscount = getInvoiceQuote(request);
+    const salesDiscount = computeSalesDiscount(
+      shippingCharge,
+      quoteForDiscount?.quotation_discount_type,
+      quoteForDiscount?.quotation_discount_value ?? quoteForDiscount?.quotation_discount_amount
+    );
     // Priority: verification.number_of_boxes (manual input) > shipment.number_of_boxes > request.number_of_boxes
     let numberOfBoxes = request.verification?.number_of_boxes || 
                        request.shipment?.number_of_boxes || 
@@ -3023,7 +3033,7 @@ export default function InvoiceRequestsPage() {
       // For weight < 15kg: Use baseDeliveryAmount (delivery_base_amount) directly
       // For weight >= 15kg: deliveryCharge is already 0 (free delivery)
       const codDeliveryAmount = isWeight15kgOrMore ? 0 : baseDeliveryAmount;
-      totalAmountCod = shippingCharge + pickupChargeValue + codDeliveryAmount; // Shipping + pickup + delivery_base_amount (or 0 if weight >= 15kg)
+      totalAmountCod = shippingCharge + pickupChargeValue + codDeliveryAmount - salesDiscount.amount; // Shipping + pickup + delivery_base_amount (or 0 if weight >= 15kg)
       
       // Calculate Tax Invoice total (always, regardless of current mode)
       // Tax: Calculated Delivery (with boxes) + Tax on Delivery (NO pickup charge)
@@ -3045,7 +3055,7 @@ export default function InvoiceRequestsPage() {
         taxAmount = 0;
         displayShippingCharge = shippingCharge; // Show shipping
         // Use codDeliveryAmount for consistency with totalAmountCod calculation
-        displaySubtotal = shippingCharge + pickupChargeValue + codDeliveryAmount; // Subtotal = shipping + pickup + delivery_base_amount (or 0 if weight >= 15kg)
+        displaySubtotal = shippingCharge + pickupChargeValue + codDeliveryAmount - salesDiscount.amount; // Subtotal = shipping + pickup + delivery_base_amount (or 0 if weight >= 15kg)
         displayTaxAmount = 0;
         displayTotal = totalAmountCod; // Use pre-calculated COD total
       }
@@ -3053,7 +3063,12 @@ export default function InvoiceRequestsPage() {
       // UAE TO PH or other routes (existing logic)
       const quote = getInvoiceQuote(request);
       const quotedUaeToPh = Boolean(quote) && isUaeToPh;
-      const subtotal = shippingCharge + pickupChargeValue + deliveryCharge + insuranceCharge;
+      const quoteDiscount = computeSalesDiscount(
+        shippingCharge,
+        quote?.quotation_discount_type,
+        quote?.quotation_discount_value ?? quote?.quotation_discount_amount
+      );
+      const subtotal = shippingCharge + pickupChargeValue + deliveryCharge + insuranceCharge - quoteDiscount.amount;
       const fallbackTaxRate = isPhToUae ? 5 : 0;
       const effectiveTaxRate = typeof taxRateOverride === 'number' ? taxRateOverride : fallbackTaxRate;
 
@@ -3140,6 +3155,9 @@ export default function InvoiceRequestsPage() {
         pickupCharge: pickupChargeValue,
         deliveryCharge: deliveryCharge,
         insuranceCharge: insuranceCharge,
+        discountType: salesDiscount.type,
+        discountValue: salesDiscount.value,
+        discountAmount: salesDiscount.amount,
         subtotal: displaySubtotal,
         taxRate: taxRateForDelivery,
         taxAmount: displayTaxAmount,
@@ -3210,6 +3228,14 @@ export default function InvoiceRequestsPage() {
             total: deliveryCharge
           });
         }
+        if (salesDiscount.amount > 0) {
+          lineItems.push({
+            description: salesDiscountLabel(salesDiscount.type, salesDiscount.value, salesDiscount.amount),
+            quantity: 1,
+            unitPrice: -salesDiscount.amount,
+            total: -salesDiscount.amount
+          });
+        }
       }
     } else {
       // UAE TO PH or other routes (existing logic)
@@ -3263,6 +3289,14 @@ export default function InvoiceRequestsPage() {
           quantity: 1,
           unitPrice: insuranceCharge,
           total: insuranceCharge
+        });
+      }
+      if (salesDiscount.amount > 0) {
+        lineItems.push({
+          description: salesDiscountLabel(salesDiscount.type, salesDiscount.value, salesDiscount.amount),
+          quantity: 1,
+          unitPrice: -salesDiscount.amount,
+          total: -salesDiscount.amount
         });
       }
     }
@@ -3666,6 +3700,17 @@ export default function InvoiceRequestsPage() {
                     <span className="text-right">{money(quotedDelivery)}</span>
                     <span>Quoted insurance</span>
                     <span className="text-right">{money(quotedInsurance)}</span>
+                    {Number(quote.quotation_discount_amount) > 0 ? (
+                      <>
+                        <span>
+                          Sales discount
+                          {quote.quotation_discount_type === 'PERCENT' && Number(quote.quotation_discount_value) > 0
+                            ? ` (${Number(quote.quotation_discount_value)}%)`
+                            : ''}
+                        </span>
+                        <span className="text-right">-{money(quote.quotation_discount_amount)}</span>
+                      </>
+                    ) : null}
                     <span className="font-semibold">Quote total</span>
                     <span className="text-right font-semibold">{money(quote.quotation_total)}</span>
                   </div>

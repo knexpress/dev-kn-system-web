@@ -43,6 +43,7 @@ import {
   refundModeLabel,
 } from '@/components/invoice-notes/invoice-note-shared';
 import { InvoiceNoteDocumentDialog } from '@/components/invoice-notes/invoice-note-document';
+import { SupportingDocumentsPanel } from './supporting-documents-panel';
 
 type TypeFilter = 'ALL' | 'CREDIT' | 'DEBIT';
 type StatusFilter = 'ALL' | InvoiceNoteStatus;
@@ -396,6 +397,16 @@ export default function InvoiceNotesTab() {
                         <Button type="button" size="sm" variant="ghost" className="rounded-xl" onClick={() => setDetail(n)}>
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="rounded-xl"
+                          onClick={() => setDocumentFor(n)}
+                        >
+                          <Printer className="h-3.5 w-3.5" />
+                          PDF
+                        </Button>
                         {actionsFor(n, true)}
                       </div>
                     </TableCell>
@@ -521,6 +532,17 @@ export default function InvoiceNotesTab() {
                   )}
                 </ol>
               </ErpDialogSection>
+              <SupportingDocumentsPanel
+                kind="invoice-note"
+                id={detail._id}
+                documents={detail.supporting_documents}
+                onChange={(docs) => {
+                  setDetail((prev) => (prev ? { ...prev, supporting_documents: docs } : prev));
+                  setNotes((prev) =>
+                    prev.map((n) => (n._id === detail._id ? { ...n, supporting_documents: docs } : n))
+                  );
+                }}
+              />
             </div>
           )}
 

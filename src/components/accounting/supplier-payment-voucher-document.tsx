@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { fmtDate, money } from './erp-format';
 import { aedAmountInWords } from './petty-cash-voucher-document';
+import { SupportingDocumentsPanel } from './supporting-documents-panel';
 
 function cell() {
   return 'border border-gray-400 px-3 py-2 text-sm';
@@ -255,6 +256,16 @@ export function SupplierPaymentVoucherDialog({
             </div>
           </div>
         )}
+        {payment?._id ? (
+          <SupportingDocumentsPanel
+            kind="supplier-payment"
+            id={String(payment._id)}
+            documents={payment.supporting_documents}
+            onChange={(docs) => {
+              payment.supporting_documents = docs;
+            }}
+          />
+        ) : null}
         <DialogFooter className="gap-2 sm:justify-between">
           <Button type="button" variant="outline" className="rounded-xl" onClick={() => onOpenChange(false)}>
             Close

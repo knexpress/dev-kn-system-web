@@ -13,6 +13,7 @@ import { gatewayChargeLineFromInvoice } from '@/lib/invoice-gateway-charge';
 import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, FileText, Receipt, AlertCircle, Download, Printer, FileSpreadsheet, Database, FileDiff } from 'lucide-react';
+import { SupportingDocumentsPanel } from '@/components/accounting/supporting-documents-panel';
 import { InvoiceNoteDialog } from '@/components/invoice-notes/invoice-note-dialog';
 import { invoiceBalance } from '@/components/record-payment-dialog';
 import * as XLSX from 'xlsx';
@@ -786,8 +787,12 @@ export default function InvoicePage() {
         deliveryCharge = deliveryChargeFromInvoice;
     }
 
+    const discountAmount = parseDecimal((invoice as any).discount_amount || 0, 2);
+    const discountValue = parseDecimal((invoice as any).discount_value || 0, 2);
+    const discountType = String((invoice as any).discount_type || '');
+
     // Calculate subtotal first
-    const subtotal = parseDecimal(shippingCharge + pickupCharge + deliveryCharge + insuranceCharge, 2); // Shipping + Pickup + Delivery + Insurance
+    const subtotal = parseDecimal(shippingCharge + pickupCharge + deliveryCharge + insuranceCharge - discountAmount, 2); // Shipping + Pickup + Delivery + Insurance - sales discount
     
     // Check if shipment is flomic/personal for UAE_TO_PH services
     const isUaeToPh = isUaeToPhService(serviceCodeRaw);
@@ -1390,6 +1395,9 @@ export default function InvoicePage() {
             // For PH TO UAE COD: Always show pickup charge if it exists (even if 0, to ensure visibility)
             // For PH TO UAE Tax: Hide pickup charge (it should not appear in tax invoices)
             // For other routes: Show pickup charge if > 0
+            discountAmount: discountAmount > 0 ? discountAmount : undefined,
+            discountType: discountAmount > 0 ? discountType : undefined,
+            discountValue: discountAmount > 0 ? discountValue : undefined,
             pickupCharge: isPhToUae && invoiceType === 'tax' 
                 ? undefined 
                 : (isPhToUae && invoiceType === 'normal' 
@@ -1484,7 +1492,7 @@ export default function InvoicePage() {
                     const codDeliveryAmount = totalKg >= 15 
                         ? 0 
                         : (deliveryBaseAmount > 0 ? deliveryBaseAmount : deliveryCharge);
-                    const codSubtotal = localShipping + localPickup + codDeliveryAmount;
+                    const codSubtotal = localShipping + localPickup + codDeliveryAmount - discountAmount;
                     return parseDecimal(codSubtotal, 2);
                 }
                 // Other invoices: Use calculated subtotal
@@ -1511,7 +1519,7 @@ export default function InvoicePage() {
                         const codDeliveryAmount = totalKg >= 15 
                             ? 0 
                             : (deliveryBaseAmount > 0 ? deliveryBaseAmount : deliveryCharge);
-                        const calculatedCod = localShipping + localPickup + codDeliveryAmount;
+                        const calculatedCod = localShipping + localPickup + codDeliveryAmount - discountAmount;
                         secureLog.debug('✅ PH TO UAE COD: Calculating total from displayed charges:', {
                             totalKg,
                             isWeight15kgOrMore: totalKg >= 15,
@@ -2799,6 +2807,17 @@ export default function InvoicePage() {
                     );
                 })()}
             </div>
+
+            {invoice?._id ? (
+                <div className="no-print mb-4 rounded-2xl border border-slate-200/70 bg-white p-4">
+                    <SupportingDocumentsPanel
+                        kind="shipment-invoice"
+                        id={String(invoice._id)}
+                        documents={invoice.supporting_documents}
+                        onChange={(docs) => setInvoice((prev: any) => (prev ? { ...prev, supporting_documents: docs } : prev))}
+                    />
+                </div>
+            ) : null}
 
             <InvoiceNoteDialog
                 invoice={invoice}

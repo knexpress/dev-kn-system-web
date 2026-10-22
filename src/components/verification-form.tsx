@@ -1366,6 +1366,15 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                         {Number(quotationRequest?.quotation_total) > 0 && (
                           <span className="ml-2">· Quote total AED {Number(quotationRequest.quotation_total).toFixed(2)}</span>
                         )}
+                        {Number(quotationRequest?.quotation_discount_amount) > 0 && (
+                          <span className="ml-2">
+                            · Sales discount
+                            {quotationRequest?.quotation_discount_type === 'PERCENT' && Number(quotationRequest?.quotation_discount_value) > 0
+                              ? ` ${Number(quotationRequest.quotation_discount_value)}%`
+                              : ''}
+                            {' '}AED {Number(quotationRequest.quotation_discount_amount).toFixed(2)}
+                          </span>
+                        )}
                       </span>
                     </div>
                   )}
