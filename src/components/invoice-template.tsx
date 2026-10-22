@@ -4,6 +4,7 @@ import React from 'react';
 import { secureLog } from '@/lib/secure-logger';
 import type { InvoiceGatewayChargeLine } from '@/lib/invoice-gateway-charge';
 import QRCode from './qr-code';
+import { InvoicePrintExtras } from '@/components/invoice-print-extras';
 
 interface InvoiceData {
   invoiceNumber: string;
@@ -53,6 +54,10 @@ interface InvoiceData {
     items?: string;
   };
   termsAndConditions: string;
+  notes?: string;
+  disclaimer?: string;
+  includeNotes?: boolean;
+  includeDisclaimer?: boolean;
   qrCode?: {
     url: string;
     code: string;
@@ -348,6 +353,12 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
           <p className="text-sm">{data.termsAndConditions}</p>
         </div>
       </div>
+      <InvoicePrintExtras
+        notes={data.notes}
+        disclaimer={data.disclaimer}
+        includeNotes={data.includeNotes}
+        includeDisclaimer={data.includeDisclaimer}
+      />
     </div>
   );
 }

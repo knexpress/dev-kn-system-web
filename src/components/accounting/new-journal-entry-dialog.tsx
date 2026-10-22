@@ -85,6 +85,7 @@ export default function NewJournalEntryDialog({
 }: NewJournalEntryDialogProps) {
   const { toast } = useToast();
   const editing = Boolean(journal?._id);
+  const alreadyPosted = editing && String(journal?.status || '').toUpperCase() === 'POSTED';
   const [accounts, setAccounts] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [entryDate, setEntryDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -161,13 +162,14 @@ export default function NewJournalEntryDialog({
 
     setSaving(true);
     try {
+      const nextStatus = alreadyPosted ? 'POSTED' : status;
       const result = editing
         ? await apiClient.updateJournal(
             String(journal._id),
             {
               entry_date: entryDate,
               memo,
-              status: status === 'POSTED' || journal.status === 'POSTED' ? 'POSTED' : status,
+              status: nextStatus,
               lines: payloadLines,
             },
             documents
@@ -177,7 +179,7 @@ export default function NewJournalEntryDialog({
               entry_date: entryDate,
               memo,
               source: 'MANUAL',
-              status,
+              status: nextStatus,
               source_label: 'Manual journal entry',
               lines: payloadLines,
             },
@@ -205,13 +207,9 @@ export default function NewJournalEntryDialog({
         });
       } else {
         toast({
-          title: editing
-            ? 'Journal updated'
-            : status === 'POSTED'
-              ? 'Journal posted'
-              : 'Draft saved',
+          title: nextStatus === 'POSTED' ? (editing && alreadyPosted ? 'Journal updated' : 'Journal posted') : 'Draft saved',
           description: `Entry ${(result.data as any)?.entry_no || journal?.entry_no || ''} ${
-            editing ? 'saved' : 'created'
+            nextStatus === 'POSTED' && !(editing && alreadyPosted) ? 'posted' : 'saved'
           } successfully.`,
         });
       }
@@ -240,8 +238,10 @@ export default function NewJournalEntryDialog({
               {editing
                 ? journal?.source === 'INVENTORY'
                   ? 'Update this stock-movement journal. Amount changes also update the linked movement cost.'
-                  : 'Update date, memo, accounts and amounts. Entry must stay balanced.'
-                : 'Balanced debit/credit lines — posted entries update ledgers and reports.'}
+                  : alreadyPosted
+                    ? 'Update date, memo, accounts and amounts. Saving keeps this entry posted.'
+                    : 'Save keeps this as a draft. Use Post Entry to put it on the ledgers.'
+                : 'Save as a draft, or post the balanced entry to update ledgers and reports.'}
             </DialogDescription>
           </DialogHeader>
         </div>
@@ -445,21 +445,21 @@ export default function NewJournalEntryDialog({
           <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
-          {!editing && (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => handleSave('DRAFT')}
-              disabled={saving}
-            >
-              Save Draft
+          <Button
+            type="button"
+            variant={alreadyPosted ? 'default' : 'secondary'}
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => handleSave(alreadyPosted ? 'POSTED' : 'DRAFT')}
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : editing ? 'Save changes' : 'Save Draft'}
+          </Button>
+          {!alreadyPosted && (
+            <Button type="button" size="sm" className="h-8 text-xs" onClick={() => handleSave('POSTED')} disabled={saving}>
+              {saving ? 'Posting...' : 'Post Entry'}
             </Button>
           )}
-          <Button type="button" size="sm" className="h-8 text-xs" onClick={() => handleSave('POSTED')} disabled={saving}>
-            {saving ? 'Saving...' : editing ? 'Save changes' : 'Post Entry'}
-          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

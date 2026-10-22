@@ -173,6 +173,11 @@ export default function GeneralLedgerTab({
     }
   };
 
+  const afterJournalPosted = async (posted: any) => {
+    setSelectedJournal(posted);
+    await handleJournalCreated();
+  };
+
   useEffect(() => {
     if (mode !== 'journals' || loadingJournals) return;
     const key = `${openId}|${openEntry}|${openInvoice}`;
@@ -388,6 +393,7 @@ export default function GeneralLedgerTab({
           onOpenChange={setDetailOpen}
           journal={selectedJournal}
           onEdit={startEditJournal}
+          onPosted={afterJournalPosted}
         />
         <NewJournalEntryDialog
           open={editOpen}
@@ -538,6 +544,7 @@ export default function GeneralLedgerTab({
         onOpenChange={setDetailOpen}
         journal={selectedJournal}
         onEdit={startEditJournal}
+        onPosted={afterJournalPosted}
       />
       <NewJournalEntryDialog
         open={editOpen}

@@ -60,6 +60,8 @@ import {
   buildReceiptFromInvoicePayment,
 } from '@/components/accounting/payment-receipt-voucher-document';
 import { SalesInvoiceDocumentDialog } from '@/components/accounting/sales-invoice-document';
+import { InvoicePrintOptionsPanel } from '@/components/invoice-print-options-panel';
+import { invoicePrintOptionsFrom, type InvoicePrintOptions } from '@/lib/invoice-print-options';
 import { cn } from '@/lib/utils';
 
 type TabId =
@@ -157,6 +159,9 @@ export default function SalesTab() {
     customer_name: '',
     notes: '',
   });
+  const [printOptions, setPrintOptions] = useState<Required<InvoicePrintOptions>>(() =>
+    invoicePrintOptionsFrom(null)
+  );
   const [lines, setLines] = useState<LineDraft[]>([emptyLine()]);
 
   const [customerForm, setCustomerForm] = useState({
@@ -317,7 +322,10 @@ export default function SalesTab() {
       due_date: form.due_date || undefined,
       customer_id: form.customer_id || undefined,
       customer_name: form.customer_name.trim() || undefined,
-      notes: form.notes.trim() || undefined,
+      notes: printOptions.include_notes ? printOptions.notes.trim() : form.notes.trim() || undefined,
+      disclaimer: printOptions.disclaimer.trim() || undefined,
+      include_notes: printOptions.include_notes,
+      include_disclaimer: printOptions.include_disclaimer,
       submit,
       lines: built,
     });
@@ -343,6 +351,7 @@ export default function SalesTab() {
       customer_name: '',
       notes: '',
     });
+    setPrintOptions(invoicePrintOptionsFrom(null));
     setLines([emptyLine()]);
     setTab(submit ? 'approvals' : 'invoices');
     await load();
@@ -774,13 +783,14 @@ export default function SalesTab() {
                   />
                 </div>
               ) : null}
-              <div className="space-y-2 sm:col-span-2">
-                <Label>Notes</Label>
-                <Textarea
-                  value={form.notes}
-                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                  className="rounded-xl"
-                  rows={2}
+              <div className="space-y-2 sm:col-span-2 rounded-2xl border border-slate-100 bg-slate-50/60 p-3">
+                <InvoicePrintOptionsPanel
+                  value={{ ...printOptions, notes: printOptions.notes || form.notes }}
+                  onChange={(next) => {
+                    setPrintOptions(next);
+                    setForm((f) => ({ ...f, notes: next.notes }));
+                  }}
+                  compact
                 />
               </div>
             </div>
@@ -1416,6 +1426,10 @@ export default function SalesTab() {
           onDocumentsChange={(id, docs) => {
             setInvoices((prev) => prev.map((inv) => (inv._id === id ? { ...inv, supporting_documents: docs } : inv)));
             setPdfInvoice((prev: any) => (prev && prev._id === id ? { ...prev, supporting_documents: docs } : prev));
+          }}
+          onInvoiceChange={(id, patch) => {
+            setInvoices((prev) => prev.map((inv) => (inv._id === id ? { ...inv, ...patch } : inv)));
+            setPdfInvoice((prev: any) => (prev && prev._id === id ? { ...prev, ...patch } : prev));
           }}
         />
       </ErpModuleBody>

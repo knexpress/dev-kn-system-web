@@ -253,6 +253,7 @@ export default function InventoryItemDetailDialog({
         onOpenChange={setJournalOpen}
         journal={selectedJournal}
         onEdit={startEditJournal}
+        onPosted={(posted) => setSelectedJournal(posted)}
       />
       <NewJournalEntryDialog
         open={editJournalOpen}
