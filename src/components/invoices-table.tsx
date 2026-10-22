@@ -1,0 +1,1018 @@
+'use client';
+
+import Link from 'next/link';
+import { useState } from 'react';
+import { Department } from '@/lib/types';
+import { Button } from '@/components/ui/button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
+import { Eye, TrendingUp, FileSpreadsheet, X, Wallet, FileDiff } from 'lucide-react';
+import { invoiceBalance } from '@/components/record-payment-dialog';
+import * as XLSX from 'xlsx';
+import { apiClient } from '@/lib/api-client';
+import { secureLog } from '@/lib/secure-logger';
+import {
+  ErpGrid,
+  erpOutlineControlClass,
+  erpTableClasses,
+} from '@/components/dashboard/maglo-shell';
+import { cn } from '@/lib/utils';
+
+interface InvoicesTableProps {
+    invoices: any[];
+    department: Department | null;
+    onRemit?: (invoiceId: string) => void;
+    onCancel?: (invoiceId: string) => void;
+    onRecordPayment?: (invoice: any) => void;
+    onRaiseNote?: (invoice: any) => void;
+}
+
+export default function InvoicesTable({ invoices, department, onRemit, onCancel, onRecordPayment, onRaiseNote }: InvoicesTableProps) {
+    const { toast } = useToast();
+    const [isExporting, setIsExporting] = useState(false);
+    const t = erpTableClasses();
+
+    // Ensure invoices is always an array
+    const safeInvoices = Array.isArray(invoices) ? invoices : [];
+
+    // Download invoices as Excel
+    // IMPORTANT: Enrich export data with invoicerequests collection (invoiceRequests) for:
+    // - sender/receiver deliveryOption
+    // - agent name
+    const getExportFilename = () => {
+        const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
+        return `Invoices-${timestamp}.xlsx`;
+    };
+
+    const handleDownloadExcel = async (invoiceList: any[], preferredFilename?: string, fileHandle?: any) => {
+        if (!invoiceList || invoiceList.length === 0) {
+            toast({
+                variant: 'destructive',
+                title: 'Error',
+                description: 'No invoices available to export.',
+            });
+            return;
+        }
+
+        try {
+            // 1) Collect invoiceRequestIds for batch enrichment
+            const extractObjectIdFromNotes = (notes: any): string | null => {
+                const txt = (notes || '').toString();
+                const m = txt.match(/\b[a-fA-F0-9]{24}\b/);
+                return m ? m[0] : null;
+            };
+
+            const extractRequestId = (inv: any): string | null => {
+                const raw =
+                    inv?.request_id?._id ||
+                    (typeof inv?.request_id === 'string' ? inv.request_id : null) ||
+                    inv?.invoice_request_id ||
+                    inv?.invoiceRequestId ||
+                    inv?.requestId ||
+                    extractObjectIdFromNotes(inv?.notes);
+                return raw != null && raw !== '' ? String(raw) : null;
+            };
+
+            const requestIds = Array.from(
+                new Set(
+                    invoiceList
+                        .map((inv: any) => extractRequestId(inv))
+                        .filter((v): v is string => Boolean(v))
+                )
+            );
+
+            // Debug: show extraction results for troubleshooting local "still N/A"
+            if (process.env.NODE_ENV === 'development') {
+                const sample = invoiceList?.[0];
+                secureLog.debug('Excel Export - RequestId Extraction', {
+                    invoicesCount: invoiceList?.length || 0,
+                    requestIdsCount: requestIds.length,
+                    firstInvoice: sample ? {
+                        invoice_id: sample.invoice_id,
+                        request_id: sample.request_id,
+                        invoice_request_id: sample.invoice_request_id,
+                        notes: sample.notes,
+                        idFromNotes: extractObjectIdFromNotes(sample.notes),
+                    } : null,
+                    requestIds: requestIds.slice(0, 10),
+                    note: 'If requestIdsCount is 0, export cannot enrich delivery options/agent from invoiceRequests.'
+                });
+            }
+
+            if (requestIds.length === 0) {
+                toast({
+                    variant: 'destructive',
+                    title: 'Excel Export: Missing request IDs',
+                    description: 'No invoiceRequest IDs were found (request_id / invoice_request_id / notes). Cannot enrich Delivery Options / Agent Name.',
+                });
+            }
+
+            const invoiceRequestById = new Map<string, any>();
+
+            // Seed from populated request_id on each invoice (production list API often embeds this; no extra fetch).
+            invoiceList.forEach((inv: any) => {
+                const emb = inv?.request_id;
+                if (emb && typeof emb === 'object' && !Array.isArray(emb)) {
+                    const hasDetail =
+                        emb.verification ||
+                        emb.booking_snapshot ||
+                        emb.booking_data ||
+                        emb.sender_delivery_option != null ||
+                        emb.receiver_delivery_option != null;
+                    const k =
+                        emb._id != null
+                            ? String(emb._id)
+                            : extractRequestId(inv);
+                    if (hasDetail && k) {
+                        invoiceRequestById.set(k, emb);
+                    }
+                }
+            });
+
+            if (requestIds.length > 0) {
+                const idsToFetch = requestIds.filter((id) => !invoiceRequestById.has(id));
+                if (idsToFetch.length > 0) {
+                    const progressToast = toast({
+                        title: 'Preparing Excel…',
+                        description: `Loading invoice request details 0 / ${idsToFetch.length}…`,
+                    });
+
+                    const mergeBulk = (bulk: Record<string, any>, ids: string[]) => {
+                        ids.forEach((id) => {
+                            const row = bulk[id];
+                            if (row?._id) invoiceRequestById.set(String(row._id), row);
+                            else if (row && typeof row === 'object') invoiceRequestById.set(id, row);
+                        });
+                    };
+
+                    try {
+                        const bulk = await apiClient.bulkInvoiceRequestDetails(idsToFetch, {
+                            chunkSize: 40,
+                            onProgress: (loaded, total) => {
+                                progressToast.update({
+                                    id: progressToast.id,
+                                    open: true,
+                                    title: 'Preparing Excel…',
+                                    description: `Loading invoice request details ${loaded} / ${total}…`,
+                                });
+                            },
+                        });
+                        mergeBulk(bulk, idsToFetch);
+
+                        // Second pass: any IDs still missing (chunked same-origin bulk proxy).
+                        const missing = idsToFetch.filter((id) => !invoiceRequestById.has(id));
+                        if (missing.length > 0) {
+                            const miniBulk = await apiClient.bulkInvoiceRequestDetails(missing, {
+                                chunkSize: 40,
+                                onProgress: (loaded, total) => {
+                                    progressToast.update({
+                                        id: progressToast.id,
+                                        open: true,
+                                        title: 'Preparing Excel…',
+                                        description: `Retrying missing details ${loaded} / ${total}…`,
+                                    });
+                                },
+                            });
+                            mergeBulk(miniBulk, missing);
+                        }
+                    } finally {
+                        progressToast.dismiss();
+                    }
+                }
+
+                if (process.env.NODE_ENV === 'development') {
+                    secureLog.debug('Excel Export - invoiceRequests fetched', {
+                        requested: requestIds.length,
+                        seededFromInvoice: invoiceList.filter(
+                            (inv: any) =>
+                                inv?.request_id &&
+                                typeof inv.request_id === 'object' &&
+                                inv.request_id._id
+                        ).length,
+                        loaded: invoiceRequestById.size,
+                        note: 'Seeded from embedded request_id; bulk proxy fills gaps.',
+                    });
+                }
+            }
+
+            const parseAmount = (value: any): number => {
+                if (value === undefined || value === null || value === '') return 0;
+                if (typeof value === 'object' && value && '$numberDecimal' in value) {
+                    return parseFloat(String((value as { $numberDecimal: string }).$numberDecimal)) || 0;
+                }
+                const n = typeof value === 'number' ? value : parseFloat(String(value));
+                return Number.isFinite(n) ? n : 0;
+            };
+
+            const safeFixed = (value: any, digits: number): string => {
+                const n = parseAmount(value);
+                return Number.isFinite(n) ? n.toFixed(digits) : (0).toFixed(digits);
+            };
+
+            /** Parse a single weight-like scalar; null = missing (not zero). */
+            const parseWeightScalar = (value: any): number | null => {
+                if (value === undefined || value === null || value === '') return null;
+                if (typeof value === 'object' && value) {
+                    if ('$numberDecimal' in value) {
+                        const n = parseFloat(String((value as { $numberDecimal: string }).$numberDecimal));
+                        return Number.isFinite(n) ? n : null;
+                    }
+                    if ('$numberLong' in value) {
+                        const n = Number((value as { $numberLong: string }).$numberLong);
+                        return Number.isFinite(n) ? n : null;
+                    }
+                    if ('$numberInt' in value) {
+                        const n = Number((value as { $numberInt: number }).$numberInt);
+                        return Number.isFinite(n) ? n : null;
+                    }
+                    if ('$numberDouble' in value) {
+                        const raw = (value as { $numberDouble: string | number }).$numberDouble;
+                        const n = parseFloat(String(raw).replace(',', '.'));
+                        return Number.isFinite(n) ? n : null;
+                    }
+                }
+                const s = typeof value === 'number' ? String(value) : String(value).trim();
+                const n = parseFloat(s.replace(',', '.'));
+                return Number.isFinite(n) ? n : null;
+            };
+
+            const firstWeightKg = (...vals: any[]): number | null => {
+                for (const v of vals) {
+                    const n = parseWeightScalar(v);
+                    if (n !== null) return n;
+                }
+                return null;
+            };
+
+            const parseBoxCount = (value: any): number | null => {
+                if (value === undefined || value === null || value === '') return null;
+                let raw: any = value;
+                if (typeof raw === 'object' && raw && '$numberDecimal' in raw) {
+                    raw = (raw as { $numberDecimal: string }).$numberDecimal;
+                }
+                const x = parseInt(String(raw).trim(), 10);
+                return Number.isFinite(x) && x > 0 ? x : null;
+            };
+
+            const firstBoxCount = (...vals: any[]): number | null => {
+                for (const v of vals) {
+                    const x = parseBoxCount(v);
+                    if (x !== null) return x;
+                }
+                return null;
+            };
+
+            const boxesFromBoxesArray = (boxes: any): number | null => {
+                if (!Array.isArray(boxes) || boxes.length === 0) return null;
+                let sum = 0;
+                for (const box of boxes) {
+                    const qty = parseInt(String(box?.quantity ?? box?.qty ?? 1), 10);
+                    sum += Number.isFinite(qty) && qty > 0 ? qty : 1;
+                }
+                return sum > 0 ? sum : null;
+            };
+
+            const boxesFromLineItems = (items: any): number | null => {
+                if (!Array.isArray(items) || items.length === 0) return null;
+                let sum = 0;
+                for (const it of items) {
+                    const q = parseInt(String(it?.quantity ?? it?.qty ?? it?.number_of_boxes ?? 0), 10);
+                    if (Number.isFinite(q) && q > 0) sum += q;
+                }
+                return sum > 0 ? sum : null;
+            };
+
+            // After SheetJS builds cells, force text format for "N/A" so Excel does not treat it like the #N/A error.
+            const markNaCellsAsText = (sheet: XLSX.WorkSheet) => {
+                const ref = sheet['!ref'];
+                if (!ref) return;
+                const range = XLSX.utils.decode_range(ref);
+                for (let R = range.s.r; R <= range.e.r; R += 1) {
+                    for (let C = range.s.c; C <= range.e.c; C += 1) {
+                        const addr = XLSX.utils.encode_cell({ r: R, c: C });
+                        const cell = sheet[addr];
+                        if (!cell || cell.v === undefined || cell.v === null) continue;
+                        const v = cell.v;
+                        if (v === 'N/A' || v === 'NaN' || (typeof v === 'string' && v.trim() === 'NaN')) {
+                            cell.t = 's';
+                            cell.z = '@';
+                        }
+                    }
+                }
+            };
+
+            // Prepare Excel data
+            const excelData: any[] = [];
+
+            // Header row
+            excelData.push([
+                'Invoice ID',
+                'AWB Number',
+                'Batch Number',
+                'Client',
+                'Receiver Name',
+                'Receiver Address',
+                'Receiver Phone',
+                'Service Code',
+                'Weight (KG)',
+                'Number of Boxes',
+                'Volume (CBM)',
+                'Shipping Charge (AED)',
+                'Pickup Charge (AED)',
+                'Delivery Charge (AED)',
+                'Insurance Charge (AED)',
+                'Subtotal (AED)',
+                'Tax Rate (%)',
+                'Tax Amount (AED)',
+                'Total Amount (AED)',
+                'Total Amount COD (AED)',
+                'Total Amount Tax Invoice (AED)',
+                'Sender Delivery Option',
+                'Receiver Delivery Option',
+                'Agent Name',
+                'Sender Address',
+                'ITEMS',
+                'Rate',
+                'Issue Date',
+                'Status',
+                'Notes'
+            ]);
+
+            // Bulk export refetch can omit fields that the paginated table response includes (e.g. weight_kg).
+            const uiByMongoId = new Map<string, any>();
+            const uiByBusinessKey = new Map<string, any>();
+            for (const u of safeInvoices) {
+                if (u?._id != null) uiByMongoId.set(String(u._id), u);
+                const bk = `${String(u?.invoice_id ?? '').trim()}|${String(u?.awb_number ?? '').trim()}`;
+                if (bk !== '|') uiByBusinessKey.set(bk, u);
+            }
+
+            const patchInvoiceFromTableIfNeeded = (inv: any) => {
+                const ui =
+                    (inv?._id != null && uiByMongoId.get(String(inv._id))) ||
+                    uiByBusinessKey.get(
+                        `${String(inv?.invoice_id ?? '').trim()}|${String(inv?.awb_number ?? '').trim()}`
+                    );
+                if (!ui) return inv;
+                const next = { ...inv };
+                const fill = (k: 'weight_kg' | 'number_of_boxes' | 'volume_cbm') => {
+                    const c = next[k];
+                    const u = ui[k];
+                    if (u === undefined || u === null || u === '') return;
+                    if (c === undefined || c === null || c === '') {
+                        next[k] = u;
+                        return;
+                    }
+                    if (k === 'weight_kg' && parseWeightScalar(c) === null && parseWeightScalar(u) !== null) {
+                        next[k] = u;
+                    }
+                };
+                fill('weight_kg');
+                fill('number_of_boxes');
+                fill('volume_cbm');
+                return next;
+            };
+
+            // Data rows
+            invoiceList.forEach((rawInvoice, rowIndex) => {
+                const invoice = patchInvoiceFromTableIfNeeded(rawInvoice);
+                // Determine service type
+                const serviceCode = (invoice.service_code || '').toString().toUpperCase().replace(/[\s-]+/g, '_');
+                const isPhToUae = serviceCode === 'PH_TO_UAE' || serviceCode.startsWith('PH_TO_UAE_');
+                const isTaxInvoice = invoice.tax_rate === 5;
+
+                // Calculate amounts
+                let displayAmount = 0;
+                const totalAmountCod = (invoice as any).total_amount_cod || (invoice as any).totalAmountCod;
+                const totalAmountTaxInvoice = (invoice as any).total_amount_tax_invoice || (invoice as any).totalAmountTaxInvoice;
+
+                if (isPhToUae) {
+                    if (isTaxInvoice && totalAmountTaxInvoice) {
+                        displayAmount = parseAmount(totalAmountTaxInvoice);
+                    } else if (!isTaxInvoice && totalAmountCod) {
+                        displayAmount = parseAmount(totalAmountCod);
+                    } else {
+                        displayAmount = parseAmount(invoice.total_amount);
+                    }
+                } else {
+                    displayAmount = parseAmount(invoice.total_amount);
+                }
+
+                const shippingCharge = parseAmount(invoice.amount);
+                const pickupCharge = parseAmount(invoice.pickup_charge);
+                const deliveryCharge = parseAmount(invoice.delivery_charge);
+                const insuranceCharge =
+                    parseAmount(invoice.insurance_charge) ||
+                    parseAmount(
+                        invoice.line_items?.find((item: any) =>
+                            item.description?.toLowerCase().includes('insurance')
+                        )?.total
+                    );
+                const subtotal = parseAmount(invoice.subtotal);
+                const taxRate = parseAmount(invoice.tax_rate);
+                const taxAmount = parseAmount(invoice.tax_amount);
+
+                // Format date
+                const issueDate = invoice.issue_date 
+                    ? new Date(invoice.issue_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                    : 'N/A';
+
+                // Enrich: fetched map + embedded populated request_id (deployed APIs often omit separate details call).
+                const invoiceRequestIdStr = extractRequestId(invoice);
+                const embeddedReq =
+                    invoice?.request_id && typeof invoice.request_id === 'object' && !Array.isArray(invoice.request_id)
+                        ? invoice.request_id
+                        : null;
+                const fromMap = invoiceRequestIdStr ? invoiceRequestById.get(invoiceRequestIdStr) : undefined;
+                const invoiceReq = fromMap || embeddedReq || null;
+                const booking =
+                    invoiceReq?.booking_snapshot ||
+                    invoiceReq?.booking_data ||
+                    embeddedReq?.booking_snapshot ||
+                    embeddedReq?.booking_data ||
+                    {};
+                const verification =
+                    invoiceReq?.verification ||
+                    embeddedReq?.verification ||
+                    (typeof invoice.request_id === 'object' && invoice.request_id?.verification) ||
+                    {};
+                const invVerification = invoice.verification;
+                const reqShipment =
+                    (typeof invoice.request_id === 'object' && invoice.request_id?.shipment) ||
+                    invoiceReq?.shipment ||
+                    embeddedReq?.shipment ||
+                    {};
+                const senderDeliveryOption =
+                    booking?.sender?.deliveryOption ||
+                    booking?.sender?.delivery_option ||
+                    invoiceReq?.sender_delivery_option ||
+                    invoice?.sender_delivery_option ||
+                    embeddedReq?.sender_delivery_option ||
+                    'N/A';
+                const receiverDeliveryOption =
+                    booking?.receiver?.deliveryOption ||
+                    booking?.receiver?.delivery_option ||
+                    invoiceReq?.receiver_delivery_option ||
+                    invoice?.receiver_delivery_option ||
+                    embeddedReq?.receiver_delivery_option ||
+                    'N/A';
+                const agentName =
+                    verification?.agents_name ||
+                    booking?.sender?.agentName ||
+                    booking?.sender?.agent_name ||
+                    invoice?.verification?.agents_name ||
+                    'N/A';
+
+                // Extract Sender Address
+                const senderAddress =
+                    booking?.sender?.completeAddress ||
+                    booking?.sender?.complete_address ||
+                    embeddedReq?.booking_snapshot?.sender?.completeAddress ||
+                    'N/A';
+                
+                // Extract and format ITEMS from booking_data.items array
+                const deriveListedCommoditiesFromItems = (srcItems: any[]): string | null => {
+                    if (!Array.isArray(srcItems) || srcItems.length === 0) return null;
+                    const names = srcItems
+                        .map((it: any) => (it?.name || it?.item || it?.description || it?.item_name || it?.commodity || '').toString().trim())
+                        .filter(Boolean);
+                    if (names.length === 0) return null;
+                    // De-dupe and keep order
+                    const seen = new Set<string>();
+                    const unique = names.filter(n => (seen.has(n) ? false : (seen.add(n), true)));
+                    return unique.join(', ');
+                };
+                const itemsArray =
+                    booking?.items ||
+                    embeddedReq?.booking_snapshot?.items ||
+                    embeddedReq?.booking_data?.items ||
+                    [];
+                const itemsFormatted = deriveListedCommoditiesFromItems(itemsArray) || 'N/A';
+                
+                // Extract Rate from verification.calculated_rate
+                // Match previous `calculated_rate || 'N/A'` (0 counts as missing) but never emit NaN.
+                const rawRate = verification?.calculated_rate;
+                const rateNum = parseAmount(rawRate);
+                const rate =
+                    rawRate !== undefined &&
+                    rawRate !== null &&
+                    rawRate !== '' &&
+                    Number.isFinite(rateNum) &&
+                    rateNum !== 0
+                        ? rateNum
+                        : 'N/A';
+                
+                // Debug: Log the extracted values
+                if (rowIndex === 0) {
+                    secureLog.debug('Excel Export - First Invoice Sample', {
+                        invoice_id: invoice.invoice_id,
+                        hasRequestId: !!invoiceRequestIdStr,
+                        senderDeliveryOption,
+                        receiverDeliveryOption,
+                        agentName,
+                        senderAddress,
+                        itemsFormatted,
+                        rate,
+                        invoiceRequestId: invoiceRequestIdStr,
+                        invoiceRequestLoaded: !!invoiceReq,
+                        usedEmbeddedRequestId: !!embeddedReq && !fromMap,
+                    });
+                }
+
+                // Match on-screen table + invoice detail page: invoice.weight_kg / shipment / booking fallbacks.
+                const rid =
+                    typeof invoice.request_id === 'object' && invoice.request_id !== null
+                        ? invoice.request_id
+                        : null;
+                // Invoice collection fields first (invoices.weight_kg is source of truth on the row).
+                const inv = invoice as Record<string, unknown>;
+                const invShipment =
+                    typeof inv.shipment === 'object' && inv.shipment !== null
+                        ? (inv.shipment as Record<string, unknown>)
+                        : null;
+                const exportWeightKg = firstWeightKg(
+                    inv.weight_kg,
+                    inv.weightKg,
+                    inv.weight,
+                    invShipment?.weight,
+                    invShipment?.weight_kg,
+                    invShipment?.weightKg,
+                    verification?.total_kg,
+                    verification?.chargeable_weight,
+                    verification?.actual_weight,
+                    verification?.weight,
+                    invVerification?.total_kg,
+                    invVerification?.chargeable_weight,
+                    invVerification?.actual_weight,
+                    invVerification?.weight,
+                    rid?.verification?.total_kg,
+                    rid?.verification?.chargeable_weight,
+                    rid?.verification?.actual_weight,
+                    rid?.verification?.weight,
+                    reqShipment?.weight,
+                    rid?.shipment?.weight,
+                    booking?.shipment?.weight,
+                    booking?.weight,
+                    booking?.total_weight
+                );
+                const weightCell = exportWeightKg !== null ? exportWeightKg.toFixed(2) : 'N/A';
+
+                let exportBoxes = firstBoxCount(
+                    invoice.number_of_boxes,
+                    reqShipment?.number_of_boxes,
+                    rid?.shipment?.number_of_boxes,
+                    verification?.number_of_boxes,
+                    invVerification?.number_of_boxes,
+                    rid?.verification?.number_of_boxes,
+                    rid?.number_of_boxes,
+                    invoiceReq?.number_of_boxes,
+                    invoiceReq?.shipment?.number_of_boxes,
+                    booking?.number_of_boxes
+                );
+                if (exportBoxes === null) exportBoxes = boxesFromBoxesArray(verification?.boxes);
+                if (exportBoxes === null) exportBoxes = boxesFromBoxesArray(invVerification?.boxes);
+                if (exportBoxes === null) exportBoxes = boxesFromBoxesArray(rid?.verification?.boxes);
+                if (exportBoxes === null) exportBoxes = boxesFromLineItems(booking?.items);
+                if (exportBoxes === null) exportBoxes = boxesFromLineItems(embeddedReq?.booking_snapshot?.items);
+                if (exportBoxes === null) exportBoxes = boxesFromLineItems(embeddedReq?.booking_data?.items);
+                const boxesCell = exportBoxes !== null ? exportBoxes : 'N/A';
+
+                excelData.push([
+                    invoice.invoice_id || 'N/A',
+                    invoice.awb_number || 'N/A',
+                    invoice.batch_number || 'N/A',
+                    invoice.client_id?.company_name || 'Unknown',
+                    invoice.receiver_name || 'N/A',
+                    invoice.receiver_address || 'N/A',
+                    invoice.receiver_phone || 'N/A',
+                    invoice.service_code || 'N/A',
+                    weightCell,
+                    boxesCell,
+                    invoice.volume_cbm || rid?.shipment?.volume || reqShipment?.volume || 'N/A',
+                    safeFixed(shippingCharge, 2),
+                    safeFixed(pickupCharge, 2),
+                    safeFixed(deliveryCharge, 2),
+                    safeFixed(insuranceCharge, 2),
+                    safeFixed(subtotal, 2),
+                    safeFixed(taxRate, 2),
+                    safeFixed(taxAmount, 2),
+                    safeFixed(displayAmount, 2),
+                    totalAmountCod ? safeFixed(totalAmountCod, 2) : '',
+                    totalAmountTaxInvoice ? safeFixed(totalAmountTaxInvoice, 2) : '',
+                    senderDeliveryOption,
+                    receiverDeliveryOption,
+                    agentName,
+                    senderAddress,
+                    itemsFormatted,
+                    typeof rate === 'number' ? safeFixed(rate, 2) : rate,
+                    issueDate,
+                    invoice.status || 'N/A',
+                    invoice.notes || ''
+                ]);
+            });
+
+            // Create workbook and worksheet
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(excelData);
+            markNaCellsAsText(ws);
+
+            // Set column widths
+            const colWidths = [
+                { wch: 15 }, // Invoice ID
+                { wch: 15 }, // AWB
+                { wch: 12 }, // Batch
+                { wch: 20 }, // Client
+                { wch: 20 }, // Receiver Name
+                { wch: 30 }, // Receiver Address
+                { wch: 15 }, // Receiver Phone
+                { wch: 15 }, // Service Code
+                { wch: 12 }, // Weight
+                { wch: 12 }, // Boxes
+                { wch: 12 }, // Volume
+                { wch: 18 }, // Shipping Charge
+                { wch: 18 }, // Pickup Charge
+                { wch: 18 }, // Delivery Charge
+                { wch: 18 }, // Insurance Charge
+                { wch: 15 }, // Subtotal
+                { wch: 12 }, // Tax Rate
+                { wch: 15 }, // Tax Amount
+                { wch: 18 }, // Total Amount
+                { wch: 20 }, // Total Amount COD
+                { wch: 25 }, // Total Amount Tax Invoice
+                { wch: 22 }, // Sender Delivery Option
+                { wch: 22 }, // Receiver Delivery Option
+                { wch: 15 }, // Agent Name
+                { wch: 30 }, // Sender Address
+                { wch: 40 }, // ITEMS
+                { wch: 12 }, // Rate
+                { wch: 15 }, // Issue Date
+                { wch: 15 }, // Status
+                { wch: 30 }  // Notes
+            ];
+            ws['!cols'] = colWidths;
+
+            // Add worksheet to workbook
+            XLSX.utils.book_append_sheet(wb, ws, 'Invoices');
+
+            const filename = preferredFilename || getExportFilename();
+
+            if (fileHandle) {
+                try {
+                    const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(buffer);
+                    await writable.close();
+                } catch (error: any) {
+                    if (error?.name !== 'AbortError') {
+                        secureLog.warn('File handle write failed, falling back to download', error);
+                    }
+                    // Fallback for browsers/contexts that block File System Access API
+                    XLSX.writeFile(wb, filename);
+                }
+            } else {
+                XLSX.writeFile(wb, filename);
+            }
+
+            toast({
+                title: 'Excel Export Successful',
+                description: `${invoiceList.length} invoice(s) exported to ${filename}`,
+            });
+        } catch (error) {
+            secureLog.error('Error generating Excel', error);
+            toast({
+                variant: 'destructive',
+                title: 'Export Failed',
+                description: 'Unable to generate Excel file. Please try again.',
+            });
+        }
+    };
+
+    const handleDownloadAllInvoices = async () => {
+        if (isExporting) {
+            return;
+        }
+        setIsExporting(true);
+
+        const filename = getExportFilename();
+        let fileHandle: any = null;
+        if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
+            try {
+                fileHandle = await (window as any).showSaveFilePicker({
+                    suggestedName: filename,
+                    types: [
+                        {
+                            description: 'Excel Workbook',
+                            accept: {
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx']
+                            }
+                        }
+                    ]
+                });
+            } catch (error: any) {
+                setIsExporting(false);
+                if (error?.name !== 'AbortError') {
+                    secureLog.error('Error selecting export file', error);
+                    toast({
+                        variant: 'destructive',
+                        title: 'Export Failed',
+                        description: 'Unable to select a file for export.',
+                    });
+                }
+                return;
+            }
+        }
+
+        try {
+            toast({
+                title: 'Preparing Excel…',
+                description: 'Fetching all invoices from the database.',
+            });
+
+            const result = await apiClient.getAllInvoicesUnified(undefined, false);
+            if (!result.success || !result.data || !Array.isArray(result.data)) {
+                toast({
+                    variant: 'destructive',
+                    title: 'Export Failed',
+                    description: 'Unable to load invoices for export.',
+                });
+                setIsExporting(false);
+                return;
+            }
+
+            await handleDownloadExcel(result.data, filename, fileHandle);
+            setIsExporting(false);
+        } catch (error) {
+            secureLog.error('Error fetching invoices for export', error);
+            toast({
+                variant: 'destructive',
+                title: 'Export Failed',
+                description: 'Unable to load invoices for export.',
+            });
+            setIsExporting(false);
+        }
+    };
+
+    return (
+        <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex justify-end px-5 pb-2 sm:px-6">
+                <Button
+                    variant="outline"
+                    onClick={handleDownloadAllInvoices}
+                    className={erpOutlineControlClass()}
+                    disabled={isExporting}
+                >
+                    <FileSpreadsheet className="mr-2 h-4 w-4" />
+                    {isExporting ? 'Preparing…' : 'Download Excel'}
+                </Button>
+            </div>
+            <ErpGrid maxHeight="min(58vh, 620px)" className="pt-0">
+                        <Table className={t.table} style={{ minWidth: 'max-content', width: '100%' }}>
+                        <TableHeader>
+                        <TableRow>
+                            <TableHead className={t.head}>Invoice ID</TableHead>
+                            <TableHead className={t.head}>AWB</TableHead>
+                            <TableHead className={t.head}>Batch No</TableHead>
+                            <TableHead className={t.head}>Client</TableHead>
+                            <TableHead className={t.head}>Amount</TableHead>
+                            <TableHead className={t.head}>Weight (KG)</TableHead>
+                            <TableHead className={t.head}>Receiver</TableHead>
+                            <TableHead className={t.head}>Receiver Address</TableHead>
+                            <TableHead className={t.head}>Receiver Phone</TableHead>
+                            <TableHead className={t.head}>Issue Date</TableHead>
+                            <TableHead className={t.head}>Status</TableHead>
+                            <TableHead className={cn(t.head, 'text-right')}>Action</TableHead>
+                        </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                        {safeInvoices.map((invoice) => {
+                            // Debug: Log batch_number for first invoice to verify data structure
+                            if (safeInvoices.indexOf(invoice) === 0) {
+                                secureLog.debug('Invoice Batch Number', {
+                                    invoice_id: invoice.invoice_id,
+                                    batch_number: invoice.batch_number,
+                                    batch_number_type: typeof invoice.batch_number,
+                                    has_batch_number: 'batch_number' in invoice,
+                                    invoice_keys: Object.keys(invoice).filter(k => k.toLowerCase().includes('batch')),
+                                    full_invoice: invoice
+                                });
+                            }
+                            
+                            // Batch number fetched directly from invoices collection batch_number field
+                            // Ensure we're reading from the invoice object directly, not from nested objects
+                            // Handle empty strings, null, undefined - only use if it's a valid non-empty string
+                            const batchNumber = invoice.batch_number && String(invoice.batch_number).trim() 
+                                ? String(invoice.batch_number).trim() 
+                                : null;
+                            
+                            return (
+                            <TableRow key={invoice._id} className={t.row}>
+                            <TableCell className={cn(t.cell, 'font-mono text-xs')}>
+                                {invoice.invoice_id ? (
+                                    <Link
+                                        href={(() => {
+                                            const params = new URLSearchParams();
+                                            const journalNo = invoice.gl_sync?.journal_no;
+                                            const journalId = invoice.gl_sync?.journal_id;
+                                            if (journalNo) params.set('entry', String(journalNo));
+                                            else if (journalId) params.set('id', String(journalId));
+                                            params.set('invoice', String(invoice.invoice_id));
+                                            return `/dashboard/accounting/journals?${params.toString()}`;
+                                        })()}
+                                        title={
+                                            invoice.gl_sync?.journal_no
+                                                ? `Open ${invoice.gl_sync.status === 'POSTED' ? 'posted' : 'draft'} journal ${invoice.gl_sync.journal_no}`
+                                                : 'Open the journal for this invoice'
+                                        }
+                                        className="text-brand-600 underline-offset-2 hover:text-brand-700 hover:underline"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        {invoice.invoice_id}
+                                    </Link>
+                                ) : (
+                                    'N/A'
+                                )}
+                                {invoice.invoice_origin === 'CANCELLATION' && (
+                                    <div className="mt-1">
+                                        <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] font-semibold uppercase tracking-wide text-rose-700">
+                                            Cancel fee
+                                        </Badge>
+                                    </div>
+                                )}
+                            </TableCell>
+                            <TableCell className={cn(t.cell, 'font-mono text-xs')}>{invoice.awb_number || 'N/A'}</TableCell>
+                            <TableCell className={cn(t.cell, 'font-mono text-xs')}>
+                                {batchNumber || 'N/A'}
+                            </TableCell>
+                            <TableCell className={t.cell}>{invoice.client_id?.company_name || 'Unknown'}</TableCell>
+                            <TableCell className={t.cell}>
+                                {(() => {
+                                    // PH TO UAE: Use appropriate total based on invoice type
+                                    const serviceCode = (invoice.service_code || '').toString().toUpperCase().replace(/[\s-]+/g, '_');
+                                    const isPhToUae = serviceCode === 'PH_TO_UAE' || serviceCode.startsWith('PH_TO_UAE_');
+                                    const isTaxInvoice = invoice.tax_rate === 5;
+                                    
+                                    let displayAmount = 0;
+                                    
+                                    if (isPhToUae) {
+                                        // PH TO UAE: Use stored totals if available
+                                        const totalAmountCod = (invoice as any).total_amount_cod || (invoice as any).totalAmountCod;
+                                        const totalAmountTaxInvoice = (invoice as any).total_amount_tax_invoice || (invoice as any).totalAmountTaxInvoice;
+                                        
+                                        if (isTaxInvoice && totalAmountTaxInvoice) {
+                                            displayAmount = totalAmountTaxInvoice;
+                                        } else if (!isTaxInvoice && totalAmountCod) {
+                                            displayAmount = totalAmountCod;
+                                        } else {
+                                            // Fallback to total_amount if stored totals not available
+                                            displayAmount = invoice.total_amount || 0;
+                                        }
+                                    } else {
+                                        // Other services: Use total_amount
+                                        displayAmount = invoice.total_amount || 0;
+                                    }
+                                    
+                                    return `AED ${displayAmount ? parseFloat(displayAmount.toString()).toFixed(2) : '0.00'}`;
+                                })()}
+                            </TableCell>
+                            <TableCell className={t.cell}>{invoice.weight_kg != null ? invoice.weight_kg : 'N/A'}</TableCell>
+                            <TableCell className={t.cell}>{invoice.receiver_name ?? 'N/A'}</TableCell>
+                            <TableCell className={cn(t.cell, 'max-w-[200px] truncate')} title={invoice.receiver_address ?? ''}>{invoice.receiver_address ?? 'N/A'}</TableCell>
+                            <TableCell className={t.cell}>{invoice.receiver_phone ?? 'N/A'}</TableCell>
+                            <TableCell className={t.cell}>{invoice.issue_date ? new Date(invoice.issue_date).toLocaleDateString() : 'N/A'}</TableCell>
+                            <TableCell className={t.cell}>
+                                <Badge 
+                                    variant={
+                                        invoice.status === 'PAID' || invoice.status === 'REMITTED' 
+                                            ? 'default' 
+                                            : invoice.status === 'COLLECTED_BY_DRIVER' 
+                                                ? 'secondary' 
+                                                : 'secondary'
+                                    } 
+                                    className={
+                                        invoice.status === 'PAID' || invoice.status === 'REMITTED'
+                                            ? 'bg-emerald-500 text-white'
+                                            : invoice.status === 'COLLECTED_BY_DRIVER'
+                                                ? 'bg-sky-500 text-white'
+                                                : ''
+                                    }
+                                >
+                                    {invoice.status}
+                                </Badge>
+                                {(() => {
+                                    const { paid, balance } = invoiceBalance(invoice);
+                                    if (paid <= 0 || balance <= 0.009 || invoice.status === 'CANCELLED') return null;
+                                    return (
+                                        <div className="mt-1 text-[11px] leading-tight text-amber-700">
+                                            {['PAID', 'REMITTED'].includes(invoice.status) ? 'Debit note due' : 'Partially paid'} · bal AED {balance.toFixed(2)}
+                                        </div>
+                                    );
+                                })()}
+                                {(Number(invoice.credit_notes_total) > 0 || Number(invoice.debit_notes_total) > 0) && (
+                                    <div className="mt-1 text-[11px] leading-tight text-slate-500">
+                                        {Number(invoice.credit_notes_total) > 0 && `CN −${Number(invoice.credit_notes_total).toFixed(2)}`}
+                                        {Number(invoice.credit_notes_total) > 0 && Number(invoice.debit_notes_total) > 0 && ' · '}
+                                        {Number(invoice.debit_notes_total) > 0 && `DN +${Number(invoice.debit_notes_total).toFixed(2)}`}
+                                    </div>
+                                )}
+                            </TableCell>
+                            <TableCell className={cn(t.cell, 'text-right')}>
+                                <div className="flex gap-2 justify-end">
+                                    <Button asChild variant="outline" size="sm" className={erpOutlineControlClass()}>
+                                        <Link href={`/dashboard/invoices/${invoice._id}`}>
+                                            <Eye className="mr-2 h-4 w-4" />
+                                            View
+                                        </Link>
+                                    </Button>
+                                    {onRemit && invoice.status === 'COLLECTED_BY_DRIVER' && (
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm"
+                                            className="h-10 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
+                                            onClick={() => onRemit(invoice._id)}
+                                        >
+                                            <TrendingUp className="mr-2 h-4 w-4" />
+                                            Remit
+                                        </Button>
+                                    )}
+                                    {onRecordPayment && (['UNPAID', 'OVERDUE'].includes(invoice.status) || (['PAID', 'REMITTED'].includes(invoice.status) && invoiceBalance(invoice).balance > 0.009)) && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-10 rounded-xl bg-sky-600 text-white hover:bg-sky-700"
+                                            onClick={() => onRecordPayment(invoice)}
+                                        >
+                                            <Wallet className="mr-2 h-4 w-4" />
+                                            Record payment
+                                        </Button>
+                                    )}
+                                    {onRecordPayment && !['UNPAID', 'OVERDUE'].includes(invoice.status) && !(['PAID', 'REMITTED'].includes(invoice.status) && invoiceBalance(invoice).balance > 0.009) && (invoice.payments?.length ?? 0) > 0 && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className={erpOutlineControlClass()}
+                                            onClick={() => onRecordPayment(invoice)}
+                                        >
+                                            <Wallet className="mr-2 h-4 w-4" />
+                                            Payments
+                                        </Button>
+                                    )}
+                                    {!onRecordPayment && onRemit && invoice.status === 'UNPAID' && (
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm"
+                                            className="h-10 rounded-xl bg-sky-600 text-white hover:bg-sky-700"
+                                            onClick={() => onRemit(invoice._id)}
+                                        >
+                                            <TrendingUp className="mr-2 h-4 w-4" />
+                                            Mark Collected
+                                        </Button>
+                                    )}
+                                    {onRaiseNote && invoice.status !== 'CANCELLED' && invoice.gl_sync?.status === 'POSTED' && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className={erpOutlineControlClass()}
+                                            onClick={() => onRaiseNote(invoice)}
+                                            title="Credit / debit note"
+                                        >
+                                            <FileDiff className="mr-2 h-4 w-4" />
+                                            Note
+                                        </Button>
+                                    )}
+                                    {onCancel && invoice.status !== 'CANCELLED' && invoice.status !== 'REMITTED' && (
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm"
+                                            className="h-10 rounded-xl bg-rose-600 text-white hover:bg-rose-700"
+                                            onClick={() => onCancel(invoice._id)}
+                                        >
+                                            <X className="mr-2 h-4 w-4" />
+                                            Cancel
+                                        </Button>
+                                    )}
+                                </div>
+                            </TableCell>
+                            </TableRow>
+                            );
+                        })}
+                         {safeInvoices.length === 0 && (
+                            <TableRow>
+                                <TableCell colSpan={12} className={cn(t.cell, 'py-10 text-center text-slate-400')}>
+                                    No invoices found. Try adjusting your search or filters.
+                                </TableCell>
+                            </TableRow>
+                        )}
+                        </TableBody>
+                        </Table>
+            </ErpGrid>
+        </div>
+    );
+}

@@ -1,0 +1,3101 @@
+// API Client for Backend Communication
+import { apiCache } from './api-cache';
+import { secureLog } from './secure-logger';
+import { getCSRFToken, validateCSRFToken } from './security/csrf-protection';
+import { apiRateLimiter, checkRateLimit } from './security/rate-limiter';
+import { sanitizeObject } from './security/input-validator';
+import { createAuditLog, AuditEventType } from './security/audit-logger';
+import { storeAuthToken, getAuthToken, removeAuthToken } from './security/secure-storage';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+
+export type InvoicePaymentMode = 'TABBY' | 'CARD' | 'CASH' | 'BANK_TRANSFER';
+
+export type InvoiceNoteType = 'CREDIT' | 'DEBIT';
+export type InvoiceNoteStatus = 'PENDING_APPROVAL' | 'POSTED' | 'REJECTED' | 'VOID';
+export type InvoiceNoteCategory = 'SHIPPING' | 'PICKUP' | 'DELIVERY' | 'INSURANCE';
+export type InvoiceNoteReason =
+  | 'PRICING_ERROR'
+  | 'WEIGHT_CORRECTION'
+  | 'SERVICE_CANCELLED'
+  | 'DISCOUNT'
+  | 'DAMAGE_OR_LOSS'
+  | 'ADDITIONAL_SERVICE'
+  | 'OTHER';
+
+export type InvoiceNoteLine = {
+  category: InvoiceNoteCategory;
+  description?: string;
+  amount: number;
+  vat_rate: 0 | 5;
+  vat_amount?: number;
+  total?: number;
+};
+
+export type InvoiceNote = {
+  _id: string;
+  note_no: string;
+  note_type: InvoiceNoteType;
+  note_date: string;
+  invoice_id: string;
+  invoice_no: string;
+  invoice_date?: string;
+  invoice_total?: number;
+  awb_number?: string;
+  customer_name?: string;
+  customer_trn?: string;
+  service_code?: string;
+  reason_code: InvoiceNoteReason;
+  reason: string;
+  lines: Required<InvoiceNoteLine>[];
+  subtotal: number;
+  vat_amount: number;
+  total_amount: number;
+  status: InvoiceNoteStatus;
+  journal_no?: string;
+  refund_mode?: InvoicePaymentMode;
+  refund_reference?: string;
+  refund_amount?: number;
+  refund_journal_no?: string;
+  created_by_name?: string;
+  createdAt?: string;
+  approved_by_name?: string;
+  approved_at?: string;
+  rejected_by_name?: string;
+  rejected_at?: string;
+  rejection_reason?: string;
+  voided_by_name?: string;
+  voided_at?: string;
+  void_reason?: string;
+  void_journal_no?: string;
+  void_refund_journal_no?: string;
+  supporting_documents?: any[];
+};
+
+export type InvoiceNotePayload = {
+  invoice_id: string;
+  note_type: InvoiceNoteType;
+  reason_code: InvoiceNoteReason;
+  reason: string;
+  note_date?: string;
+  lines: InvoiceNoteLine[];
+  refund_mode?: InvoicePaymentMode;
+  refund_reference?: string;
+};
+
+export type SupplierPayload = {
+  name: string;
+  trn?: string;
+  contact_person?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  bank_name?: string;
+  iban?: string;
+  account_number?: string;
+  payment_terms_days?: number;
+  notes?: string;
+};
+
+class ApiClient {
+  private baseUrl: string;
+  private token: string | null = null;
+  private pendingRequests: Map<string, Promise<any>> = new Map();
+
+  constructor(baseUrl: string = API_BASE_URL) {
+    this.baseUrl = baseUrl;
+    // Get token from secure storage if available
+    if (typeof window !== 'undefined') {
+      this.token = getAuthToken();
+    }
+  }
+
+  setToken(token: string) {
+    this.token = token;
+    storeAuthToken(token);
+  }
+
+  clearToken() {
+    this.token = null;
+    removeAuthToken();
+  }
+
+  getToken() {
+    return this.token;
+  }
+
+  // Public method to invalidate cache
+  invalidateCache(pattern?: string) {
+    apiCache.invalidate(pattern);
+  }
+
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {},
+    useCache: boolean = true,
+    cacheTTL?: number
+  ): Promise<{ success: boolean; data?: T; error?: string; message?: string }> {
+    // For GET requests, check cache first
+    const isGetRequest = !options.method || options.method === 'GET';
+    if (isGetRequest && useCache) {
+      const cachedData = apiCache.get(endpoint, options);
+      if (cachedData) {
+        // Return cached data immediately
+        return cachedData;
+      }
+    }
+
+    // Create a unique key for this request to enable deduplication
+    const requestKey = `${options.method || 'GET'}:${endpoint}`;
+    
+    // If there's already a pending request for this endpoint, return it
+    if (this.pendingRequests.has(requestKey)) {
+      return this.pendingRequests.get(requestKey)!;
+    }
+
+    // Execute request directly (no rate limiting queue)
+    const requestPromise = this.executeRequest<T>(endpoint, options);
+
+    this.pendingRequests.set(requestKey, requestPromise);
+
+    try {
+      const result = await requestPromise;
+      
+      // Cache successful GET responses
+      if (isGetRequest && useCache && result.success) {
+        apiCache.set(endpoint, result, options, cacheTTL);
+      }
+      
+      return result;
+    } finally {
+      // Clean up the pending request
+      this.pendingRequests.delete(requestKey);
+    }
+  }
+
+  private async executeRequest<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<{ success: boolean; data?: T; error?: string; message?: string }> {
+    try {
+      // Do not client-rate-limit invoice-request details (Excel export opens many distinct URLs;
+      // a per-path bucket still allows each once, but backend 429 is the real constraint — avoid double-throttling).
+      const isInvoiceRequestDetailsGet =
+        (!options.method || options.method === 'GET') &&
+        endpoint.includes('/invoice-requests/') &&
+        endpoint.includes('/details');
+
+      if (!isInvoiceRequestDetailsGet) {
+        const rateLimitCheck = checkRateLimit(apiRateLimiter, endpoint);
+        if (!rateLimitCheck.allowed) {
+          createAuditLog(AuditEventType.RATE_LIMIT_EXCEEDED, `Rate limit exceeded for ${endpoint}`, {
+            resource: endpoint,
+            success: false,
+            metadata: { remaining: rateLimitCheck.remaining, resetTime: rateLimitCheck.resetTime },
+          });
+          return {
+            success: false,
+            error: 'Too many requests. Please try again later.',
+          };
+        }
+      }
+
+      // Sanitize request body if present
+      // NOTE: Base64 image strings in identityDocuments are handled specially
+      // by sanitizeString to avoid truncation
+      const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+      let sanitizedBody = options.body;
+      if (options.body && typeof options.body === 'string') {
+        try {
+          const bodyData = JSON.parse(options.body);
+          const sanitized = sanitizeObject(bodyData);
+          sanitizedBody = JSON.stringify(sanitized);
+        } catch (e) {
+          // If body is not JSON, leave it as is
+        }
+      }
+
+      const url = `${this.baseUrl}${endpoint}`;
+      const headers: Record<string, string> = {
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+        ...(options.headers as Record<string, string>),
+      };
+      if (isFormData) {
+        delete headers['Content-Type'];
+      }
+
+      // Add CSRF token for state-changing operations
+      const isStateChanging = options.method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(options.method);
+      if (isStateChanging && typeof window !== 'undefined') {
+        const csrfToken = getCSRFToken();
+        if (csrfToken) {
+          headers['X-CSRF-Token'] = csrfToken;
+        }
+      }
+
+      // Add authorization header if token is available
+      if (this.token) {
+        headers['Authorization'] = `Bearer ${this.token}`;
+      }
+
+      // Log request for debugging (only in development)
+      secureLog.debug(`[API] ${options.method || 'GET'} ${url}`, options.body ? (() => {
+        try {
+          return JSON.parse(options.body as string);
+        } catch {
+          return undefined;
+        }
+      })() : undefined);
+
+      const startTime = Date.now();
+      const response = await fetch(url, {
+        headers,
+        ...options,
+        body: sanitizedBody,
+      });
+
+      // Log response status in development
+      secureLog.debug(`[API] ${options.method || 'GET'} ${url} -> ${response.status} (${Date.now() - startTime}ms)`);
+
+      if (!response.ok) {
+        // Get response text first to check if there's content
+        const responseText = await response.text();
+        let errorData: any = {};
+        
+        // Try to parse JSON if there's content
+        if (responseText && responseText.trim()) {
+          try {
+            errorData = JSON.parse(responseText);
+          } catch (e) {
+            // If JSON parsing fails, use the text as error message
+            errorData = { error: responseText || 'Request failed' };
+          }
+        } else {
+          // Empty response - use status text or default message
+          errorData = { 
+            error: response.statusText || `Request failed with status ${response.status}` 
+          };
+        }
+        
+        // Extract error message from various possible formats
+        const errorMessage = 
+          errorData.error || 
+          errorData.message || 
+          errorData.detail ||
+          (typeof errorData === 'string' ? errorData : null) ||
+          response.statusText ||
+          `Request failed with status ${response.status}`;
+        
+        // Sanitize error message to prevent information leakage
+        // Don't expose internal server details, stack traces, or sensitive info
+        let safeErrorMessage = errorMessage || `Request failed with status ${response.status}`;
+        
+        // Remove potential sensitive information
+        safeErrorMessage = safeErrorMessage
+          .replace(/at\s+.*?:\d+:\d+/g, '') // Remove stack traces
+          .replace(/file:\/\/\/.*?/g, '') // Remove file paths
+          .replace(/password|token|secret|key/gi, '[REDACTED]') // Remove sensitive keywords
+          .substring(0, 200); // Limit length
+        
+        // Log security-relevant errors
+        if (response.status === 401) {
+          createAuditLog(AuditEventType.UNAUTHORIZED_ACCESS_ATTEMPT, `Unauthorized access attempt: ${endpoint}`, {
+            resource: endpoint,
+            success: false,
+            errorMessage: 'Unauthorized',
+          });
+        } else if (response.status === 403) {
+          createAuditLog(AuditEventType.ACCESS_DENIED, `Access denied: ${endpoint}`, {
+            resource: endpoint,
+            success: false,
+            errorMessage: 'Forbidden',
+          });
+        }
+        
+        secureLog.warn('API Error Response', {
+          status: response.status,
+          statusText: response.statusText,
+          url: url.substring(0, 100),
+          errorMessage: safeErrorMessage?.substring(0, 200)
+        });
+        
+        return { success: false, error: safeErrorMessage };
+      }
+
+      const data = await response.json();
+      secureLog.debug('API Success Response', { endpoint: endpoint.substring(0, 50) });
+      
+      // Log successful state-changing operations
+      if (isStateChanging) {
+        createAuditLog(AuditEventType.DATA_UPDATE, `API ${options.method} request successful: ${endpoint}`, {
+          resource: endpoint,
+          success: true,
+        });
+      }
+      
+      // For auth endpoints, return the data directly wrapped in success
+      if (endpoint.includes('/auth/')) {
+        return { success: true, data };
+      }
+      
+      // For other endpoints, if the response already has success/data structure, return it directly
+      if (data && typeof data === 'object' && 'success' in data && 'data' in data) {
+        return data;
+      }
+      
+      // Otherwise wrap in standard format
+      return { success: true, data };
+    } catch (error: any) {
+      secureLog.error('API request failed', error);
+      
+      // Log system errors
+      createAuditLog(AuditEventType.SYSTEM_ERROR, `API request failed: ${endpoint}`, {
+        resource: endpoint,
+        success: false,
+        errorMessage: error.message?.substring(0, 100),
+      });
+      
+      // Provide more specific error messages (sanitized)
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        return { 
+          success: false, 
+          error: 'Unable to connect to server. Please check your connection.' 
+        };
+      }
+      
+      if (error.name === 'NetworkError' || error.message?.includes('network')) {
+        return { success: false, error: 'Network error: Unable to reach the server' };
+      }
+      
+      // Don't expose internal error details
+      return { 
+        success: false, 
+        error: 'An error occurred. Please try again later.' 
+      };
+    }
+  }
+
+  // Authentication
+  async login(email: string, password: string) {
+    const result = await this.request('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    
+    // Store token if login is successful
+    if (result.success && (result.data as any)?.token) {
+      this.setToken((result.data as any).token);
+    }
+    
+    return result;
+  }
+
+  // Users
+  async getUsers(useCache: boolean = true) {
+    return this.request('/users', {}, useCache, 60000); // Cache for 60 seconds
+  }
+
+  async createUser(userData: any) {
+    return this.request('/users', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async updateUser(id: string, userData: any) {
+    return this.request(`/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async updatePassword(newPassword: string) {
+    return this.request('/users/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ password: newPassword }),
+    });
+  }
+
+  async resetUserPassword(userId: string, password?: string) {
+    // If password is provided, include it in the body; otherwise send empty object for default reset
+    const body = password && password.length > 0 ? { password } : {};
+    secureLog.debug('[API] Reset Password', { userId, hasCustomPassword: !!password });
+
+    // Don't use cache for POST requests
+    return this.request(`/users/${userId}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }, false); // useCache = false
+  }
+
+  async deleteUser(id: string) {
+    return this.request(`/users/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Departments
+  async getDepartments(useCache: boolean = true) {
+    return this.request('/departments', {}, useCache, 300000); // Cache for 5 minutes (departments rarely change)
+  }
+
+  async createDepartment(departmentData: any) {
+    return this.request('/departments', {
+      method: 'POST',
+      body: JSON.stringify(departmentData),
+    });
+  }
+
+  // Employees
+  async getEmployees(useCache: boolean = true) {
+    return this.request('/employees', {}, useCache, 60000); // Cache for 60 seconds
+  }
+
+  async getAvailableEmployees(useCache: boolean = true) {
+    return this.request('/employees/available', {}, useCache, 60000); // Cache for 60 seconds
+  }
+
+  async createEmployee(employeeData: any) {
+    return this.request('/employees', {
+      method: 'POST',
+      body: JSON.stringify(employeeData),
+    });
+  }
+
+  async updateEmployee(id: string, employeeData: any) {
+    return this.request(`/employees/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(employeeData),
+    });
+  }
+
+  async deleteEmployee(id: string) {
+    return this.request(`/employees/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Clients
+  async getClients(useCache: boolean = true) {
+    return this.request('/clients', {}, useCache, 60000); // Cache for 60 seconds
+  }
+
+  async createClient(clientData: any) {
+    return this.request('/clients', {
+      method: 'POST',
+      body: JSON.stringify(clientData),
+    });
+  }
+
+  async updateClient(id: string, clientData: any) {
+    return this.request(`/clients/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(clientData),
+    });
+  }
+
+  async deleteClient(id: string) {
+    return this.request(`/clients/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Requests
+  async getRequests() {
+    return this.request('/requests');
+  }
+
+  async createRequest(requestData: any) {
+    return this.request('/requests', {
+      method: 'POST',
+      body: JSON.stringify(requestData),
+    });
+  }
+
+  async updateRequestStatus(id: string, statusData: any) {
+    return this.request(`/requests/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify(statusData),
+    });
+  }
+
+  async addChatMessage(id: string, messageData: any) {
+    return this.request(`/requests/${id}/chat`, {
+      method: 'POST',
+      body: JSON.stringify(messageData),
+    });
+  }
+
+  // Activity last-updated (for per-tab new indicators)
+  // This endpoint is optional - gracefully handles 404 if not implemented
+  async getActivityLastUpdated() {
+    const result = await this.request('/activity/last-updated', {}, false); // no cache
+    // If endpoint returns 404, treat it as optional and return success: false
+    // This prevents console errors for missing optional endpoints
+    if (!result.success && result.error && (
+      result.error.includes('404') || 
+      result.error.includes('Not Found') ||
+      result.error.includes('not found')
+    )) {
+      // Silently handle 404 - this endpoint is optional
+      return { success: false, error: undefined, data: undefined };
+    }
+    return result;
+  }
+
+  // Search AWB number by customer first name and last name
+  async searchAwbByName(firstName: string, lastName: string) {
+    return this.request('/bookings/search-awb-by-name', {
+      method: 'POST',
+      body: JSON.stringify({ firstName, lastName }),
+    }, false); // Don't cache search results
+  }
+
+  // Search bookings by AWB number
+  async searchBookingsByAwb(awb: string, useCache: boolean = false) {
+    if (!awb || !awb.trim()) {
+      return { success: false, error: 'AWB number is required' };
+    }
+    return this.request(`/bookings/search-awb?awb=${encodeURIComponent(awb.trim())}`, {}, useCache, 10000); // Cache for 10 seconds
+  }
+
+  // Reports
+  async getReports() {
+    return this.request('/reports');
+  }
+
+  async createReport(reportData: any) {
+    return this.request('/reports', {
+      method: 'POST',
+      body: JSON.stringify(reportData),
+    });
+  }
+
+  // Invoice Requests
+  async getInvoiceRequests(page?: number, limit?: number, filters?: { status?: string; search?: string }, useCache: boolean = true, fields?: string[]) {
+    // If pagination parameters are provided, use paginated endpoint
+    if (page !== undefined && limit !== undefined) {
+      const queryParams = new URLSearchParams();
+      queryParams.append('page', page.toString());
+      queryParams.append('limit', limit.toString());
+      if (filters?.status && filters.status !== 'all') {
+        queryParams.append('status', filters.status);
+      }
+      if (filters?.search) {
+        queryParams.append('search', filters.search);
+      }
+      // Request only minimal fields for faster loading (if fields parameter provided)
+      if (fields && fields.length > 0) {
+        queryParams.append('fields', fields.join(','));
+      }
+      
+      const queryString = queryParams.toString();
+      const endpoint = `/invoice-requests?${queryString}`;
+      return this.request(endpoint, {}, useCache, 10000); // Cache for 10 seconds
+    }
+    
+    // Backward compatibility: return all requests without pagination
+    return this.request('/invoice-requests', {}, useCache, 10000); // Cache for 10 seconds
+  }
+
+  // Fetch all invoice requests across all pages (for invoice-requests page)
+  // Optimized: Fetch single page of invoice requests (for pagination)
+  async getInvoiceRequestsPage(
+    page: number = 1, 
+    limit: number = 50,
+    filters?: { status?: string; search?: string }, 
+    useCache: boolean = true, 
+    fields?: string[]
+  ) {
+    const queryParams = new URLSearchParams();
+    queryParams.append('page', page.toString());
+    queryParams.append('limit', limit.toString());
+    
+    if (filters?.status && filters.status !== 'all') {
+      queryParams.append('status', filters.status);
+    }
+    if (filters?.search) {
+      queryParams.append('search', filters.search);
+    }
+    // Request only minimal fields for faster loading (if fields parameter provided)
+    if (fields && fields.length > 0) {
+      queryParams.append('fields', fields.join(','));
+    }
+    
+    const queryString = queryParams.toString();
+    const endpoint = `/invoice-requests?${queryString}`;
+    
+    // Reduced cache time for faster updates (5 seconds instead of 10)
+    const result = await this.request(endpoint, {}, useCache, 5000);
+    
+    if (result.success) {
+      const pagination = (result as any).pagination;
+      const data = result.data;
+      
+      // Handle different response formats
+      if (pagination && Array.isArray(data)) {
+        return {
+          success: true,
+          data: data,
+          pagination: pagination
+        };
+      } else if (data && typeof data === 'object' && (data as any).pagination) {
+        const responseData = data as any;
+        return {
+          success: true,
+          data: Array.isArray(responseData.data) ? responseData.data : [],
+          pagination: responseData.pagination
+        };
+      } else if (Array.isArray(data)) {
+        // Non-paginated response (backward compatibility)
+        return {
+          success: true,
+          data: data,
+          pagination: {
+            page: 1,
+            limit: data.length,
+            total: data.length,
+            pages: 1
+          }
+        };
+      }
+    }
+    
+    return {
+      success: false,
+      error: result.error || 'Failed to fetch invoice requests',
+      data: [],
+      pagination: null
+    };
+  }
+
+  // Legacy method: Fetch all pages (use sparingly, only when needed)
+  async getAllInvoiceRequests(filters?: { status?: string; search?: string }, useCache: boolean = true, fields?: string[]) {
+    const allRequests: any[] = [];
+    let currentPage = 1;
+    let totalPages = 1;
+    const limit = 50; // Fetch 50 per page for better performance
+    
+    do {
+      const queryParams = new URLSearchParams();
+      queryParams.append('page', currentPage.toString());
+      queryParams.append('limit', limit.toString());
+      
+      if (filters?.status && filters.status !== 'all') {
+        queryParams.append('status', filters.status);
+      }
+      if (filters?.search) {
+        queryParams.append('search', filters.search);
+      }
+      // Request only minimal fields for faster loading (if fields parameter provided)
+      if (fields && fields.length > 0) {
+        queryParams.append('fields', fields.join(','));
+      }
+      
+      const queryString = queryParams.toString();
+      const endpoint = `/invoice-requests?${queryString}`;
+      
+      const result = await this.request(endpoint, {}, useCache && currentPage === 1, 10000);
+      
+      if (result.success) {
+        // Check if response has pagination at root level
+        const pagination = (result as any).pagination;
+        const data = result.data;
+        
+        if (pagination && Array.isArray(data)) {
+          // Paginated response: { success: true, data: [...], pagination: {...} }
+          allRequests.push(...data);
+          totalPages = pagination.pages || 1;
+          currentPage++;
+        } else if (data && typeof data === 'object' && (data as any).pagination) {
+          // Paginated response: { success: true, data: { data: [...], pagination: {...} } }
+          const responseData = data as any;
+          if (Array.isArray(responseData.data)) {
+            allRequests.push(...responseData.data);
+            totalPages = responseData.pagination?.pages || 1;
+            currentPage++;
+          } else {
+            break; // No more data
+          }
+        } else if (Array.isArray(data)) {
+          // Non-paginated response (backward compatibility)
+          allRequests.push(...data);
+          break; // No pagination, we got all data
+        } else {
+          break; // No data or unexpected format
+        }
+      } else {
+        // Error occurred, break the loop
+        secureLog.error('Error fetching invoice requests page', { currentPage, error: result.error });
+        break;
+      }
+    } while (currentPage <= totalPages);
+    
+    return {
+      success: true,
+      data: allRequests,
+      pagination: {
+        total: allRequests.length,
+        pages: totalPages
+      }
+    };
+  }
+
+  async getInvoiceRequestsByStatus(status: string) {
+    return this.request(`/invoice-requests/status/${status}`);
+  }
+
+  async getInvoiceRequestsByDeliveryStatus(deliveryStatus: string) {
+    return this.request(`/invoice-requests/delivery-status/${deliveryStatus}`);
+  }
+
+  async getInvoiceRequest(id: string) {
+    return this.request(`/invoice-requests/${id}`);
+  }
+
+  async createInvoiceRequest(invoiceRequestData: any) {
+    return this.request('/invoice-requests', {
+      method: 'POST',
+      body: JSON.stringify(invoiceRequestData),
+    });
+  }
+
+  async updateInvoiceRequest(id: string, invoiceRequestData: any) {
+    return this.request(`/invoice-requests/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(invoiceRequestData),
+    });
+  }
+
+  async updateInvoiceRequestStatus(id: string, statusData: any) {
+    return this.request(`/invoice-requests/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify(statusData),
+    });
+  }
+
+  async cancelInvoiceRequest(id: string) {
+    return this.request(`/invoice-requests/${id}/cancel`, {
+      method: 'POST',
+    });
+  }
+
+  async recordQuotationAdvance(
+    id: string,
+    payload: {
+      mode: InvoicePaymentMode;
+      amount?: number;
+      reference?: string;
+      collected_at?: string;
+    }
+  ) {
+    const result = await this.request(`/invoice-requests/${encodeURIComponent(id)}/advance-payment`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    this.invalidateCache('/invoice-requests');
+    this.invalidateCache('/invoices-unified');
+    return result;
+  }
+
+  async cancelQuotedShipment(
+    id: string,
+    payload: {
+      charge: boolean;
+      amount?: number;
+      vat_rate?: 0 | 5;
+      reason?: string;
+      payment?: { mode: InvoicePaymentMode; reference?: string; collected_at?: string };
+    }
+  ) {
+    const result = await this.request(`/invoice-requests/${encodeURIComponent(id)}/cancel-shipment`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    this.invalidateCache('/invoice-requests');
+    this.invalidateCache('/invoices-unified');
+    return result;
+  }
+
+  async updateDeliveryStatus(id: string, deliveryStatusData: any) {
+    return this.request(`/invoice-requests/${id}/delivery-status`, {
+      method: 'PUT',
+      body: JSON.stringify(deliveryStatusData),
+    });
+  }
+
+  async updateWeight(id: string, weightData: any) {
+    return this.request(`/invoice-requests/${id}/weight`, {
+      method: 'PUT',
+      body: JSON.stringify(weightData),
+    });
+  }
+
+  async updateVerification(id: string, verificationData: any) {
+    return this.request(`/invoice-requests/${id}/verification`, {
+      method: 'PUT',
+      body: JSON.stringify(verificationData),
+    });
+  }
+
+  async completeVerification(id: string, verificationData: any) {
+    return this.request(`/invoice-requests/${id}/complete-verification`, {
+      method: 'PUT',
+      body: JSON.stringify(verificationData),
+    });
+  }
+
+  async reverifyVerification(id: string, verificationData: any) {
+    return this.request(`/invoice-requests/${id}/reverify`, {
+      method: 'PUT',
+      body: JSON.stringify(verificationData),
+    });
+  }
+
+  async deleteInvoiceRequest(id: string) {
+    return this.request(`/invoice-requests/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Collections
+  async getCollections() {
+    return this.request('/collections');
+  }
+
+  async getCollection(id: string) {
+    return this.request(`/collections/${id}`);
+  }
+
+  async updateCollectionStatus(id: string, statusData: any) {
+    return this.request(`/collections/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(statusData),
+    });
+  }
+
+  async createCollection(collectionData: any) {
+    return this.request('/collections', {
+      method: 'POST',
+      body: JSON.stringify(collectionData),
+    });
+  }
+
+  async deleteCollection(id: string) {
+    return this.request(`/collections/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getCollectionsSummary() {
+    return this.request('/collections/summary/stats');
+  }
+
+  // Notifications
+  // Disabled: Notification endpoints removed
+  async getNotificationCounts() {
+    return { success: true, data: { invoices: 0, invoiceRequests: 0, requests: 0 } };
+  }
+
+  async markAsViewed(type: string, itemId: string) {
+    // Disabled: No API call
+    return { success: true };
+  }
+
+  async markAllAsViewed(type: string) {
+    // Disabled: No API call
+    return { success: true };
+  }
+
+  // Get full invoice request details by AWB (for verification form)
+  async getInvoiceRequestByAwb(awb: string, useCache: boolean = false) {
+    // Don't cache this since it's called on-demand when user opens verification
+    return this.request(`/invoice-requests/by-awb/${encodeURIComponent(awb)}`, {}, useCache, 0);
+  }
+
+  // Get invoice request with full details including all verification and booking data
+  // This endpoint should return complete invoice request data with all nested information
+  // CRITICAL: Must include verification object with total_kg, number_of_boxes, and all verification fields
+  // useCache should be false to ensure fresh data from database
+  /**
+   * Bulk-fetch invoice request details via same-origin API proxy (server → backend).
+   * Chunks large ID lists so each serverless run stays within platform timeouts (e.g. hundreds of invoices).
+   */
+  async bulkInvoiceRequestDetails(
+    ids: string[],
+    options?: {
+      /** IDs per POST; default 40 keeps each proxy call short on Vercel Hobby (~10s cap). */
+      chunkSize?: number;
+      onProgress?: (loaded: number, total: number) => void;
+    }
+  ): Promise<Record<string, any>> {
+    const uniq = [...new Set(ids.map(String).filter(Boolean))];
+    if (!uniq.length || typeof window === 'undefined') return {};
+
+    const chunkSize = Math.max(1, Math.min(options?.chunkSize ?? 40, 80));
+    const out: Record<string, any> = {};
+    const total = uniq.length;
+    const token = this.getToken();
+
+    try {
+      for (let i = 0; i < uniq.length; i += chunkSize) {
+        const slice = uniq.slice(i, i + chunkSize);
+        const res = await fetch('/api/invoice-requests/bulk-details', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ ids: slice }),
+        });
+        if (res.ok) {
+          const j = await res.json();
+          if (j?.success && j?.data && typeof j.data === 'object') {
+            Object.assign(out, j.data as Record<string, any>);
+          }
+        }
+        options?.onProgress?.(Math.min(i + slice.length, total), total);
+      }
+      return out;
+    } catch {
+      return out;
+    }
+  }
+
+  async getInvoiceRequestDetails(
+    id: string,
+    _useCache: boolean = false,
+    _options?: { preferDirect?: boolean }
+  ) {
+    // In the browser, never call the backend origin directly (CORS on e.g. Vercel → Render).
+    if (typeof window !== 'undefined') {
+      try {
+        const bulk = await this.bulkInvoiceRequestDetails([id]);
+        const row = bulk[id];
+        if (row && typeof row === 'object') {
+          return { success: true, data: row };
+        }
+      } catch {
+        // ignore
+      }
+      return {
+        success: false,
+        error: 'Could not load invoice request details. If this persists, try again in a moment.',
+      };
+    }
+    return this.request(`/invoice-requests/${id}/details`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }, false, 0);
+  }
+
+  // Invoices
+  // Invoices (Unified)
+  async getInvoicesUnified(
+    options?: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      useCache?: boolean;
+    }
+  ) {
+    const {
+      page = 1,
+      limit = 50,
+      search,
+      useCache = true
+    } = options || {};
+    
+    const queryParams = new URLSearchParams();
+    queryParams.append('page', page.toString());
+    queryParams.append('limit', limit.toString());
+    if (search && search.trim()) {
+      queryParams.append('search', search.trim());
+    }
+    
+    const endpoint = `/invoices-unified?${queryParams.toString()}`;
+    return this.request(endpoint, {}, useCache, 30000); // Cache for 30 seconds
+  }
+
+  // Fetch all invoices by paginating through all pages (handles 500+ rows and missing pagination metadata)
+  async getAllInvoicesUnified(search?: string, useCache: boolean = true) {
+    const allInvoices: any[] = [];
+    const limit = 200;
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      const result = await this.getInvoicesUnified({
+        page,
+        limit,
+        search,
+        useCache: useCache && page === 1,
+      });
+
+      if (!result.success || !result.data) {
+        break;
+      }
+
+      const invoiceData = Array.isArray(result.data) ? result.data : [];
+      allInvoices.push(...invoiceData);
+
+      const pagination = (result as any).pagination;
+      if (pagination && typeof pagination.pages === 'number' && pagination.pages >= 1) {
+        hasMore = page < pagination.pages;
+      } else {
+        // No reliable pagination: continue while we receive a full page (e.g. 755 → 4 pages @ 200)
+        hasMore = invoiceData.length >= limit;
+      }
+      page += 1;
+
+      // Safety valve (corrupt API should not infinite-loop)
+      if (page > 500) {
+        break;
+      }
+    }
+
+    return {
+      success: true,
+      data: allInvoices,
+      total: allInvoices.length,
+    };
+  }
+
+  async getInvoiceUnified(id: string) {
+    return this.request(`/invoices-unified/${id}`);
+  }
+
+  async remitInvoiceUnified(id: string) {
+    return this.request(`/invoices-unified/${id}/remit`, {
+      method: 'PATCH',
+    });
+  }
+
+  async recordInvoicePayment(
+    id: string,
+    payload: {
+      mode: InvoicePaymentMode;
+      payment_type: 'FULL' | 'PARTIAL';
+      amount_collected: number;
+      reference?: string;
+      collected_at?: string;
+    }
+  ) {
+    return this.request(`/invoices-unified/${id}/payments`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateInvoicePaymentDate(id: string, paymentId: string, collected_at: string) {
+    return this.request(`/invoices-unified/${id}/payments/${paymentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ collected_at }),
+    });
+  }
+
+  async voidInvoicePayment(id: string, paymentId: string, reason?: string) {
+    return this.request(`/invoices-unified/${id}/payments/${paymentId}/void`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || '' }),
+    });
+  }
+
+  async getInvoiceNotes(opts?: { type?: InvoiceNoteType | ''; status?: InvoiceNoteStatus | ''; search?: string }) {
+    const params = new URLSearchParams();
+    if (opts?.type) params.set('type', opts.type);
+    if (opts?.status) params.set('status', opts.status);
+    if (opts?.search) params.set('search', opts.search);
+    const qs = params.toString();
+    return this.request(`/invoice-notes${qs ? `?${qs}` : ''}`, {}, false);
+  }
+
+  async getInvoiceNotesForInvoice(invoiceId: string) {
+    return this.request(`/invoice-notes/invoice/${encodeURIComponent(invoiceId)}`, {}, false);
+  }
+
+  async getInvoiceNote(id: string) {
+    return this.request(`/invoice-notes/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async createInvoiceNote(payload: InvoiceNotePayload) {
+    return this.request('/invoice-notes', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async approveInvoiceNote(id: string, payload?: { refund_mode?: InvoicePaymentMode; refund_reference?: string }) {
+    const result = await this.request(`/invoice-notes/${encodeURIComponent(id)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    });
+    this.invalidateCache('/invoices-unified');
+    return result;
+  }
+
+  async rejectInvoiceNote(id: string, reason: string) {
+    return this.request(`/invoice-notes/${encodeURIComponent(id)}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async voidInvoiceNote(id: string, reason: string) {
+    const result = await this.request(`/invoice-notes/${encodeURIComponent(id)}/void`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+    this.invalidateCache('/invoices-unified');
+    return result;
+  }
+
+  async cancelInvoiceUnified(id: string, reason?: string) {
+    return this.request(`/invoices-unified/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || '' }),
+    });
+  }
+
+  async createInvoiceUnified(invoiceData: any) {
+    return this.request('/invoices-unified', {
+      method: 'POST',
+      body: JSON.stringify(invoiceData),
+    });
+  }
+
+  async getCancellationInvoiceCandidates(search?: string) {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    const qs = params.toString();
+    return this.request(`/invoices-unified/cancellation-candidates${qs ? `?${qs}` : ''}`, {}, false);
+  }
+
+  async createCancellationInvoice(payload: {
+    request_id?: string;
+    amount: number;
+    vat_rate?: 0 | 5;
+    reason?: string;
+    awb_number?: string;
+    customer_name?: string;
+    customer_phone?: string;
+    paid?: boolean;
+    payment?: { mode: InvoicePaymentMode; reference?: string; collected_at?: string };
+  }) {
+    const result = await this.request('/invoices-unified/cancellation', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    this.invalidateCache('/invoices-unified');
+    this.invalidateCache('/invoice-requests');
+    return result;
+  }
+
+  async updateInvoiceUnified(id: string, invoiceData: any) {
+    return this.request(`/invoices-unified/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(invoiceData),
+    });
+  }
+
+  async updateInvoiceStatusUnified(id: string, statusData: any) {
+    return this.request(`/invoices-unified/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify(statusData),
+    });
+  }
+
+  // Shipment Status Updates
+  async updateShipmentStatus(requestId: string, statusData: any) {
+    return this.request(`/unified-shipment-requests/${requestId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify(statusData),
+    });
+  }
+
+  async deleteInvoiceUnified(id: string) {
+    return this.request(`/invoices-unified/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getInvoicesByClientUnified(clientId: string) {
+    return this.request(`/invoices-unified/client/${clientId}`);
+  }
+
+  async getInvoicesByStatusUnified(status: string) {
+    return this.request(`/invoices-unified/status/${status}`);
+  }
+
+  // Invoices (Legacy)
+  async getInvoices() {
+    return this.request('/invoices');
+  }
+
+  async createInvoice(invoiceData: any) {
+    return this.request('/invoices', {
+      method: 'POST',
+      body: JSON.stringify(invoiceData),
+    });
+  }
+
+  async updateInvoice(id: string, invoiceData: any) {
+    return this.request(`/invoices/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(invoiceData),
+    });
+  }
+
+  async deleteInvoice(id: string) {
+    return this.request(`/invoices/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Performance
+  async getDepartmentPerformance(department: string) {
+    return this.request(`/performance/department/${department}`);
+  }
+
+  // Motivation quotes (10-minute windows)
+  async getMotivationQuote(params?: { firstName?: string; department?: string }) {
+    const search = new URLSearchParams();
+    if (params?.firstName) search.set('firstName', params.firstName);
+    if (params?.department) search.set('department', params.department);
+    const qs = search.toString();
+    return this.request<{
+      quote: string;
+      source: string;
+      windowMs: number;
+      expiresAt: number;
+      cached?: boolean;
+    }>(`/motivation/quote${qs ? `?${qs}` : ''}`, {}, false);
+  }
+
+  // ========================================
+  // QR PAYMENT COLLECTION SYSTEM
+  // ========================================
+
+  // Drivers
+  async getDrivers() {
+    return this.request('/drivers');
+  }
+
+  async getDriver(id: string) {
+    return this.request(`/drivers/${id}`);
+  }
+
+  async createDriver(driverData: any) {
+    return this.request('/drivers', {
+      method: 'POST',
+      body: JSON.stringify(driverData),
+    });
+  }
+
+  async updateDriver(id: string, driverData: any) {
+    return this.request(`/drivers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(driverData),
+    });
+  }
+
+  async deleteDriver(id: string) {
+    return this.request(`/drivers/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Delivery Assignments
+  async getDeliveryAssignments() {
+    return this.request('/delivery-assignments');
+  }
+
+  async getDeliveryAssignment(id: string) {
+    return this.request(`/delivery-assignments/${id}`);
+  }
+
+  async createDeliveryAssignment(assignmentData: any) {
+    return this.request('/delivery-assignments', {
+      method: 'POST',
+      body: JSON.stringify(assignmentData),
+    });
+  }
+
+  async updateDeliveryAssignment(id: string, assignmentData: any) {
+    return this.request(`/delivery-assignments/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(assignmentData),
+    });
+  }
+
+  async updateDeliveryAssignmentByQR(qrCode: string, assignmentData: any) {
+    return this.request(`/delivery-assignments/qr/${qrCode}/status`, {
+      method: 'PUT',
+      body: JSON.stringify(assignmentData),
+    });
+  }
+
+  async getDeliveryAssignmentByInvoice(invoiceId: string) {
+    return this.request(`/delivery-assignments/by-invoice/${invoiceId}`);
+  }
+
+  async getDeliveryAssignmentByQR(qrCode: string) {
+    return this.request(`/delivery-assignments/qr/${qrCode}`);
+  }
+
+  async processQRPayment(qrCode: string, paymentData: any) {
+    return this.request(`/delivery-assignments/qr/${qrCode}/payment`, {
+      method: 'POST',
+      body: JSON.stringify(paymentData),
+    });
+  }
+
+  async getDriverAssignments(driverId: string) {
+    return this.request(`/delivery-assignments/driver/${driverId}`);
+  }
+
+  async syncDeliveryAssignmentToEmpost(assignmentId: string) {
+    return this.request(`/delivery-assignments/${assignmentId}/sync-empost`, {
+      method: 'POST',
+    });
+  }
+
+  // QR Payment Sessions
+  async getQRPaymentSessions() {
+    return this.request('/qr-payment-sessions');
+  }
+
+  async getQRPaymentSession(id: string) {
+    return this.request(`/qr-payment-sessions/${id}`);
+  }
+
+  async getQRPaymentSessionByQR(qrCode: string) {
+    return this.request(`/qr-payment-sessions/qr/${qrCode}`);
+  }
+
+  async getAssignmentQRPaymentSessions(assignmentId: string) {
+    return this.request(`/qr-payment-sessions/assignment/${assignmentId}`);
+  }
+
+  async updateQRPaymentSession(id: string, sessionData: any) {
+    return this.request(`/qr-payment-sessions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(sessionData),
+    });
+  }
+
+  async cancelQRPaymentSession(id: string) {
+    return this.request(`/qr-payment-sessions/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Payment Remittances
+  async getPaymentRemittances() {
+    return this.request('/payment-remittances');
+  }
+
+  // Accounting
+  async getAccounts() {
+    return this.request('/accounting/accounts', {}, false);
+  }
+
+  async getNextAccountCode(type?: string, subtype?: string) {
+    const qs = new URLSearchParams();
+    if (type) qs.set('type', type);
+    if (subtype) qs.set('subtype', subtype);
+    const q = qs.toString();
+    return this.request(`/accounting/accounts/next-code${q ? `?${q}` : ''}`, {}, false);
+  }
+
+  async createAccount(accountData: {
+    code: string;
+    name: string;
+    type: string;
+    subtype?: string;
+    parent_code?: string;
+    description?: string;
+    is_active?: boolean;
+    is_postable?: boolean;
+  }) {
+    return this.request('/accounting/accounts', {
+      method: 'POST',
+      body: JSON.stringify(accountData),
+    });
+  }
+
+  async getAccountLedger(code: string) {
+    return this.request<{ account?: any; rows: any[]; closing_balance?: number }>(
+      `/accounting/accounts/${encodeURIComponent(code)}/ledger`,
+      {},
+      false
+    );
+  }
+
+  async uploadAccountingAttachments(
+    kind:
+      | 'purchase-order'
+      | 'sales-invoice'
+      | 'supplier-payment'
+      | 'petty-cash'
+      | 'invoice-note'
+      | 'journal'
+      | 'shipment-invoice',
+    id: string,
+    files: File[]
+  ) {
+    const formData = new FormData();
+    for (const file of files) formData.append('documents', file);
+    return this.request(`/accounting/attachments/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async deleteAccountingAttachment(
+    kind: string,
+    id: string,
+    docId: string
+  ) {
+    return this.request(
+      `/accounting/attachments/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/${encodeURIComponent(docId)}`,
+      { method: 'DELETE' }
+    );
+  }
+
+  async getBankCashOverview() {
+    return this.request('/accounting/bank-cash/overview', {}, false);
+  }
+
+  async getBankCashAccounts() {
+    return this.request('/accounting/bank-cash/accounts', {}, false);
+  }
+
+  async getBankCashEntries() {
+    return this.request('/accounting/bank-cash/entries', {}, false);
+  }
+
+  async createBankCashEntry(payload: {
+    entry_date?: string;
+    direction: 'IN' | 'OUT' | 'TRANSFER';
+    amount: number;
+    bank_cash_account_id: string;
+    to_bank_cash_account_id?: string;
+    counter_account_code?: string;
+    reference?: string;
+    memo?: string;
+  }) {
+    return this.request('/accounting/bank-cash/entries', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async createBankCashAccount(accountData: {
+    code: string;
+    name: string;
+    account_type: string;
+    currency?: string;
+    bank_name?: string;
+    account_number_masked?: string;
+    gl_account_code: string;
+    opening_balance?: number;
+    notes?: string;
+  }) {
+    return this.request('/accounting/bank-cash/accounts', {
+      method: 'POST',
+      body: JSON.stringify(accountData),
+    });
+  }
+
+  async getSupplierPayments(status?: string) {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/accounting/bank-cash/payments${q}`, {}, false);
+  }
+
+  async createSupplierPayment(payload: {
+    payment_date?: string;
+    supplier_name: string;
+    supplier_reference?: string;
+    description?: string;
+    amount: number;
+    bank_cash_account_id: string;
+    debit_account_code?: string;
+    currency?: string;
+    purchase_order_id?: string;
+  }) {
+    return this.request('/accounting/bank-cash/payments', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async approveSupplierPayment(id: string) {
+    return this.request(`/accounting/bank-cash/payments/${encodeURIComponent(id)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async rejectSupplierPayment(id: string, reason?: string) {
+    return this.request(`/accounting/bank-cash/payments/${encodeURIComponent(id)}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || '' }),
+    });
+  }
+
+  async reverseSupplierPayment(id: string, reason?: string) {
+    return this.request(`/accounting/bank-cash/payments/${encodeURIComponent(id)}/reverse`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || '' }),
+    });
+  }
+
+  async getGatewayClearance(status?: 'open' | 'settled' | 'all') {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/accounting/gateway-clearance${q}`, {}, false);
+  }
+
+  async settleGatewayClearance(payload: {
+    id: string;
+    bank_cash_account_id?: string;
+    settled_at?: string;
+  }) {
+    return this.request('/accounting/gateway-clearance/settle', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getPayablesSummary() {
+    return this.request('/accounting/payables/summary', {}, false);
+  }
+
+  async getBankReconciliations(accountId?: string) {
+    const q = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
+    return this.request(`/accounting/bank-cash/reconciliations${q}`, {}, false);
+  }
+
+  async getBankReconciliation(id: string) {
+    return this.request(`/accounting/bank-cash/reconciliations/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async uploadBankStatement(accountId: string, file: File) {
+    const formData = new FormData();
+    formData.append('bank_cash_account_id', accountId);
+    formData.append('statement', file);
+    const url = `${this.baseUrl}/accounting/bank-cash/reconciliations`;
+    const headers: Record<string, string> = {};
+    if (this.token) headers.Authorization = `Bearer ${this.token}`;
+    if (typeof window !== 'undefined') {
+      const csrfToken = getCSRFToken();
+      if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+    }
+    try {
+      const response = await fetch(url, { method: 'POST', headers, body: formData });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return { success: false, error: data.error || data.message || 'Failed to read the statement' };
+      }
+      return { success: true, data: data.data || data };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Failed to upload the statement' };
+    }
+  }
+
+  async matchBankReconciliation(id: string, statement_line_no: number, book_id: string) {
+    return this.request(`/accounting/bank-cash/reconciliations/${encodeURIComponent(id)}/match`, {
+      method: 'POST',
+      body: JSON.stringify({ statement_line_no, book_id }),
+    });
+  }
+
+  async unmatchBankReconciliation(id: string, statement_line_no: number) {
+    return this.request(`/accounting/bank-cash/reconciliations/${encodeURIComponent(id)}/unmatch`, {
+      method: 'POST',
+      body: JSON.stringify({ statement_line_no }),
+    });
+  }
+
+  async ignoreBankReconciliationLine(
+    id: string,
+    payload: { side: 'statement' | 'book'; statement_line_no?: number; book_id?: string }
+  ) {
+    return this.request(`/accounting/bank-cash/reconciliations/${encodeURIComponent(id)}/ignore`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async completeBankReconciliation(id: string, notes?: string) {
+    return this.request(`/accounting/bank-cash/reconciliations/${encodeURIComponent(id)}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ notes: notes || '' }),
+    });
+  }
+
+  async getPurchaseOrdersOverview() {
+    return this.request('/accounting/purchase-orders/overview', {}, false);
+  }
+
+  async getPurchaseOrders(status?: string) {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/accounting/purchase-orders${q}`, {}, false);
+  }
+
+  async getPurchaseStatement(params: {
+    supplier_id?: string;
+    supplier_name?: string;
+    payment_status?: string;
+    from?: string;
+    to?: string;
+    q?: string;
+  }) {
+    const qs = new URLSearchParams();
+    if (params.supplier_id) qs.set('supplier_id', params.supplier_id);
+    if (params.supplier_name) qs.set('supplier_name', params.supplier_name);
+    if (params.payment_status) qs.set('payment_status', params.payment_status);
+    if (params.from) qs.set('from', params.from);
+    if (params.to) qs.set('to', params.to);
+    if (params.q) qs.set('q', params.q);
+    const q = qs.toString();
+    return this.request(`/accounting/purchase-orders/statement${q ? `?${q}` : ''}`, {}, false);
+  }
+
+  async getPurchaseOrder(id: string) {
+    return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async getSuppliers(q?: string) {
+    const query = q ? `?q=${encodeURIComponent(q)}` : '';
+    return this.request(`/accounting/suppliers${query}`, {}, false);
+  }
+
+  async createSupplier(payload: SupplierPayload) {
+    return this.request('/accounting/suppliers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateSupplier(id: string, payload: Partial<SupplierPayload> & { is_active?: boolean }) {
+    return this.request(`/accounting/suppliers/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async createPurchaseOrder(payload: {
+    po_date?: string;
+    expected_date?: string;
+    supplier_id?: string;
+    supplier?: SupplierPayload;
+    supplier_name?: string;
+    supplier_reference?: string;
+    supplier_invoice_no?: string;
+    supplier_invoice_date?: string;
+    due_date?: string;
+    receive_later?: boolean;
+    currency?: string;
+    tax_amount?: number;
+    notes?: string;
+    debit_account_code?: string | null;
+    credit_account_code?: string;
+    submit?: boolean;
+    lines: Array<{
+      description: string;
+      sku?: string;
+      quantity: number;
+      unit_cost: number;
+      account_code?: string;
+    }>;
+  }) {
+    return this.request('/accounting/purchase-orders', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async recordPurchaseOrderInvoice(
+    id: string,
+    payload: {
+      supplier_invoice_no: string;
+      supplier_invoice_date: string;
+      due_date?: string;
+      tax_amount?: number;
+    }
+  ) {
+    return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}/invoice`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async submitPurchaseOrder(id: string) {
+    return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async approvePurchaseOrder(id: string) {
+    return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async rejectPurchaseOrder(id: string, reason?: string) {
+    return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || '' }),
+    });
+  }
+
+  async cancelPurchaseOrder(id: string, reason?: string) {
+    return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || '' }),
+    });
+  }
+
+  async receivePurchaseOrder(
+    id: string,
+    receipts?: Array<{ line_id: string; quantity: number }>
+  ) {
+    return this.request(`/accounting/purchase-orders/${encodeURIComponent(id)}/receive`, {
+      method: 'POST',
+      body: JSON.stringify({ receipts: receipts || [] }),
+    });
+  }
+
+  async getPettyCashOverview() {
+    return this.request('/accounting/petty-cash/overview', {}, false);
+  }
+
+  async fundPettyCash(payload: {
+    amount: number;
+    funding_account_code?: string;
+    entry_date?: string;
+    memo?: string;
+  }) {
+    return this.request('/accounting/petty-cash/fund', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getPettyCashVouchers() {
+    return this.request('/accounting/petty-cash/vouchers', {}, false);
+  }
+
+  async createPettyCashVoucher(payload: {
+    voucher_date?: string;
+    payee: string;
+    category?: string;
+    description?: string;
+    amount?: number;
+    expense_account_code?: string;
+    lines?: Array<{
+      account_code: string;
+      amount: number;
+      description?: string;
+    }>;
+  }) {
+    return this.request('/accounting/petty-cash/vouchers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getPettyCashReplenishments(status?: string) {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/accounting/petty-cash/replenishments${q}`, {}, false);
+  }
+
+  async requestPettyCashReplenishment(payload: {
+    requested_amount: number;
+    reason?: string;
+  }) {
+    return this.request('/accounting/petty-cash/replenishments', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async approvePettyCashReplenishment(
+    id: string,
+    payload?: { approved_amount?: number; funding_account_code?: string }
+  ) {
+    return this.request(
+      `/accounting/petty-cash/replenishments/${encodeURIComponent(id)}/approve`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload || {}),
+      }
+    );
+  }
+
+  async rejectPettyCashReplenishment(id: string, reason?: string) {
+    return this.request(
+      `/accounting/petty-cash/replenishments/${encodeURIComponent(id)}/reject`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason || '' }),
+      }
+    );
+  }
+
+  async getBudgetsOverview() {
+    return this.request('/accounting/budgets/overview', {}, false);
+  }
+
+  async getBudgets(status?: string) {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/accounting/budgets${q}`, {}, false);
+  }
+
+  async getBudget(id: string) {
+    return this.request(`/accounting/budgets/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async createBudget(payload: {
+    name: string;
+    code: string;
+    fiscal_year?: number;
+    period_type?: string;
+    start_date?: string;
+    end_date?: string;
+    notes?: string;
+    currency?: string;
+    lines?: Array<{
+      account_code: string;
+      budgeted_amount: number;
+      notes?: string;
+    }>;
+  }) {
+    return this.request('/accounting/budgets', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateBudget(id: string, payload: Record<string, unknown>) {
+    return this.request(`/accounting/budgets/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async activateBudget(id: string) {
+    return this.request(`/accounting/budgets/${encodeURIComponent(id)}/activate`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async closeBudget(id: string) {
+    return this.request(`/accounting/budgets/${encodeURIComponent(id)}/close`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async getFixedAssetsOverview() {
+    return this.request('/accounting/fixed-assets/overview', {}, false);
+  }
+
+  async getFixedAssets(status?: string) {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/accounting/fixed-assets${q}`, {}, false);
+  }
+
+  async getFixedAsset(id: string) {
+    return this.request(`/accounting/fixed-assets/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async createFixedAsset(payload: {
+    asset_tag: string;
+    name: string;
+    category?: string;
+    location?: string;
+    purchase_date?: string;
+    in_service_date?: string;
+    acquisition_cost: number;
+    salvage_value?: number;
+    useful_life_months: number;
+    funding_account_code?: string;
+    post_acquisition_journal?: boolean;
+    notes?: string;
+  }) {
+    return this.request('/accounting/fixed-assets', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async depreciateFixedAsset(id: string, period_date?: string) {
+    return this.request(`/accounting/fixed-assets/${encodeURIComponent(id)}/depreciate`, {
+      method: 'POST',
+      body: JSON.stringify({ period_date }),
+    });
+  }
+
+  async depreciateAllFixedAssets(period_date?: string) {
+    return this.request('/accounting/fixed-assets/depreciate-all', {
+      method: 'POST',
+      body: JSON.stringify({ period_date }),
+    });
+  }
+
+  async disposeFixedAsset(
+    id: string,
+    payload: {
+      proceeds?: number;
+      disposal_date?: string;
+      proceeds_account_code?: string;
+      gain_loss_account_code?: string;
+    }
+  ) {
+    return this.request(`/accounting/fixed-assets/${encodeURIComponent(id)}/dispose`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getSalesOverview() {
+    return this.request('/accounting/sales/overview', {}, false);
+  }
+
+  async getSalesCustomers(opts?: { vat_traders?: boolean; active?: boolean }) {
+    const params = new URLSearchParams();
+    if (opts?.vat_traders) params.set('vat_traders', 'true');
+    if (opts?.active === false) params.set('active', 'false');
+    const q = params.toString();
+    return this.request(`/accounting/sales/customers${q ? `?${q}` : ''}`, {}, false);
+  }
+
+  async createSalesCustomer(payload: {
+    code?: string;
+    legal_name: string;
+    trade_name?: string;
+    vat_trn?: string;
+    is_vat_registered?: boolean;
+    is_official_trader?: boolean;
+    contact_name?: string;
+    email?: string;
+    phone?: string;
+    address_line1?: string;
+    address_line2?: string;
+    city?: string;
+    emirate?: string;
+    country?: string;
+    payment_terms_days?: number;
+    credit_limit?: number;
+    notes?: string;
+  }) {
+    return this.request('/accounting/sales/customers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateSalesCustomer(
+    id: string,
+    payload: Partial<{
+      legal_name: string;
+      trade_name: string;
+      vat_trn: string;
+      is_vat_registered: boolean;
+      is_official_trader: boolean;
+      contact_name: string;
+      email: string;
+      phone: string;
+      address_line1: string;
+      address_line2: string;
+      city: string;
+      emirate: string;
+      country: string;
+      payment_terms_days: number;
+      credit_limit: number;
+      notes: string;
+      is_active: boolean;
+    }>
+  ) {
+    return this.request(`/accounting/sales/customers/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getSalesInvoices(status?: string) {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/accounting/sales/invoices${q}`, {}, false);
+  }
+
+  async getUnpaidInvoiceSummary(params?: {
+    customer_id?: string;
+    customer_name?: string;
+    kind?: string;
+    /** ALL | UNPAID | PARTIAL | PAID */
+    payment_status?: string;
+    from?: string;
+    to?: string;
+  }) {
+    const qs = new URLSearchParams();
+    if (params?.customer_id) qs.set('customer_id', params.customer_id);
+    if (params?.customer_name) qs.set('customer_name', params.customer_name);
+    if (params?.kind) qs.set('kind', params.kind);
+    if (params?.payment_status) qs.set('payment_status', params.payment_status);
+    if (params?.from) qs.set('from', params.from);
+    if (params?.to) qs.set('to', params.to);
+    const q = qs.toString();
+    return this.request(`/accounting/sales/unpaid-summary${q ? `?${q}` : ''}`, {}, false);
+  }
+
+  async getSalesInvoice(id: string) {
+    return this.request(`/accounting/sales/invoices/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async createSalesInvoice(payload: {
+    invoice_date?: string;
+    due_date?: string;
+    customer_id?: string;
+    customer_name?: string;
+    currency?: string;
+    notes?: string;
+    ar_account_code?: string;
+    revenue_account_code?: string;
+    vat_account_code?: string;
+    submit?: boolean;
+    lines: Array<{
+      description: string;
+      sku?: string;
+      quantity: number;
+      unit_price: number;
+      vat_rate?: number;
+    }>;
+  }) {
+    return this.request('/accounting/sales/invoices', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async submitSalesInvoice(id: string) {
+    return this.request(`/accounting/sales/invoices/${encodeURIComponent(id)}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async approveSalesInvoice(id: string) {
+    return this.request(`/accounting/sales/invoices/${encodeURIComponent(id)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async rejectSalesInvoice(id: string, reason?: string) {
+    return this.request(`/accounting/sales/invoices/${encodeURIComponent(id)}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async paySalesInvoice(
+    id: string,
+    payload: {
+      amount?: number;
+      payment_date?: string;
+      bank_cash_account_id?: string;
+      receipt_account_code?: string;
+      notes?: string;
+    }
+  ) {
+    return this.request(`/accounting/sales/invoices/${encodeURIComponent(id)}/pay`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getVat201Overview() {
+    return this.request('/accounting/vat201/overview', {}, false);
+  }
+
+  async computeVat201(from: string, to: string) {
+    const q = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+    return this.request(`/accounting/vat201/compute${q}`, {}, false);
+  }
+
+  async getVat201Returns() {
+    return this.request('/accounting/vat201/returns', {}, false);
+  }
+
+  async getVat201Return(id: string) {
+    return this.request(`/accounting/vat201/returns/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async createVat201Return(payload: {
+    period_start: string;
+    period_end: string;
+    period_label?: string;
+    notes?: string;
+  }) {
+    return this.request('/accounting/vat201/returns', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async refreshVat201Return(id: string) {
+    return this.request(`/accounting/vat201/returns/${encodeURIComponent(id)}/refresh`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async fileVat201Return(id: string, notes?: string) {
+    return this.request(`/accounting/vat201/returns/${encodeURIComponent(id)}/file`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+  }
+
+  async getEInvoicingOverview() {
+    return this.request('/accounting/einvoicing/overview', {}, false);
+  }
+
+  async getEInvoiceEligible() {
+    return this.request('/accounting/einvoicing/eligible', {}, false);
+  }
+
+  async getFinanceInvoiceGlStatus() {
+    return this.request('/accounting/finance-invoices/gl-status', {}, false);
+  }
+
+  async postFinanceInvoiceJournal(id: string) {
+    return this.request(`/accounting/finance-invoices/${encodeURIComponent(id)}/post-journal`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async postPendingFinanceInvoiceJournals(opts?: { since?: string; limit?: number }) {
+    return this.request('/accounting/finance-invoices/post-pending', {
+      method: 'POST',
+      body: JSON.stringify(opts || {}),
+    });
+  }
+
+  async getEInvoices(opts?: { status?: string; q?: string }) {
+    const params = new URLSearchParams();
+    if (opts?.status) params.set('status', opts.status);
+    if (opts?.q) params.set('q', opts.q);
+    const qs = params.toString();
+    return this.request(`/accounting/einvoicing/documents${qs ? `?${qs}` : ''}`, {}, false);
+  }
+
+  async getEInvoice(id: string) {
+    return this.request(`/accounting/einvoicing/documents/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async generateEInvoice(salesInvoiceId: string) {
+    return this.request('/accounting/einvoicing/documents', {
+      method: 'POST',
+      body: JSON.stringify({ sales_invoice_id: salesInvoiceId }),
+    });
+  }
+
+  async generateAllEInvoices() {
+    return this.request('/accounting/einvoicing/generate-all', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async revalidateEInvoice(id: string) {
+    return this.request(`/accounting/einvoicing/documents/${encodeURIComponent(id)}/revalidate`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async submitEInvoice(id: string) {
+    return this.request(`/accounting/einvoicing/documents/${encodeURIComponent(id)}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async updateEInvoiceStatus(
+    id: string,
+    payload: { status: 'DELIVERED' | 'ACCEPTED' | 'REJECTED'; note?: string; asp_reference?: string }
+  ) {
+    return this.request(`/accounting/einvoicing/documents/${encodeURIComponent(id)}/status`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async cancelEInvoice(id: string, note?: string) {
+    return this.request(`/accounting/einvoicing/documents/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    });
+  }
+
+  /** Downloads the UBL XML with the auth header and saves it via the browser */
+  async downloadEInvoiceXml(id: string, filename: string) {
+    const headers: Record<string, string> = {};
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/accounting/einvoicing/documents/${encodeURIComponent(id)}/xml`,
+        { headers }
+      );
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        return { success: false, error: data.error || 'Failed to download XML' };
+      }
+      const blob = await response.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Failed to download XML' };
+    }
+  }
+
+  async settleVat201Return(
+    id: string,
+    payload?: { settlement_date?: string; bank_account_code?: string }
+  ) {
+    return this.request(`/accounting/vat201/returns/${encodeURIComponent(id)}/settle`, {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    });
+  }
+
+  async getJournals() {
+    return this.request('/accounting/journals', {}, false);
+  }
+
+  async getJournal(id: string) {
+    return this.request(`/accounting/journals/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  private async submitJournalForm(
+    method: 'POST' | 'PUT',
+    path: string,
+    journalData: {
+      entry_date: string;
+      memo?: string;
+      source?: string;
+      status?: 'DRAFT' | 'POSTED';
+      source_reference?: string;
+      source_label?: string;
+      lines: Array<{
+        account_code: string;
+        debit?: number;
+        credit?: number;
+        description?: string;
+      }>;
+    },
+    documents: File[] = []
+  ) {
+    const formData = new FormData();
+    formData.append('entry_date', journalData.entry_date);
+    formData.append('memo', journalData.memo || '');
+    formData.append('source', journalData.source || 'MANUAL');
+    formData.append('status', journalData.status || 'POSTED');
+    formData.append('source_reference', journalData.source_reference || '');
+    formData.append(
+      'source_label',
+      journalData.source_label || 'Manual journal entry'
+    );
+    formData.append('lines', JSON.stringify(journalData.lines || []));
+    for (const file of documents) {
+      formData.append('documents', file);
+    }
+
+    const url = `${this.baseUrl}${path}`;
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    if (typeof window !== 'undefined') {
+      const csrfToken = getCSRFToken();
+      if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+    }
+
+    try {
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: formData,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data.error || data.message || `Failed to ${method === 'PUT' ? 'update' : 'create'} journal`,
+          period_key: data.period_key,
+          locked: data.locked,
+        };
+      }
+      return { success: true, data: data.data || data, meta: data.meta };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error?.message || `Failed to ${method === 'PUT' ? 'update' : 'create'} journal`,
+      };
+    }
+  }
+
+  async getAccountingPeriods(monthsBack = 12, monthsForward = 6) {
+    const q = `?months_back=${monthsBack}&months_forward=${monthsForward}`;
+    return this.request(`/accounting/periods${q}`, {}, false);
+  }
+
+  async setAccountingPeriodStatus(
+    periodKey: string,
+    status: 'OPEN' | 'LOCKED',
+    notes?: string
+  ) {
+    return this.request(`/accounting/periods/${encodeURIComponent(periodKey)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, notes: notes || '', reason: notes || '' }),
+    });
+  }
+
+  async createJournal(
+    journalData: {
+      entry_date: string;
+      memo?: string;
+      source?: string;
+      status?: 'DRAFT' | 'POSTED';
+      source_reference?: string;
+      source_label?: string;
+      lines: Array<{
+        account_code: string;
+        debit?: number;
+        credit?: number;
+        description?: string;
+      }>;
+    },
+    documents: File[] = []
+  ) {
+    return this.submitJournalForm('POST', '/accounting/journals', journalData, documents);
+  }
+
+  async updateJournal(
+    id: string,
+    journalData: {
+      entry_date: string;
+      memo?: string;
+      status?: 'DRAFT' | 'POSTED';
+      lines: Array<{
+        account_code: string;
+        debit?: number;
+        credit?: number;
+        description?: string;
+      }>;
+    },
+    documents: File[] = []
+  ) {
+    return this.submitJournalForm(
+      'PUT',
+      `/accounting/journals/${encodeURIComponent(id)}`,
+      journalData,
+      documents
+    );
+  }
+
+  async getInventoryItems() {
+    return this.request('/accounting/inventory/items', {}, false);
+  }
+
+  async getInventoryItem(sku: string) {
+    return this.request<{ item: any; movements?: any[]; stock_value?: number }>(
+      `/accounting/inventory/items/${encodeURIComponent(sku)}`,
+      {},
+      false
+    );
+  }
+
+  async createInventoryItem(itemData: {
+    sku: string;
+    name: string;
+    unit?: string;
+    qty_on_hand?: number;
+    avg_cost?: number;
+    reorder_level?: number;
+    asset_account_code?: string;
+    cogs_account_code?: string;
+    income_account_code?: string;
+    is_active?: boolean;
+  }) {
+    return this.request('/accounting/inventory/items', {
+      method: 'POST',
+      body: JSON.stringify(itemData),
+    });
+  }
+
+  async updateInventoryItem(id: string, itemData: {
+    sku?: string;
+    name?: string;
+    unit?: string;
+    qty_on_hand?: number;
+    avg_cost?: number;
+    reorder_level?: number;
+    asset_account_code?: string;
+    cogs_account_code?: string;
+    income_account_code?: string;
+    is_active?: boolean;
+  }) {
+    return this.request(`/accounting/inventory/items/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(itemData),
+    });
+  }
+
+  async deleteInventoryItem(id: string) {
+    return this.request(`/accounting/inventory/items/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getInventoryTransactions() {
+    return this.request('/accounting/inventory/transactions', {}, false);
+  }
+
+  async createInventoryTransaction(txnData: {
+    txn_date: string;
+    type: 'RECEIPT' | 'ISSUE' | 'ADJUSTMENT';
+    sku: string;
+    qty: number;
+    unit_cost?: number;
+    notes?: string;
+    offset_account_code?: string;
+    post_journal?: boolean;
+  }) {
+    return this.request<{ journal?: any; transaction?: any }>(
+      '/accounting/inventory/transactions',
+      {
+        method: 'POST',
+        body: JSON.stringify(txnData),
+      }
+    );
+  }
+
+  async getTrialBalance(from?: string, to?: string) {
+    const params = new URLSearchParams();
+    if (from) params.append('from', from);
+    if (to) params.append('to', to);
+    const q = params.toString();
+    return this.request(`/accounting/reports/trial-balance${q ? `?${q}` : ''}`, {}, false);
+  }
+
+  async getProfitAndLoss(from?: string, to?: string) {
+    const params = new URLSearchParams();
+    if (from) params.append('from', from);
+    if (to) params.append('to', to);
+    const q = params.toString();
+    return this.request(`/accounting/reports/profit-loss${q ? `?${q}` : ''}`, {}, false);
+  }
+
+  async getBalanceSheet(to?: string) {
+    const params = new URLSearchParams();
+    if (to) params.append('to', to);
+    const q = params.toString();
+    return this.request(`/accounting/reports/balance-sheet${q ? `?${q}` : ''}`, {}, false);
+  }
+
+  async getPaymentRemittance(id: string) {
+    return this.request(`/payment-remittances/${id}`);
+  }
+
+  async createPaymentRemittance(remittanceData: any) {
+    return this.request('/payment-remittances', {
+      method: 'POST',
+      body: JSON.stringify(remittanceData),
+    });
+  }
+
+  async updatePaymentRemittance(id: string, remittanceData: any) {
+    return this.request(`/payment-remittances/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(remittanceData),
+    });
+  }
+
+  async getDriverRemittances(driverId: string) {
+    return this.request(`/payment-remittances/driver/${driverId}`);
+  }
+
+  async getPendingRemittances() {
+    return this.request('/payment-remittances/pending');
+  }
+
+  async confirmPaymentRemittance(id: string) {
+    return this.request(`/payment-remittances/${id}/confirm`, {
+      method: 'POST',
+    });
+  }
+
+  // Bookings
+  async getBookings(filters?: { status?: string; awb?: string }, useCache: boolean = true) {
+    // Build query string from filters
+    const queryParams = new URLSearchParams();
+    if (filters?.status) queryParams.append('status', filters.status);
+    if (filters?.awb) queryParams.append('awb', filters.awb);
+    
+    const queryString = queryParams.toString();
+    const endpoint = queryString ? `/bookings?${queryString}` : '/bookings';
+    return this.request(endpoint, {}, useCache, 30000); // Cache for 30 seconds
+  }
+
+  // Fetch all pages of bookings (handles backend pagination)
+  async getAllBookings(filters?: { status?: string; awb?: string }, useCache: boolean = true) {
+    const allBookings: any[] = [];
+    let currentPage = 1;
+    let totalPages = 1;
+    
+    do {
+      // Build query string from filters and page
+      const queryParams = new URLSearchParams();
+      if (filters?.status) queryParams.append('status', filters.status);
+      if (filters?.awb) queryParams.append('awb', filters.awb);
+      queryParams.append('page', currentPage.toString());
+      
+      const queryString = queryParams.toString();
+      const endpoint = `/bookings?${queryString}`;
+      
+      const result = await this.request(endpoint, {}, useCache && currentPage === 1, 30000);
+      
+      if (result.success) {
+        // Check if response has pagination at root level
+        const pagination = (result as any).pagination;
+        const data = result.data;
+        
+        if (pagination && Array.isArray(data)) {
+          // Paginated response: { success: true, data: [...], pagination: {...} }
+          allBookings.push(...data);
+          totalPages = pagination.pages || 1;
+          currentPage++;
+        } else if (data && typeof data === 'object' && (data as any).pagination) {
+          // Paginated response: { success: true, data: { data: [...], pagination: {...} } }
+          const responseData = data as any;
+          if (Array.isArray(responseData.data)) {
+            allBookings.push(...responseData.data);
+          }
+          totalPages = responseData.pagination?.pages || 1;
+          currentPage++;
+        } else if (Array.isArray(data)) {
+          // Non-paginated response (backward compatibility)
+          allBookings.push(...data);
+          break;
+        } else {
+          break; // Unknown format
+        }
+      } else {
+        break; // Stop on error
+      }
+    } while (currentPage <= totalPages);
+    
+    return {
+      success: true,
+      data: allBookings
+    };
+  }
+
+  async getBooking(id: string, useCache: boolean = true) {
+    return this.request(`/bookings/${id}`, {}, useCache, 60000); // Cache for 60 seconds
+  }
+
+  // Get booking with full details including all identityDocuments images
+  // This endpoint should return complete booking data with all nested images
+  async getBookingForReview(id: string, useCache: boolean = false) {
+    return this.request(`/bookings/${id}/review`, {}, useCache, 0); // No cache for review data
+  }
+
+  async getBookingsByStatus(reviewStatus: string, filters?: { awb?: string }, useCache: boolean = true) {
+    // Build query string from filters
+    const queryParams = new URLSearchParams();
+    if (filters?.awb) queryParams.append('awb', filters.awb);
+    
+    const queryString = queryParams.toString();
+    const endpoint = queryString ? `/bookings/status/${reviewStatus}?${queryString}` : `/bookings/status/${reviewStatus}`;
+    return this.request(endpoint, {}, useCache, 30000); // Cache for 30 seconds
+  }
+
+  // Fetch all pages of bookings by status (handles backend pagination)
+  async getAllBookingsByStatus(reviewStatus: string, filters?: { awb?: string }, useCache: boolean = true) {
+    const allBookings: any[] = [];
+    let currentPage = 1;
+    let totalPages = 1;
+    
+    do {
+      // Build query string from filters and page
+      const queryParams = new URLSearchParams();
+      if (filters?.awb) queryParams.append('awb', filters.awb);
+      queryParams.append('page', currentPage.toString());
+      
+      const queryString = queryParams.toString();
+      const endpoint = queryString 
+        ? `/bookings/status/${reviewStatus}?${queryString}` 
+        : `/bookings/status/${reviewStatus}?page=${currentPage}`;
+      
+      const result = await this.request(endpoint, {}, useCache && currentPage === 1, 30000);
+      
+      if (result.success) {
+        // Check if response has pagination at root level
+        const pagination = (result as any).pagination;
+        const data = result.data;
+        
+        if (pagination && Array.isArray(data)) {
+          // Paginated response: { success: true, data: [...], pagination: {...} }
+          allBookings.push(...data);
+          totalPages = pagination.pages || 1;
+          currentPage++;
+        } else if (data && typeof data === 'object' && (data as any).pagination) {
+          // Paginated response: { success: true, data: { data: [...], pagination: {...} } }
+          const responseData = data as any;
+          if (Array.isArray(responseData.data)) {
+            allBookings.push(...responseData.data);
+          }
+          totalPages = responseData.pagination?.pages || 1;
+          currentPage++;
+        } else if (Array.isArray(data)) {
+          // Non-paginated response (backward compatibility)
+          allBookings.push(...data);
+          break;
+        } else {
+          break; // Unknown format
+        }
+      } else {
+        break; // Stop on error
+      }
+    } while (currentPage <= totalPages);
+    
+    return {
+      success: true,
+      data: allBookings
+    };
+  }
+
+  // Create a new booking (for Sales department)
+  async createBooking(bookingData: any) {
+    return this.request('/bookings', {
+      method: 'POST',
+      body: JSON.stringify(bookingData),
+    });
+  }
+
+  async reviewBooking(id: string, reviewData: { reviewed_by_employee_id: string }) {
+    return this.request(`/bookings/${id}/review`, {
+      method: 'POST',
+      body: JSON.stringify(reviewData),
+    });
+  }
+
+  async autoReviewBookingsBatch(payload: {
+    reviewed_by_employee_id: string;
+    limit?: number;
+    booking_ids?: string[];
+  }) {
+    return this.request('/bookings/auto-review/batch', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getSystemSettings() {
+    return this.request('/system-settings', {}, true, 30000);
+  }
+
+  async setBookingAutoReview(enabled: boolean) {
+    return this.request('/system-settings/booking-auto-review', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  }
+
+  async getGoogleDriveRefreshTokenStatus() {
+    return this.request('/system-settings/google-drive-refresh-token', {}, true, 30000);
+  }
+
+  async setGoogleDriveRefreshToken(refreshToken: string) {
+    return this.request('/system-settings/google-drive-refresh-token', {
+      method: 'PUT',
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+  }
+
+  async getFinanceSetup() {
+    return this.request('/finance-setup', {}, false, 0);
+  }
+
+  async saveFinanceSetupProfile(payload: Record<string, unknown>) {
+    return this.request('/finance-setup/profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async uploadFinanceSetupLogo(file: File) {
+    const form = new FormData();
+    form.append('logo', file);
+    return this.request('/finance-setup/profile/logo', {
+      method: 'POST',
+      body: form as unknown as BodyInit,
+      headers: {},
+    });
+  }
+
+  async saveFinanceFoundations(payload: Record<string, unknown>) {
+    return this.request('/finance-setup/foundations', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async saveFinancePermissions(payload: Record<string, unknown>) {
+    return this.request('/finance-setup/permissions', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async saveFinanceApprovals(payload: Record<string, unknown>) {
+    return this.request('/finance-setup/approvals', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async saveFinanceMappings(payload: Record<string, unknown>) {
+    return this.request('/finance-setup/mappings', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async markFinanceStepNotApplicable(stepKey: string, reason: string) {
+    return this.request(`/finance-setup/steps/${stepKey}/not-applicable`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async reviewFinanceStep(stepKey: string, comments: string) {
+    return this.request(`/finance-setup/steps/${stepKey}/review`, {
+      method: 'PUT',
+      body: JSON.stringify({ comments }),
+    });
+  }
+
+  async previewOpeningBalances(payload: Record<string, unknown>) {
+    return this.request('/finance-setup/opening-balances/preview', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async approveOpeningBalances(batchId: string) {
+    return this.request(`/finance-setup/opening-balances/${encodeURIComponent(batchId)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async reverseOpeningBalances(batchId: string, reason: string) {
+    return this.request(`/finance-setup/opening-balances/${encodeURIComponent(batchId)}/reverse`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async listOpeningBalanceBatches() {
+    return this.request('/finance-setup/opening-balances', {}, false, 0);
+  }
+
+  async runFinanceWorkflowValidation(manual?: Record<string, unknown>) {
+    return this.request('/finance-setup/workflow-validation/run', {
+      method: 'POST',
+      body: JSON.stringify({ manual: manual || {} }),
+    });
+  }
+
+  async checkFinanceDriveConnection() {
+    return this.request('/finance-setup/integrations/google-drive/check', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async saveFinanceBackupReview(payload: { reviewed: boolean; notes?: string }) {
+    return this.request('/finance-setup/backup-review', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async approveFinanceGoLive(payload: { comments: string; enable_enforcement?: boolean }) {
+    return this.request('/finance-setup/go-live/approve', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async searchApprovedBookingForms(payload: {
+    awb?: string;
+    name?: string;
+    beforeCreatedAt?: string | Date;
+    beforeId?: string;
+    limit?: number;
+  }) {
+    return this.request('/bookings/search-approved-forms', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /** Step 2 after name click — light booking summary only */
+  async getBookingFormSummary(id: string) {
+    return this.request(`/bookings/${id}/form-summary`, {}, false, 0);
+  }
+
+  async updateBookingStatus(id: string, statusData: { review_status: string; reviewed_by_employee_id?: string; reason?: string }) {
+    return this.request(`/bookings/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify(statusData),
+    });
+  }
+
+  async updateBookingShipmentStatusHistory(bookingId: string, shipmentStatusHistory: string) {
+    return this.request(`/bookings/${bookingId}/shipment-status-history`, {
+      method: 'PUT',
+      body: JSON.stringify({ shipment_status_history: shipmentStatusHistory }),
+    });
+  }
+
+  // Get bookings with verified invoices (for cargo status tracking)
+  // Optimized to only fetch fields needed for display
+  async getBookingsWithVerifiedInvoices(useCache: boolean = true, fields?: string[]) {
+    // Define minimal fields needed for review-requests page display
+    const defaultFields = [
+      '_id',
+      'awb',
+      'tracking_code',
+      'awb_number',
+      'customer_name',
+      'receiver_name',
+      'origin_place',
+      'destination_place',
+      'shipment_status',
+      'batch_no', // Legacy field, kept for backward compatibility
+      'invoice_number',
+      'invoice.batch_number', // Batch number from invoices collection
+      'service_code',
+      'service',
+      'sender.completeAddress',
+      'sender.country',
+      'receiver.completeAddress',
+      'receiver.country',
+      'request_id.service_code',
+      'request_id.service',
+      'request_id.awb',
+      'request_id.tracking_code',
+      'request_id.awb_number',
+      'booking.service_code',
+      'booking.service',
+      'booking.awb',
+      'booking.tracking_code',
+      'booking.awb_number'
+    ];
+    
+    const fieldsToFetch = fields || defaultFields;
+    const fieldsParam = fieldsToFetch.join(',');
+    const endpoint = `/bookings/verified-invoices?fields=${encodeURIComponent(fieldsParam)}`;
+    
+    return this.request(endpoint, {}, useCache, 30000);
+  }
+
+  // Update booking shipment status
+  async updateBookingShipmentStatus(id: string, statusData: { shipment_status: string; updated_by?: string; notes?: string }) {
+    return this.request(`/bookings/${id}/shipment-status`, {
+      method: 'PUT',
+      body: JSON.stringify(statusData),
+    });
+  }
+
+  // Batch update shipment status for multiple bookings
+  async batchUpdateShipmentStatus(bookingIds: string[], statusData: { shipment_status: string; batch_no?: string; updated_by?: string; notes?: string }) {
+    return this.request('/bookings/batch/shipment-status', {
+      method: 'PUT',
+      body: JSON.stringify({ booking_ids: bookingIds, ...statusData }),
+    });
+  }
+
+  // Create batch and assign to bookings
+  async createBatch(batchData: { batch_no: string; booking_ids: string[]; created_by?: string; notes?: string }) {
+    return this.request('/bookings/batch/create', {
+      method: 'POST',
+      body: JSON.stringify(batchData),
+    });
+  }
+
+  // Get bookings by batch number
+  async getBookingsByBatch(batchNo: string, useCache: boolean = true) {
+    return this.request(`/bookings/batch/${batchNo}`, {}, useCache, 30000);
+  }
+
+  // Health check
+  async healthCheck() {
+    return this.request('/health');
+  }
+
+  async getQuotations(params?: { page?: number; limit?: number; search?: string }) {
+    const query = new URLSearchParams();
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.search) query.set('search', params.search);
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return this.request(`/quotations${suffix}`, {}, false, 0);
+  }
+
+  async createQuotation(quotationData: any) {
+    return this.request('/quotations', {
+      method: 'POST',
+      body: JSON.stringify(quotationData),
+    }, false);
+  }
+
+  async getQuotation(id: string) {
+    return this.request(`/quotations/${encodeURIComponent(id)}`, {}, false);
+  }
+
+  async recordSavedQuotationAdvance(
+    id: string,
+    payload: {
+      mode: InvoicePaymentMode;
+      amount?: number;
+      reference?: string;
+      collected_at?: string;
+    }
+  ) {
+    const result = await this.request(`/quotations/${encodeURIComponent(id)}/advance-payment`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    this.invalidateCache('/invoice-requests');
+    this.invalidateCache('/invoices-unified');
+    return result;
+  }
+
+  async updateQuotation(id: string, quotationData: any) {
+    this.invalidateCache('/invoice-requests');
+    return this.request(`/quotations/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(quotationData),
+    }, false);
+  }
+
+  async deleteQuotation(id: string) {
+    this.invalidateCache('/invoice-requests');
+    return this.request(`/quotations/${id}`, { method: 'DELETE' }, false);
+  }
+
+  // Quotation request step (Operations → Finance), between SUBMITTED and IN_PROGRESS
+  async updateInvoiceRate(invoiceRequestId: string, ratePerKg: number) {
+    this.invalidateCache('/invoice-requests');
+    return this.request(`/invoice-requests/${encodeURIComponent(invoiceRequestId)}/invoice-rate`, {
+      method: 'PUT',
+      body: JSON.stringify({ rate_per_kg: ratePerKg }),
+    }, false);
+  }
+
+  async startQuotationRequest(invoiceRequestId: string) {
+    this.invalidateCache('/invoice-requests');
+    return this.request(`/invoice-requests/${encodeURIComponent(invoiceRequestId)}/quotation-request/start`, {
+      method: 'PUT',
+    }, false);
+  }
+
+  async submitQuotationRequest(
+    invoiceRequestId: string,
+    payload: {
+      actual_weight: number;
+      volumetric_weight: number;
+      number_of_boxes: number;
+      items: { box_number: string; name: string; quantity: number }[];
+      notes?: string;
+    }
+  ) {
+    this.invalidateCache('/invoice-requests');
+    return this.request(`/invoice-requests/${encodeURIComponent(invoiceRequestId)}/quotation-request`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }, false);
+  }
+
+  async getQuotationRequests(params?: { stage?: string; summary?: boolean }) {
+    const query = new URLSearchParams();
+    if (params?.stage) query.set('stage', params.stage);
+    if (params?.summary) query.set('summary', '1');
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return this.request(`/quotations/requests${suffix}`, {}, false, 0);
+  }
+
+  async generateQuotationFromRequest(invoiceRequestId: string, quotationData: any) {
+    this.invalidateCache('/invoice-requests');
+    return this.request(`/quotations/from-request/${encodeURIComponent(invoiceRequestId)}`, {
+      method: 'POST',
+      body: JSON.stringify(quotationData),
+    }, false);
+  }
+
+  // Price Brackets Management
+  async getPriceBrackets(route: 'PH_TO_UAE' | 'UAE_TO_PH', useCache: boolean = false) {
+    // Don't use cache for price brackets to ensure real-time updates
+    return this.request(`/price-brackets/${route}`, {}, useCache, 0);
+  }
+
+  async updatePriceBrackets(route: 'PH_TO_UAE' | 'UAE_TO_PH', brackets: any[]) {
+    // Invalidate cache after update to ensure fresh data
+    this.invalidateCache('/price-brackets');
+    return this.request(
+      `/price-brackets/${route}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ brackets }),
+      },
+      false // Don't cache PUT requests
+    );
+  }
+
+  /** Superadmin: pending EmPost shipment / invoice pushes */
+  async getEmpostPending(limit = 100) {
+    return this.request(`/empost/pending?limit=${limit}`, {}, false, 0);
+  }
+
+  async retryEmpostPending(id: string, type: 'shipment_creation' | 'invoice') {
+    return this.request('/empost/retry', {
+      method: 'POST',
+      body: JSON.stringify({ id, type }),
+    });
+  }
+}
+
+export const apiClient = new ApiClient();
+export default apiClient;

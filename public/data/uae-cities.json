@@ -1,0 +1,536 @@
+[
+  {
+    "emirate": "Abu Dhabi",
+    "city_code": "AD-CITY",
+    "city_name": "Abu Dhabi City",
+    "districts": [
+      {
+        "district_code": "AD-CITY-ALWAHDA",
+        "district_name": "Al Wahda",
+        "areas": ["Al Wahda Area", "Al Markaziyah", "Al Qubaisat", "Al Zahiyah"]
+      },
+      {
+        "district_code": "AD-CITY-ALKHALIDIYA",
+        "district_name": "Al Khalidiya",
+        "areas": ["Al Khalidiya", "Al Manhal", "Al Nahyan", "Al Ras Al Akhdar"]
+      },
+      {
+        "district_code": "AD-CITY-ALMARINA",
+        "district_name": "Al Marina",
+        "areas": ["Al Marina", "Al Bateen", "Al Karamah", "Al Mushrif"]
+      },
+      {
+        "district_code": "AD-CITY-ALREEM",
+        "district_name": "Al Reem Island",
+        "areas": ["Al Reem Island", "Shams Abu Dhabi", "Najmat Abu Dhabi", "Sowwah Square"]
+      },
+      {
+        "district_code": "AD-CITY-YAS",
+        "district_name": "Yas Island",
+        "areas": ["Yas Island", "Yas Bay", "Yas Links", "Yas Gateway"]
+      }
+    ]
+  },
+  {
+    "emirate": "Abu Dhabi",
+    "city_code": "AD-ALAIN",
+    "city_name": "Al Ain",
+    "districts": [
+      {
+        "district_code": "AD-ALAIN-ALJIMI",
+        "district_name": "Al Jimi",
+        "areas": ["Al Jimi", "Al Qattara", "Al Mutaredh", "Al Sarooj"]
+      },
+      {
+        "district_code": "AD-ALAIN-ALKHRAIR",
+        "district_name": "Al Khrair",
+        "areas": ["Al Khrair", "Al Maqam", "Al Tawiya", "Al Foah"]
+      },
+      {
+        "district_code": "AD-ALAIN-ALMURAIBAH",
+        "district_name": "Al Muraibah",
+        "areas": ["Al Muraibah", "Al Jahili", "Al Qoaa", "Al Salamat"]
+      },
+      {
+        "district_code": "AD-ALAIN-ALHILI",
+        "district_name": "Al Hili",
+        "areas": ["Al Hili", "Al Hili Industrial", "Al Hili Residential", "Al Hili Park"]
+      },
+      {
+        "district_code": "AD-ALAIN-ALYAHAR",
+        "district_name": "Al Yahar",
+        "areas": ["Al Yahar", "Al Yahar North", "Al Yahar South", "Al Yahar Industrial"]
+      }
+    ]
+  },
+  {
+    "emirate": "Abu Dhabi",
+    "city_code": "AD-ALKHAZNAH",
+    "city_name": "Al Khaznah",
+    "districts": [
+      {
+        "district_code": "AD-ALKHAZNAH-CENTER",
+        "district_name": "Al Khaznah Center",
+        "areas": ["Al Khaznah Town", "Al Khaznah Residential", "Al Khaznah Industrial", "Al Khaznah Commercial"]
+      },
+      {
+        "district_code": "AD-ALKHAZNAH-NORTH",
+        "district_name": "Al Khaznah North",
+        "areas": ["Al Khaznah North", "Al Khaznah Farms", "Al Khaznah Desert", "Al Khaznah Oasis"]
+      },
+      {
+        "district_code": "AD-ALKHAZNAH-SOUTH",
+        "district_name": "Al Khaznah South",
+        "areas": ["Al Khaznah South", "Al Khaznah Village", "Al Khaznah Agricultural", "Al Khaznah Extension"]
+      }
+    ]
+  },
+  {
+    "emirate": "Abu Dhabi",
+    "city_code": "AD-MADINATZAYED",
+    "city_name": "Madinat Zayed",
+    "districts": [
+      {
+        "district_code": "AD-MZ-CENTER",
+        "district_name": "Madinat Zayed Center",
+        "areas": ["Madinat Zayed Town", "Madinat Zayed Commercial", "Madinat Zayed Residential", "Madinat Zayed Market"]
+      },
+      {
+        "district_code": "AD-MZ-NORTH",
+        "district_name": "Madinat Zayed North",
+        "areas": ["Madinat Zayed North", "Al Dhafra", "Al Dhafra Residential", "Al Dhafra Industrial"]
+      },
+      {
+        "district_code": "AD-MZ-SOUTH",
+        "district_name": "Madinat Zayed South",
+        "areas": ["Madinat Zayed South", "Al Dhafra South", "Al Dhafra Farms", "Al Dhafra Extension"]
+      }
+    ]
+  },
+  {
+    "emirate": "Abu Dhabi",
+    "city_code": "AD-RUWAIS",
+    "city_name": "Ruwais",
+    "districts": [
+      {
+        "district_code": "AD-RUWAIS-INDUSTRIAL",
+        "district_name": "Ruwais Industrial",
+        "areas": ["Ruwais Industrial City", "Ruwais Refinery", "Ruwais Port", "Ruwais Petrochemical"]
+      },
+      {
+        "district_code": "AD-RUWAIS-RESIDENTIAL",
+        "district_name": "Ruwais Residential",
+        "areas": ["Ruwais Residential", "Ruwais Town", "Ruwais Community", "Ruwais Housing"]
+      },
+      {
+        "district_code": "AD-RUWAIS-COMMERCIAL",
+        "district_name": "Ruwais Commercial",
+        "areas": ["Ruwais Commercial", "Ruwais Shopping", "Ruwais Services", "Ruwais Business"]
+      }
+    ]
+  },
+  {
+    "emirate": "Abu Dhabi",
+    "city_code": "AD-GHAYATHI",
+    "city_name": "Ghayathi",
+    "districts": [
+      {
+        "district_code": "AD-GHAYATHI-CENTER",
+        "district_name": "Ghayathi Center",
+        "areas": ["Ghayathi Town", "Ghayathi Residential", "Ghayathi Commercial", "Ghayathi Market"]
+      },
+      {
+        "district_code": "AD-GHAYATHI-NORTH",
+        "district_name": "Ghayathi North",
+        "areas": ["Ghayathi North", "Ghayathi Farms", "Ghayathi Desert", "Ghayathi Extension"]
+      },
+      {
+        "district_code": "AD-GHAYATHI-SOUTH",
+        "district_name": "Ghayathi South",
+        "areas": ["Ghayathi South", "Ghayathi Village", "Ghayathi Agricultural", "Ghayathi Industrial"]
+      }
+    ]
+  },
+  {
+    "emirate": "Abu Dhabi",
+    "city_code": "AD-LIWA",
+    "city_name": "Liwa Oasis",
+    "districts": [
+      {
+        "district_code": "AD-LIWA-CENTER",
+        "district_name": "Liwa Center",
+        "areas": ["Liwa Oasis", "Liwa Town", "Liwa Farms", "Liwa Date Plantations"]
+      },
+      {
+        "district_code": "AD-LIWA-NORTH",
+        "district_name": "Liwa North",
+        "areas": ["Liwa North", "Liwa Desert", "Liwa Dunes", "Liwa Camping"]
+      },
+      {
+        "district_code": "AD-LIWA-SOUTH",
+        "district_name": "Liwa South",
+        "areas": ["Liwa South", "Liwa Villages", "Liwa Agricultural", "Liwa Extension"]
+      }
+    ]
+  },
+  {
+    "emirate": "Abu Dhabi",
+    "city_code": "AD-MIRFA",
+    "city_name": "Al Mirfa",
+    "districts": [
+      {
+        "district_code": "AD-MIRFA-CENTER",
+        "district_name": "Al Mirfa Center",
+        "areas": ["Al Mirfa Town", "Al Mirfa Residential", "Al Mirfa Commercial", "Al Mirfa Port"]
+      },
+      {
+        "district_code": "AD-MIRFA-NORTH",
+        "district_name": "Al Mirfa North",
+        "areas": ["Al Mirfa North", "Al Mirfa Beach", "Al Mirfa Coastal", "Al Mirfa Extension"]
+      },
+      {
+        "district_code": "AD-MIRFA-SOUTH",
+        "district_name": "Al Mirfa South",
+        "areas": ["Al Mirfa South", "Al Mirfa Village", "Al Mirfa Farms", "Al Mirfa Industrial"]
+      }
+    ]
+  },
+  {
+    "emirate": "Abu Dhabi",
+    "city_code": "AD-SILA",
+    "city_name": "Sila",
+    "districts": [
+      {
+        "district_code": "AD-SILA-CENTER",
+        "district_name": "Sila Center",
+        "areas": ["Sila Town", "Sila Residential", "Sila Commercial", "Sila Market"]
+      },
+      {
+        "district_code": "AD-SILA-NORTH",
+        "district_name": "Sila North",
+        "areas": ["Sila North", "Sila Border", "Sila Desert", "Sila Extension"]
+      },
+      {
+        "district_code": "AD-SILA-SOUTH",
+        "district_name": "Sila South",
+        "areas": ["Sila South", "Sila Village", "Sila Farms", "Sila Agricultural"]
+      }
+    ]
+  },
+  {
+    "emirate": "Abu Dhabi",
+    "city_code": "AD-SWEIHAN",
+    "city_name": "Sweihan",
+    "districts": [
+      {
+        "district_code": "AD-SWEIHAN-CENTER",
+        "district_name": "Sweihan Center",
+        "areas": ["Sweihan Town", "Sweihan Residential", "Sweihan Commercial", "Sweihan Market"]
+      },
+      {
+        "district_code": "AD-SWEIHAN-NORTH",
+        "district_name": "Sweihan North",
+        "areas": ["Sweihan North", "Sweihan Farms", "Sweihan Desert", "Sweihan Oasis"]
+      },
+      {
+        "district_code": "AD-SWEIHAN-SOUTH",
+        "district_name": "Sweihan South",
+        "areas": ["Sweihan South", "Sweihan Village", "Sweihan Agricultural", "Sweihan Extension"]
+      }
+    ]
+  },
+  {
+    "emirate": "Abu Dhabi",
+    "city_code": "AD-DELMA",
+    "city_name": "Delma Island",
+    "districts": [
+      {
+        "district_code": "AD-DELMA-CENTER",
+        "district_name": "Delma Center",
+        "areas": ["Delma Town", "Delma Port", "Delma Residential", "Delma Commercial"]
+      },
+      {
+        "district_code": "AD-DELMA-NORTH",
+        "district_name": "Delma North",
+        "areas": ["Delma North", "Delma Beach", "Delma Coastal", "Delma Extension"]
+      },
+      {
+        "district_code": "AD-DELMA-SOUTH",
+        "district_name": "Delma South",
+        "areas": ["Delma South", "Delma Village", "Delma Farms", "Delma Agricultural"]
+      }
+    ]
+  },
+  {
+    "emirate": "Abu Dhabi",
+    "city_code": "AD-MUSSAFAH",
+    "city_name": "Musaffah",
+    "districts": [
+      {
+        "district_code": "AD-MUSSAFAH-INDUSTRIAL",
+        "district_name": "Musaffah Industrial",
+        "areas": ["Musaffah Industrial City", "Musaffah IC-1", "Musaffah IC-2", "Musaffah IC-3"]
+      },
+      {
+        "district_code": "AD-MUSSAFAH-RESIDENTIAL",
+        "district_name": "Musaffah Residential",
+        "areas": ["Musaffah Residential", "Musaffah Community", "Musaffah Housing", "Musaffah Town"]
+      },
+      {
+        "district_code": "AD-MUSSAFAH-COMMERCIAL",
+        "district_name": "Musaffah Commercial",
+        "areas": ["Musaffah Commercial", "Musaffah Market", "Musaffah Services", "Musaffah Business"]
+      }
+    ]
+  },
+  {
+    "emirate": "Abu Dhabi",
+    "city_code": "AD-BANYYAS",
+    "city_name": "Baniyas",
+    "districts": [
+      {
+        "district_code": "AD-BANYYAS-CENTER",
+        "district_name": "Baniyas Center",
+        "areas": ["Baniyas Town", "Baniyas Residential", "Baniyas Commercial", "Baniyas Market"]
+      },
+      {
+        "district_code": "AD-BANYYAS-NORTH",
+        "district_name": "Baniyas North",
+        "areas": ["Baniyas North", "Baniyas Farms", "Baniyas Industrial", "Baniyas Extension"]
+      },
+      {
+        "district_code": "AD-BANYYAS-SOUTH",
+        "district_name": "Baniyas South",
+        "areas": ["Baniyas South", "Baniyas Village", "Baniyas Agricultural", "Baniyas Residential South"]
+      }
+    ]
+  },
+  {
+    "emirate": "Abu Dhabi",
+    "city_code": "AD-SHAMKHA",
+    "city_name": "Shamkha",
+    "districts": [
+      {
+        "district_code": "AD-SHAMKHA-CENTER",
+        "district_name": "Shamkha Center",
+        "areas": ["Shamkha Town", "Shamkha Residential", "Shamkha Commercial", "Shamkha Community"]
+      },
+      {
+        "district_code": "AD-SHAMKHA-NORTH",
+        "district_name": "Shamkha North",
+        "areas": ["Shamkha North", "Shamkha Farms", "Shamkha Desert", "Shamkha Extension"]
+      },
+      {
+        "district_code": "AD-SHAMKHA-SOUTH",
+        "district_name": "Shamkha South",
+        "areas": ["Shamkha South", "Shamkha Village", "Shamkha Agricultural", "Shamkha Industrial"]
+      }
+    ]
+  },
+  {
+    "emirate": "Dubai",
+    "city_code": "DXB-DEIRA",
+    "city_name": "Deira",
+    "districts": [
+      {
+        "district_code": "DXB-DEIRA-ALRAS",
+        "district_name": "Al Ras",
+        "areas": ["Al Ras", "Al Souk Al Kabeer", "Al Sabkha", "Naif"]
+      },
+      {
+        "district_code": "DXB-DEIRA-ALRIGGA",
+        "district_name": "Al Rigga",
+        "areas": ["Al Rigga", "Al Muraqqabat", "Al Muteena", "Al Baraha"]
+      },
+      {
+        "district_code": "DXB-DEIRA-HORALANZAR",
+        "district_name": "Hor Al Anz",
+        "areas": ["Hor Al Anz", "Abu Hail", "Al Twar", "Al Qusais"]
+      }
+    ]
+  },
+  {
+    "emirate": "Dubai",
+    "city_code": "DXB-BURDUBAI",
+    "city_name": "Bur Dubai",
+    "districts": [
+      {
+        "district_code": "DXB-BURDUBAI-ALHAMRIYA",
+        "district_name": "Al Hamriya",
+        "areas": ["Al Hamriya", "Al Karama", "Al Mankhool", "Al Jaddaf"]
+      },
+      {
+        "district_code": "DXB-BURDUBAI-ALRAFFA",
+        "district_name": "Al Raffa",
+        "areas": ["Al Raffa", "Al Satwa", "Al Wasl", "Al Bada"]
+      },
+      {
+        "district_code": "DXB-BURDUBAI-ALSOUQ",
+        "district_name": "Al Souk",
+        "areas": ["Al Souk", "Al Fahidi", "Al Shindagha", "Al Seef"]
+      }
+    ]
+  },
+  {
+    "emirate": "Dubai",
+    "city_code": "DXB-DOWNTOWN",
+    "city_name": "Downtown Dubai",
+    "districts": [
+      {
+        "district_code": "DXB-DOWNTOWN-BUSINESSBAY",
+        "district_name": "Business Bay",
+        "areas": ["Business Bay", "Bay Square", "Dubai Canal", "The Opus"]
+      },
+      {
+        "district_code": "DXB-DOWNTOWN-DIFC",
+        "district_name": "DIFC",
+        "areas": ["DIFC", "Gate Village", "The Index", "The Address"]
+      },
+      {
+        "district_code": "DXB-DOWNTOWN-DOWNTOWN",
+        "district_name": "Downtown",
+        "areas": ["Downtown", "Burj Khalifa", "Dubai Mall", "Souk Al Bahar"]
+      }
+    ]
+  },
+  {
+    "emirate": "Dubai",
+    "city_code": "DXB-MARINA",
+    "city_name": "Dubai Marina",
+    "districts": [
+      {
+        "district_code": "DXB-MARINA-MARINA",
+        "district_name": "Dubai Marina",
+        "areas": ["Dubai Marina", "Marina Promenade", "Marina Walk", "JBR"]
+      },
+      {
+        "district_code": "DXB-MARINA-JLT",
+        "district_name": "JLT",
+        "areas": ["JLT", "Cluster A", "Cluster B", "Cluster C"]
+      },
+      {
+        "district_code": "DXB-MARINA-DAMAC",
+        "district_name": "Damac Hills",
+        "areas": ["Damac Hills", "Akoya", "Park Heights", "Damac Hills 2"]
+      }
+    ]
+  },
+  {
+    "emirate": "Dubai",
+    "city_code": "DXB-JBR",
+    "city_name": "Jumeirah",
+    "districts": [
+      {
+        "district_code": "DXB-JBR-JBR",
+        "district_name": "JBR",
+        "areas": ["JBR", "The Beach", "The Walk", "Bluewaters"]
+      },
+      {
+        "district_code": "DXB-JBR-JUMEIRAH1",
+        "district_name": "Jumeirah 1",
+        "areas": ["Jumeirah 1", "Jumeirah Beach Road", "Al Wasl Road", "Beachfront"]
+      },
+      {
+        "district_code": "DXB-JBR-JUMEIRAH2",
+        "district_name": "Jumeirah 2",
+        "areas": ["Jumeirah 2", "Jumeirah Beach", "Umm Suqeim", "Al Safa"]
+      },
+      {
+        "district_code": "DXB-JBR-JUMEIRAH3",
+        "district_name": "Jumeirah 3",
+        "areas": ["Jumeirah 3", "Al Barsha", "Al Barsha South", "Mall of the Emirates"]
+      }
+    ]
+  },
+  {
+    "emirate": "Sharjah",
+    "city_code": "SHJ-CITY",
+    "city_name": "Sharjah City",
+    "districts": [
+      {
+        "district_code": "SHJ-CITY-ALQASIMIYA",
+        "district_name": "Al Qasimiya",
+        "areas": ["Al Qasimiya", "Al Rolla", "Al Majaz", "Al Khan"]
+      },
+      {
+        "district_code": "SHJ-CITY-ALNAJDA",
+        "district_name": "Al Najda",
+        "areas": ["Al Najda", "Al Qulaya", "Al Yarmook", "Al Ghuwair"]
+      },
+      {
+        "district_code": "SHJ-CITY-ALMURSHID",
+        "district_name": "Al Murshid",
+        "areas": ["Al Murshid", "Al Tawun", "Al Azra", "Abu Shagara"]
+      }
+    ]
+  },
+  {
+    "emirate": "Ajman",
+    "city_code": "AJM-CITY",
+    "city_name": "Ajman City",
+    "districts": [
+      {
+        "district_code": "AJM-CITY-ALNUAIMIYA",
+        "district_name": "Al Nuaimiya",
+        "areas": ["Al Nuaimiya", "Al Jerf", "Al Rawda", "Al Mowaihat"]
+      },
+      {
+        "district_code": "AJM-CITY-ALHAMIDIYA",
+        "district_name": "Al Hamidiya",
+        "areas": ["Al Hamidiya", "Al Rashidiya", "Al Bustan", "Al Mowaihat"]
+      }
+    ]
+  },
+  {
+    "emirate": "Ras Al Khaimah",
+    "city_code": "RAK-CITY",
+    "city_name": "Ras Al Khaimah City",
+    "districts": [
+      {
+        "district_code": "RAK-CITY-ALNAKHIL",
+        "district_name": "Al Nakheel",
+        "areas": ["Al Nakheel", "Al Qawasim", "Al Maareed", "Al Hamra"]
+      },
+      {
+        "district_code": "RAK-CITY-ALGHANAN",
+        "district_name": "Al Ghanan",
+        "areas": ["Al Ghanan", "Al Mamoura", "Al Seer", "Al Hamra Village"]
+      }
+    ]
+  },
+  {
+    "emirate": "Fujairah",
+    "city_code": "FJR-CITY",
+    "city_name": "Fujairah City",
+    "districts": [
+      {
+        "district_code": "FJR-CITY-ALFASEEL",
+        "district_name": "Al Faseel",
+        "areas": ["Al Faseel", "Al Hayl", "Al Qurayya", "Al Aqah"]
+      },
+      {
+        "district_code": "FJR-CITY-ALGHURFA",
+        "district_name": "Al Ghurfa",
+        "areas": ["Al Ghurfa", "Al Bidiyah", "Al Bithnah", "Dibba"]
+      }
+    ]
+  },
+  {
+    "emirate": "Umm Al Quwain",
+    "city_code": "UAQ-CITY",
+    "city_name": "Umm Al Quwain City",
+    "districts": [
+      {
+        "district_code": "UAQ-CITY-ALRAAS",
+        "district_name": "Al Raas",
+        "areas": ["Al Raas", "Al Ramlah", "Al Salama", "Al Dar Al Baida"]
+      },
+      {
+        "district_code": "UAQ-CITY-ALSALIMIYA",
+        "district_name": "Al Salimiya",
+        "areas": ["Al Salimiya", "Al Haditha", "Falaj Al Moalla", "Al Sinniyah"]
+      }
+    ]
+  }
+]
+

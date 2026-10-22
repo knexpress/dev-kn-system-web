@@ -1,0 +1,144 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user profile information.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The user's unique ID from Firebase Auth." },
+        "email": { "type": "string", "format": "email", "description": "The user's email address." },
+        "displayName": { "type": "string", "description": "The user's full name." },
+        "department": { 
+          "type": "string",
+          "description": "The department the user belongs to.",
+          "enum": ["Sales", "Operations", "Finance", "HR", "Management", "IT"]
+        }
+      },
+      "required": ["uid", "email", "department"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Stores information about a single client.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The client's company name." },
+        "contactPerson": { "type": "string", "description": "The primary contact person at the client." },
+        "email": { "type": "string", "format": "email", "description": "The contact person's email." },
+        "phone": { "type": "string", "description": "The client's phone number." },
+        "address": { "type": "string", "description": "The client's physical address." }
+      },
+      "required": ["name", "contactPerson", "email"]
+    },
+    "Request": {
+      "title": "Request",
+      "description": "Represents a single logistics request or invoice request.",
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string", "description": "Reference to the client document ID." },
+        "clientName": { "type": "string", "description": "Name of the client (denormalized for easy display)." },
+        "description": { "type": "string", "description": "A description of the shipment." },
+        "origin": { "type": "string", "description": "The origin of the shipment." },
+        "destination": { "type": "string", "description": "The destination of the shipment." },
+        "value": { "type": "number", "description": "The declared value of the goods." },
+        "status": {
+          "type": "string",
+          "description": "The current status of the request in the workflow.",
+          "enum": ["Pending", "In-Transit", "Delivered", "Invoiced", "Completed"]
+        },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when the request was created." },
+        "approvedAt": { "type": "string", "format": "date-time", "description": "Timestamp when operations approved the request." },
+        "deliveryDate": { "type": "string", "format": "date", "description": "Date when the shipment was delivered." }
+      },
+      "required": ["clientId", "description", "origin", "destination", "status", "createdAt"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Represents a financial invoice for a request.",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string", "description": "Reference to the request document ID." },
+        "clientId": { "type": "string", "description": "Reference to the client document ID." },
+        "amount": { "type": "number", "description": "The total amount of the invoice." },
+        "issueDate": { "type": "string", "format": "date", "description": "The date the invoice was issued." },
+        "dueDate": { "type": "string", "format": "date", "description": "The date the invoice is due." },
+        "status": {
+          "type": "string",
+          "description": "The payment status of the invoice.",
+          "enum": ["Paid", "Unpaid"]
+        },
+        "lineItems": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "description": { "type": "string" },
+              "quantity": { "type": "number" },
+              "unitPrice": { "type": "number" }
+            },
+            "required": ["description", "quantity", "unitPrice"]
+          }
+        },
+        "taxRate": { "type": "number", "description": "The tax rate applied in percent." },
+        "notes": { "type": "string", "description": "Additional notes on the invoice." }
+      },
+      "required": ["requestId", "clientId", "amount", "issueDate", "dueDate", "status"]
+    },
+    "Ticket": {
+      "title": "Ticket",
+      "description": "Represents an internal support ticket.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "raisedByUid": { "type": "string", "description": "UID of the user who created the ticket." },
+        "raisedByDepartment": { "type": "string", "enum": ["Sales", "Operations", "Finance", "HR", "Management", "IT"] },
+        "targetDepartment": { "type": "string", "enum": ["Sales", "Operations", "Finance", "HR", "Management", "IT"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["Open", "Resolved"] }
+      },
+      "required": ["title", "description", "raisedByUid", "targetDepartment", "createdAt", "status"]
+    },
+    "CashFlowTransaction": {
+      "title": "Cash Flow Transaction",
+      "description": "Represents an income or expense transaction.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["Income", "Expense"] },
+        "description": { "type": "string" },
+        "amount": { "type": "number" },
+        "taxRate": { "type": "number", "description": "Tax rate in percent." },
+        "date": { "type": "string", "format": "date" }
+      },
+      "required": ["type", "description", "amount", "date"]
+    }
+  },
+  "auth": {
+    "providers": ["password"]
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Stores public-facing user profile data."
+    },
+    "/clients/{clientId}": {
+      "schema": { "$ref": "#/entities/Client" },
+      "description": "Collection of all clients."
+    },
+    "/requests/{requestId}": {
+      "schema": { "$ref": "#/entities/Request" },
+      "description": "Collection of all requests/invoice requests."
+    },
+    "/invoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/Invoice" },
+      "description": "Collection of all generated invoices."
+    },
+    "/tickets/{ticketId}": {
+      "schema": { "$ref": "#/entities/Ticket" },
+      "description": "Collection of all internal support tickets."
+    },
+    "/cashFlow/{transactionId}": {
+      "schema": { "$ref": "#/entities/CashFlowTransaction" },
+      "description": "Ledger of all income and expense transactions."
+    }
+  }
+}
