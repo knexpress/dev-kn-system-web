@@ -167,9 +167,7 @@ export default function UaeToPhTaxInvoiceTemplate({ data }: UaeToPhTaxInvoiceTem
           </div>
         </div>
 
-        <h2 className="text-xl font-bold tracking-wide mb-6">
-          {isCommercialInvoice ? 'INVOICE' : 'TAX INVOICE'}
-        </h2>
+        <h2 className="text-xl font-bold tracking-wide mb-6">TAX INVOICE</h2>
 
         <div className="grid grid-cols-2 gap-8 mb-6 text-sm">
           <div>
