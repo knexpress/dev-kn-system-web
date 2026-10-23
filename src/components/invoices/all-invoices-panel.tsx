@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Download, Loader2 } from 'lucide-react';
+import { Download, Loader2, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -18,6 +18,12 @@ import { ErpEmptyState, erpTableClasses } from '@/components/accounting/erp-shel
 import { fmtDate, money } from '@/components/accounting/erp-format';
 import { cn } from '@/lib/utils';
 import { SalesInvoiceDocumentDialog } from '@/components/accounting/sales-invoice-document';
+import {
+  RecordPaymentDialog,
+  invoiceCanRecordPayment,
+  invoiceIsCancelled,
+  invoiceStatusHint,
+} from '@/components/record-payment-dialog';
 
 const SHIPMENT_PAGE_SIZE = 100;
 
@@ -32,6 +38,8 @@ type Row = {
   total: number;
   status: string;
   cancellation?: boolean;
+  hint?: string | null;
+  canPay?: boolean;
 };
 
 function num(v: any): number {
@@ -78,6 +86,7 @@ export default function AllInvoicesPanel({ salesInvoices, onOpenSalesInvoices }:
   const [kind, setKind] = useState<'ALL' | 'SHIPMENT' | 'SALES'>('ALL');
   const [status, setStatus] = useState('all');
   const [pdfInvoice, setPdfInvoice] = useState<any | null>(null);
+  const [paymentInvoice, setPaymentInvoice] = useState<any | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(search.trim()), 400);
@@ -123,6 +132,8 @@ export default function AllInvoicesPanel({ salesInvoices, onOpenSalesInvoices }:
       total: num(inv.total_amount_tax_invoice) || num(inv.total_amount),
       status: inv.status || '',
       cancellation: inv.invoice_origin === 'CANCELLATION',
+      hint: invoiceStatusHint(inv),
+      canPay: invoiceCanRecordPayment(inv),
     }));
     const salesRows: Row[] = salesInvoices
       .filter(
@@ -245,28 +256,55 @@ export default function AllInvoicesPanel({ salesInvoices, onOpenSalesInvoices }:
                         statusTone(r.status)
                       )}
                     >
-                      {r.status.replace(/_/g, ' ') || '—'}
+                      {invoiceIsCancelled({ status: r.status })
+                        ? 'Cancelled'
+                        : r.status.replace(/_/g, ' ') || '—'}
                     </span>
+                    {r.hint ? (
+                      <div
+                        className={cn(
+                          'mt-1 max-w-[160px] text-[11px] leading-tight',
+                          invoiceIsCancelled({ status: r.status }) ? 'text-rose-700' : 'text-amber-700'
+                        )}
+                      >
+                        {r.hint}
+                      </div>
+                    ) : null}
                   </TableCell>
                   <TableCell className={cn(t.cell, 'text-right')}>
-                    {r.kind === 'SHIPMENT' ? (
-                      <Button type="button" size="sm" variant="outline" className="rounded-xl" asChild>
-                        <Link href={`/dashboard/invoices/${r.id}`}>View / PDF</Link>
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="rounded-xl"
-                        onClick={() =>
-                          setPdfInvoice(salesInvoices.find((inv) => String(inv._id) === r.id) || null)
-                        }
-                      >
-                        <Download className="mr-1 h-3.5 w-3.5" />
-                        PDF
-                      </Button>
-                    )}
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {r.kind === 'SHIPMENT' && r.canPay ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-9 rounded-xl bg-sky-600 text-white hover:bg-sky-700"
+                          onClick={() =>
+                            setPaymentInvoice(shipments.find((inv) => String(inv._id) === r.id) || null)
+                          }
+                        >
+                          <Wallet className="mr-1 h-3.5 w-3.5" />
+                          Record payment
+                        </Button>
+                      ) : null}
+                      {r.kind === 'SHIPMENT' ? (
+                        <Button type="button" size="sm" variant="outline" className="rounded-xl" asChild>
+                          <Link href={`/dashboard/invoices/${r.id}`}>View / PDF</Link>
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="rounded-xl"
+                          onClick={() =>
+                            setPdfInvoice(salesInvoices.find((inv) => String(inv._id) === r.id) || null)
+                          }
+                        >
+                          <Download className="mr-1 h-3.5 w-3.5" />
+                          PDF
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -300,6 +338,21 @@ export default function AllInvoicesPanel({ salesInvoices, onOpenSalesInvoices }:
         onOpenChange={(open) => !open && setPdfInvoice(null)}
         onInvoiceChange={(id, patch) => {
           setPdfInvoice((prev: any) => (prev && String(prev._id) === id ? { ...prev, ...patch } : prev));
+        }}
+      />
+
+      <RecordPaymentDialog
+        invoice={paymentInvoice}
+        open={Boolean(paymentInvoice)}
+        onOpenChange={(open) => !open && setPaymentInvoice(null)}
+        onUpdated={(updated) => {
+          if (!updated?._id) return;
+          setShipments((prev) =>
+            prev.map((inv) => (String(inv._id) === String(updated._id) ? { ...inv, ...updated } : inv))
+          );
+          setPaymentInvoice((current: any) =>
+            current && String(current._id) === String(updated._id) ? { ...current, ...updated } : current
+          );
         }}
       />
     </div>

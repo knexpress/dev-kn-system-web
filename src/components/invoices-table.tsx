@@ -15,7 +15,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, TrendingUp, FileSpreadsheet, X, Wallet, FileDiff } from 'lucide-react';
-import { invoiceBalance } from '@/components/record-payment-dialog';
+import { invoiceBalance, invoiceIsCancelled, invoiceStatusHint } from '@/components/record-payment-dialog';
 import * as XLSX from 'xlsx';
 import { apiClient } from '@/lib/api-client';
 import { secureLog } from '@/lib/secure-logger';
@@ -894,24 +894,39 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel,
                                             ? 'default' 
                                             : invoice.status === 'COLLECTED_BY_DRIVER' 
                                                 ? 'secondary' 
-                                                : 'secondary'
+                                                : invoiceIsCancelled(invoice)
+                                                    ? 'destructive'
+                                                    : 'secondary'
                                     } 
                                     className={
                                         invoice.status === 'PAID' || invoice.status === 'REMITTED'
                                             ? 'bg-emerald-500 text-white'
                                             : invoice.status === 'COLLECTED_BY_DRIVER'
                                                 ? 'bg-sky-500 text-white'
-                                                : ''
+                                                : invoiceIsCancelled(invoice)
+                                                    ? 'bg-rose-600 text-white'
+                                                    : ''
                                     }
                                 >
-                                    {invoice.status}
+                                    {invoiceIsCancelled(invoice) ? 'Cancelled' : invoice.status}
                                 </Badge>
                                 {(() => {
-                                    const { paid, balance } = invoiceBalance(invoice);
-                                    if (paid <= 0 || balance <= 0.009 || invoice.status === 'CANCELLED') return null;
+                                    const hint = invoiceStatusHint(invoice);
+                                    if (!hint) {
+                                        const { paid, balance } = invoiceBalance(invoice);
+                                        if (paid <= 0 || balance <= 0.009 || invoiceIsCancelled(invoice)) return null;
+                                        return (
+                                            <div className="mt-1 text-[11px] leading-tight text-amber-700">
+                                                {['PAID', 'REMITTED'].includes(invoice.status) ? 'Debit note due' : 'Partially paid'} · bal AED {balance.toFixed(2)}
+                                            </div>
+                                        );
+                                    }
                                     return (
-                                        <div className="mt-1 text-[11px] leading-tight text-amber-700">
-                                            {['PAID', 'REMITTED'].includes(invoice.status) ? 'Debit note due' : 'Partially paid'} · bal AED {balance.toFixed(2)}
+                                        <div className={cn(
+                                            'mt-1 max-w-[180px] text-[11px] leading-tight',
+                                            invoiceIsCancelled(invoice) ? 'text-rose-700' : 'text-amber-700'
+                                        )}>
+                                            {hint}
                                         </div>
                                     );
                                 })()}
@@ -942,7 +957,7 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel,
                                             Remit
                                         </Button>
                                     )}
-                                    {onRecordPayment && (['UNPAID', 'OVERDUE'].includes(invoice.status) || (['PAID', 'REMITTED'].includes(invoice.status) && invoiceBalance(invoice).balance > 0.009)) && (
+                                    {onRecordPayment && !invoiceIsCancelled(invoice) && (['UNPAID', 'OVERDUE'].includes(invoice.status) || (['PAID', 'REMITTED'].includes(invoice.status) && invoiceBalance(invoice).balance > 0.009)) && (
                                         <Button
                                             variant="outline"
                                             size="sm"
