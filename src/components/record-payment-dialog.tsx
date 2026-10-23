@@ -80,6 +80,30 @@ export function invoiceHasNotes(invoice: any) {
   return num(invoice?.credit_notes_total) > 0 || num(invoice?.debit_notes_total) > 0;
 }
 
+export function invoiceIsCancelled(invoice: any) {
+  return String(invoice?.status || '').toUpperCase() === 'CANCELLED';
+}
+
+export function invoiceCanRecordPayment(invoice: any) {
+  if (!invoice || invoiceIsCancelled(invoice)) return false;
+  const status = String(invoice.status || '').toUpperCase();
+  const { balance } = invoiceBalance(invoice);
+  return (
+    ['UNPAID', 'OVERDUE'].includes(status) ||
+    (['PAID', 'REMITTED'].includes(status) && balance > 0.009)
+  );
+}
+
+/** Extra line under the status badge so cancelled invoices are not mistaken for unpaid. */
+export function invoiceStatusHint(invoice: any): string | null {
+  const status = String(invoice?.status || '').toUpperCase();
+  if (status === 'CANCELLED') return 'No payment due — this invoice is cancelled';
+  if (invoice?.invoice_origin === 'CANCELLATION' && ['UNPAID', 'OVERDUE'].includes(status)) {
+    return 'Cancellation charge still due';
+  }
+  return null;
+}
+
 type Props = {
   invoice: any | null;
   open: boolean;

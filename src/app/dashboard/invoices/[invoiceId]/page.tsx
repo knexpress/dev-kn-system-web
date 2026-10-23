@@ -12,10 +12,16 @@ import { parseDecimal } from '@/lib/invoice-utils';
 import { gatewayChargeLineFromInvoice } from '@/lib/invoice-gateway-charge';
 import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, FileText, Receipt, AlertCircle, Download, Printer, FileSpreadsheet, Database, FileDiff } from 'lucide-react';
+import { ArrowLeft, FileText, Receipt, AlertCircle, Download, Printer, FileSpreadsheet, Database, FileDiff, Wallet } from 'lucide-react';
 import { SupportingDocumentsPanel } from '@/components/accounting/supporting-documents-panel';
 import { InvoiceNoteDialog } from '@/components/invoice-notes/invoice-note-dialog';
-import { invoiceBalance } from '@/components/record-payment-dialog';
+import {
+    RecordPaymentDialog,
+    invoiceBalance,
+    invoiceCanRecordPayment,
+    invoiceIsCancelled,
+    invoiceStatusHint,
+} from '@/components/record-payment-dialog';
 import * as XLSX from 'xlsx';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -62,6 +68,7 @@ export default function InvoicePage() {
     const [showTaxEditDialog, setShowTaxEditDialog] = useState(false);
     const [showRequestDataDialog, setShowRequestDataDialog] = useState(false);
     const [showNoteDialog, setShowNoteDialog] = useState(false);
+    const [showPaymentDialog, setShowPaymentDialog] = useState(false);
     const [requestDataSources, setRequestDataSources] = useState<{
         invoice: any | null;
         invoiceRequest: any | null;
@@ -1624,7 +1631,7 @@ export default function InvoicePage() {
         includeNotes: printOptions.include_notes,
         includeDisclaimer: printOptions.include_disclaimer,
         termsAndConditions: 'Cash Upon Receipt of Goods',
-        qrCode: qrCodeData ? {
+        qrCode: qrCodeData && !invoiceIsCancelled(invoice) ? {
             url: qrCodeData.qr_url || '',
             code: qrCodeData.qr_code || ''
         } : undefined,
@@ -2745,6 +2752,40 @@ export default function InvoicePage() {
                         </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                        {invoice && invoiceIsCancelled(invoice) ? (
+                            <span className="inline-flex rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
+                                Cancelled
+                            </span>
+                        ) : invoice?.status ? (
+                            <span className={cn(
+                                'inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ring-1',
+                                ['PAID', 'REMITTED'].includes(String(invoice.status).toUpperCase())
+                                    ? 'bg-emerald-50 text-emerald-800 ring-emerald-200'
+                                    : invoice.status === 'COLLECTED_BY_DRIVER'
+                                        ? 'bg-sky-50 text-sky-800 ring-sky-200'
+                                        : 'bg-amber-50 text-amber-800 ring-amber-200'
+                            )}>
+                                {String(invoice.status).replace(/_/g, ' ')}
+                            </span>
+                        ) : null}
+                        {invoiceCanRecordPayment(invoice) ? (
+                            <Button
+                                className="rounded-xl bg-sky-600 text-white hover:bg-sky-700"
+                                onClick={() => setShowPaymentDialog(true)}
+                            >
+                                <Wallet className="h-4 w-4 mr-2" />
+                                Record payment
+                            </Button>
+                        ) : invoice && !invoiceIsCancelled(invoice) && (invoice.payments?.length ?? 0) > 0 ? (
+                            <Button
+                                variant="outline"
+                                className={erpOutlineControlClass()}
+                                onClick={() => setShowPaymentDialog(true)}
+                            >
+                                <Wallet className="h-4 w-4 mr-2" />
+                                Payments
+                            </Button>
+                        ) : null}
                         <Button
                             variant="outline"
                             className={erpOutlineControlClass()}
@@ -2846,6 +2887,27 @@ export default function InvoicePage() {
                         </div>
                     );
                 })()}
+                {invoice && invoiceStatusHint(invoice) ? (
+                    <Alert
+                        variant={invoiceIsCancelled(invoice) ? 'destructive' : 'default'}
+                        className={cn(
+                            'mt-3',
+                            invoiceIsCancelled(invoice)
+                                ? 'border-rose-200 bg-rose-50 text-rose-900'
+                                : 'border-amber-200 bg-amber-50 text-amber-950'
+                        )}
+                    >
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>
+                            {invoiceIsCancelled(invoice) ? 'Invoice cancelled' : 'Cancellation charge'}
+                        </AlertTitle>
+                        <AlertDescription>
+                            {invoiceIsCancelled(invoice)
+                                ? 'This invoice is cancelled. There is no payment to collect.'
+                                : 'This is a cancellation fee, not a voided invoice. Record payment if the customer has paid.'}
+                        </AlertDescription>
+                    </Alert>
+                ) : null}
             </div>
 
             {invoice?._id ? (
@@ -2874,6 +2936,16 @@ export default function InvoicePage() {
                 invoice={invoice}
                 open={showNoteDialog}
                 onOpenChange={setShowNoteDialog}
+            />
+
+            <RecordPaymentDialog
+                invoice={invoice}
+                open={showPaymentDialog}
+                onOpenChange={setShowPaymentDialog}
+                onUpdated={(updated) => {
+                    if (!updated) return;
+                    setInvoice((prev: any) => (prev ? { ...prev, ...updated } : updated));
+                }}
             />
 
             {/* Invoice Template */}
