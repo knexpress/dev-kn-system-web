@@ -795,6 +795,7 @@ class ApiClient {
     });
     this.invalidateCache('/invoice-requests');
     this.invalidateCache('/invoices-unified');
+    this.invalidateCache('/accounting');
     return result;
   }
 
@@ -3022,6 +3023,7 @@ class ApiClient {
     });
     this.invalidateCache('/invoice-requests');
     this.invalidateCache('/invoices-unified');
+    this.invalidateCache('/accounting');
     return result;
   }
 

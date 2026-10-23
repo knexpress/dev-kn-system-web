@@ -35,7 +35,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { ArrowRight, Ban, Banknote, BellRing, ChevronDown, ChevronUp, Download, FileSignature, Pencil, PlusCircle, Printer, Send, Trash2 } from 'lucide-react';
+import { ArrowRight, Ban, Banknote, BellRing, Calculator, ChevronDown, ChevronUp, Download, FileSignature, Pencil, PlusCircle, Printer, Send, Trash2 } from 'lucide-react';
 
 type RouteCode = 'PH_TO_UAE' | 'UAE_TO_PH';
 type PickupLocation = 'INSIDE_DUBAI' | 'OUTSIDE_DUBAI' | 'DROP_OFF' | 'FREE_PICKUP';
@@ -139,6 +139,51 @@ function quotationGatewayLabel(mode?: string) {
   return 'Payment gateway charges';
 }
 
+type GatewayPreviewMode = 'TABBY' | 'CARD';
+
+const GATEWAY_PREVIEW_MODES: { value: GatewayPreviewMode; label: string; rate: number }[] = [
+  { value: 'TABBY', label: 'Tabby', rate: 0.1 },
+  { value: 'CARD', label: 'Card payment', rate: 0.04 },
+];
+
+function roundMoney(value: number) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+function quoteGoodsTotal(quote?: SavedQuotation | null) {
+  return Number(quote?.total_amount ?? quote?.shipping_amount) || 0;
+}
+
+function simulatedGatewayCharge(quoteTotal: number, mode?: string) {
+  const key = String(mode || '').toUpperCase();
+  const rate = key === 'TABBY' ? 0.1 : key === 'CARD' ? 0.04 : 0;
+  if (!(rate > 0) || !(quoteTotal > 0)) return 0;
+  return roundMoney(roundMoney(quoteTotal * (1 + rate)) - quoteTotal);
+}
+
+function printGatewayOf(quote?: SavedQuotation | null, simulatedMode?: string) {
+  const goods = quoteGoodsTotal(quote);
+  const liveCharge = quotationGatewayCharge(quote?.advance);
+  if (liveCharge > 0) {
+    return {
+      charge: liveCharge,
+      label: quotationGatewayLabel(quote?.advance?.mode),
+      payable: Number(quote?.advance?.amount_collected) || roundMoney(goods + liveCharge),
+      received: true,
+    };
+  }
+  const charge = simulatedGatewayCharge(goods, simulatedMode);
+  if (charge > 0) {
+    return {
+      charge,
+      label: quotationGatewayLabel(simulatedMode),
+      payable: roundMoney(goods + charge),
+      received: false,
+    };
+  }
+  return { charge: 0, label: '', payable: goods, received: false };
+}
+
 const HIDDEN_BOOKING_KEYS = new Set([
   '_id', '__v', 'identityDocuments', 'customerImage', 'customerImages', 'images', 'otp', 'otpVerification',
 ]);
@@ -220,6 +265,9 @@ export default function QuotationsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [printTarget, setPrintTarget] = useState<SavedQuotation | null>(null);
+  const [printSimMode, setPrintSimMode] = useState<GatewayPreviewMode | ''>('');
+  const [simulateTarget, setSimulateTarget] = useState<SavedQuotation | null>(null);
+  const [simulateMode, setSimulateMode] = useState<GatewayPreviewMode>('TABBY');
   const [downloadQueued, setDownloadQueued] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [senderName, setSenderName] = useState('');
@@ -361,12 +409,17 @@ export default function QuotationsPage() {
     setAdvanceQuote(null);
     loadQuoteRequests();
     loadQuotations();
+    const draftNo = (result as any)?.data?.draft_journal?.journal_no || (result as any)?.draft_journal?.journal_no;
     toast({
       title: 'Advance recorded',
       description:
         advanceMode === 'TABBY' || advanceMode === 'CARD'
-          ? `${(result as { message?: string }).message || 'Posted to clearance.'} The quotation now includes ${advanceMode === 'TABBY' ? 'Tabby' : 'card'} charges. Close it from Accounting → Bank & Cash → Card & Tabby when the merchant remits.`
-          : (result as { message?: string }).message || 'Credited to Customer Payment Due.',
+          ? `${(result as { message?: string }).message || 'Posted to clearance.'} The quotation now includes ${advanceMode === 'TABBY' ? 'Tabby' : 'card'} charges${
+              draftNo ? ` and draft invoice ${draftNo} was updated` : ''
+            }. Close it from Accounting → Bank & Cash → Card & Tabby when the merchant remits.`
+          : `${(result as { message?: string }).message || 'Credited to Customer Payment Due.'}${
+              draftNo ? ` Draft invoice ${draftNo} was updated.` : ''
+            }`,
     });
   };
 
@@ -727,6 +780,23 @@ export default function QuotationsPage() {
     }
   };
 
+  const closePrint = () => {
+    setPrintTarget(null);
+    setPrintSimMode('');
+    setDownloadQueued(false);
+  };
+
+  const openPrint = (quote: SavedQuotation, opts?: { download?: boolean; sim?: GatewayPreviewMode | '' }) => {
+    setPrintSimMode(opts?.sim || '');
+    setPrintTarget(quote);
+    setDownloadQueued(Boolean(opts?.download));
+  };
+
+  const openSimulate = (quote: SavedQuotation) => {
+    setSimulateMode('TABBY');
+    setSimulateTarget(quote);
+  };
+
   const downloadQuotationPdf = async () => {
     const element = document.getElementById('quotation-sheet');
     if (!element || !printTarget) return;
@@ -734,9 +804,11 @@ export default function QuotationsPage() {
     try {
       const html2pdfModule = await import('html2pdf.js');
       const html2pdf = html2pdfModule.default || html2pdfModule;
+      const preview = printGatewayOf(printTarget, printSimMode);
+      const suffix = !preview.received && preview.charge > 0 && printSimMode ? `-${printSimMode}` : '';
       const opt = {
         margin: [6, 6, 6, 6] as [number, number, number, number],
-        filename: `${printTarget.quotation_number || 'quotation'}.pdf`,
+        filename: `${printTarget.quotation_number || 'quotation'}${suffix}.pdf`,
         image: { type: 'jpeg' as const, quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true, logging: false, letterRendering: true },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
@@ -754,7 +826,7 @@ export default function QuotationsPage() {
     if (!downloadQueued || !printTarget) return;
     const timer = window.setTimeout(() => {
       setDownloadQueued(false);
-      downloadQuotationPdf().then(() => setPrintTarget(null));
+      downloadQuotationPdf().then(() => closePrint());
     }, 80);
     return () => window.clearTimeout(timer);
   }, [downloadQueued, printTarget]);
@@ -763,7 +835,7 @@ export default function QuotationsPage() {
     const result = await apiClient.deleteQuotation(id);
     if (result.success) {
       setQuotations((current) => current.filter((quote) => quote._id !== id));
-      if (printTarget?._id === id) setPrintTarget(null);
+      if (printTarget?._id === id) closePrint();
     } else {
       toast({ variant: 'destructive', title: 'Could not delete', description: result.error || 'Failed to delete quotation' });
     }
@@ -866,7 +938,7 @@ export default function QuotationsPage() {
                             disabled={downloadingPdf}
                             onClick={async () => {
                               const quote = await findLinkedQuote(request);
-                              if (quote) setPrintTarget(quote);
+                              if (quote) openPrint(quote);
                             }}
                           >
                             <Download className="mr-2 h-4 w-4" />
@@ -965,14 +1037,28 @@ export default function QuotationsPage() {
                           <div>
                             <p className="font-semibold text-emerald-900">Receive advance payment</p>
                             <p className="text-xs text-emerald-800">
-                              Record cash, bank, card or Tabby against this quotation. It credits Customer Payment Due until the invoice is generated.
+                              Simulate Tabby or Card on a downloadable quotation first if the customer has not paid yet. Recording the advance posts the journal.
                             </p>
                           </div>
                           {canQuote && (
-                            <Button size="sm" className="bg-emerald-700 hover:bg-emerald-800" onClick={() => openAdvance(request)}>
-                              <Banknote className="mr-2 h-4 w-4" />
-                              Receive advance
-                            </Button>
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={downloadingPdf}
+                                onClick={async () => {
+                                  const quote = await findLinkedQuote(request);
+                                  if (quote) openSimulate(quote);
+                                }}
+                              >
+                                <Calculator className="mr-2 h-4 w-4" />
+                                Simulate charges
+                              </Button>
+                              <Button size="sm" className="bg-emerald-700 hover:bg-emerald-800" onClick={() => openAdvance(request)}>
+                                <Banknote className="mr-2 h-4 w-4" />
+                                Receive advance
+                              </Button>
+                            </div>
                           )}
                         </div>
                       )}
@@ -1370,19 +1456,25 @@ export default function QuotationsPage() {
                         <Pencil className="mr-2 h-4 w-4" />
                         Edit
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => { setPrintTarget(quote); setDownloadQueued(true); }} disabled={downloadingPdf}>
+                      <Button size="sm" variant="outline" onClick={() => openPrint(quote, { download: true })} disabled={downloadingPdf}>
                         <Download className="mr-2 h-4 w-4" />
                         PDF
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => setPrintTarget(quote)}>
+                      <Button size="sm" variant="outline" onClick={() => openPrint(quote)} disabled={downloadingPdf}>
                         <Printer className="mr-2 h-4 w-4" />
                         Print
                       </Button>
                       {canQuote && !quoteHasLiveAdvance(quote) && (
-                        <Button size="sm" className="bg-emerald-700 hover:bg-emerald-800" onClick={() => openAdvanceFromSavedQuote(quote)}>
-                          <Banknote className="mr-2 h-4 w-4" />
-                          Advance
-                        </Button>
+                        <>
+                          <Button size="sm" variant="outline" onClick={() => openSimulate(quote)} disabled={downloadingPdf}>
+                            <Calculator className="mr-2 h-4 w-4" />
+                            Simulate
+                          </Button>
+                          <Button size="sm" className="bg-emerald-700 hover:bg-emerald-800" onClick={() => openAdvanceFromSavedQuote(quote)}>
+                            <Banknote className="mr-2 h-4 w-4" />
+                            Advance
+                          </Button>
+                        </>
                       )}
                       <Button size="sm" variant="outline" onClick={() => handleDelete(quote._id)}>
                         <Trash2 className="h-4 w-4" />
@@ -1415,8 +1507,32 @@ export default function QuotationsPage() {
               .quote-sheet { width: 100%; box-shadow: none !important; margin: 0 !important; page-break-after: avoid; }
             }
           `}</style>
-          <div className="no-print sticky top-0 z-10 flex items-center justify-end gap-2 border-b bg-white px-6 py-3">
-            <Button variant="outline" onClick={() => setPrintTarget(null)}>Close</Button>
+          <div className="no-print sticky top-0 z-10 flex flex-wrap items-center justify-end gap-2 border-b bg-white px-6 py-3">
+            {quotationGatewayCharge(printTarget.advance) <= 0 && (
+              <div className="mr-auto flex flex-wrap items-center gap-2">
+                <Label className="text-xs text-muted-foreground">Simulate charges</Label>
+                <Select
+                  value={printSimMode || 'NONE'}
+                  onValueChange={(value) => setPrintSimMode(value === 'NONE' ? '' : (value as GatewayPreviewMode))}
+                >
+                  <SelectTrigger className="h-9 w-[220px] bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">No extra charges</SelectItem>
+                    {GATEWAY_PREVIEW_MODES.map((mode) => (
+                      <SelectItem key={mode.value} value={mode.value}>
+                        {mode.label} ({Math.round(mode.rate * 100)}%) — preview only
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {printSimMode ? (
+                  <span className="text-xs text-amber-700">Preview only. No journal is posted until you record the advance.</span>
+                ) : null}
+              </div>
+            )}
+            <Button variant="outline" onClick={() => closePrint()}>Close</Button>
             <Button variant="outline" onClick={() => downloadQuotationPdf()} disabled={downloadingPdf}>
               <Download className="mr-2 h-4 w-4" />
               {downloadingPdf ? 'Downloading...' : 'Download PDF'}
@@ -1539,29 +1655,26 @@ export default function QuotationsPage() {
                           <td className="border border-gray-300 font-bold">Total Amount</td>
                           <td className="border border-gray-300 text-right font-bold">{Number(printTarget.total_amount ?? printTarget.shipping_amount).toFixed(2)} AED</td>
                         </tr>
-                        {quotationGatewayCharge(printTarget.advance) > 0 ? (
-                          <>
-                            <tr>
-                              <td className="border border-gray-300">
-                                {quotationGatewayLabel(printTarget.advance?.mode)}
-                              </td>
-                              <td className="border border-gray-300 text-right">
-                                {quotationGatewayCharge(printTarget.advance).toFixed(2)}
-                              </td>
-                            </tr>
-                            <tr className="bg-gray-100">
-                              <td className="border border-gray-300 font-bold">Amount received</td>
-                              <td className="border border-gray-300 text-right font-bold">
-                                {(
-                                  Number(printTarget.advance?.amount_collected) ||
-                                  Number(printTarget.total_amount ?? printTarget.shipping_amount) +
-                                    quotationGatewayCharge(printTarget.advance)
-                                ).toFixed(2)}{' '}
-                                AED
-                              </td>
-                            </tr>
-                          </>
-                        ) : null}
+                        {(() => {
+                          const preview = printGatewayOf(printTarget, printSimMode);
+                          if (!(preview.charge > 0)) return null;
+                          return (
+                            <>
+                              <tr>
+                                <td className="border border-gray-300">{preview.label}</td>
+                                <td className="border border-gray-300 text-right">{preview.charge.toFixed(2)}</td>
+                              </tr>
+                              <tr className="bg-gray-100">
+                                <td className="border border-gray-300 font-bold">
+                                  {preview.received ? 'Amount received' : 'Amount payable'}
+                                </td>
+                                <td className="border border-gray-300 text-right font-bold">
+                                  {preview.payable.toFixed(2)} AED
+                                </td>
+                              </tr>
+                            </>
+                          );
+                        })()}
                       </tbody>
                     </table>
                   </td>
@@ -1671,6 +1784,83 @@ export default function QuotationsPage() {
                   <Button onClick={() => sendToOperations(sendTarget)} disabled={movingRequestId === sendTarget._id}>
                     <Send className="mr-2 h-4 w-4" />
                     Send to Operations
+                  </Button>
+                </AlertDialogFooter>
+              </>
+            );
+          })()}
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(simulateTarget)} onOpenChange={(open) => { if (!open) setSimulateTarget(null); }}>
+        <AlertDialogContent className="max-w-lg">
+          {simulateTarget && (() => {
+            const goods = quoteGoodsTotal(simulateTarget);
+            const charge = simulatedGatewayCharge(goods, simulateMode);
+            const payable = roundMoney(goods + charge);
+            return (
+              <>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Simulate charges · {simulateTarget.quotation_number}</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Prepare a quotation for the customer with Tabby or Card charges. This download does not post a journal.
+                    Record the advance after they pay.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="space-y-3 text-sm">
+                  <div className="space-y-1">
+                    <Label>Customer will pay with</Label>
+                    <Select value={simulateMode} onValueChange={(value) => setSimulateMode(value as GatewayPreviewMode)}>
+                      <SelectTrigger className="bg-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {GATEWAY_PREVIEW_MODES.map((mode) => (
+                          <SelectItem key={mode.value} value={mode.value}>
+                            {mode.label} ({Math.round(mode.rate * 100)}% charges)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="rounded-lg border bg-muted/40 p-3 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                    <span className="text-muted-foreground">Quoted total</span>
+                    <span className="text-right">AED {money(goods)}</span>
+                    <span className="text-muted-foreground">{quotationGatewayLabel(simulateMode)}</span>
+                    <span className="text-right">AED {money(charge)}</span>
+                    <span className="font-semibold">Amount payable</span>
+                    <span className="text-right font-semibold">AED {money(payable)}</span>
+                  </div>
+                  <p className="text-xs text-amber-800">
+                    The PDF looks like the original quotation, with the extra charges added. Books stay unchanged until you record the advance.
+                  </p>
+                </div>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <Button
+                    variant="outline"
+                    disabled={downloadingPdf}
+                    onClick={() => {
+                      const quote = simulateTarget;
+                      const mode = simulateMode;
+                      setSimulateTarget(null);
+                      openPrint(quote, { sim: mode });
+                    }}
+                  >
+                    <Printer className="mr-2 h-4 w-4" />
+                    Print
+                  </Button>
+                  <Button
+                    disabled={downloadingPdf}
+                    onClick={() => {
+                      const quote = simulateTarget;
+                      const mode = simulateMode;
+                      setSimulateTarget(null);
+                      openPrint(quote, { download: true, sim: mode });
+                    }}
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Download PDF
                   </Button>
                 </AlertDialogFooter>
               </>
