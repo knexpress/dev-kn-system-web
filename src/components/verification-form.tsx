@@ -717,6 +717,23 @@ export default function VerificationForm({ request, onVerificationComplete, curr
     : 0;
   const calculatedRate = quotedRate > 0 ? quotedRate : bracketRate;
   const hidePricing = !canSeeQuotePricing(currentUser);
+  const quoteAdvance = quotationRequest?.advance;
+  const quoteAdvanceLive = Boolean(quoteAdvance?.journal_id) && !quoteAdvance?.void_journal_id && !quoteAdvance?.void_journal_no;
+  const quoteGatewayCharge = (() => {
+    if (!quoteAdvanceLive) return 0;
+    const stored = Number(quoteAdvance?.gateway_charge) || 0;
+    if (stored > 0.009) return Math.round(stored * 100) / 100;
+    const collected = Number(quoteAdvance?.amount_collected) || 0;
+    const amount = Number(quoteAdvance?.amount) || 0;
+    if (collected > amount + 0.009) return Math.round((collected - amount) * 100) / 100;
+    return 0;
+  })();
+  const quoteGatewayLabel =
+    String(quoteAdvance?.mode || '').toUpperCase() === 'TABBY'
+      ? 'Tabby charges (10%)'
+      : String(quoteAdvance?.mode || '').toUpperCase() === 'CARD'
+        ? 'Card payment charges (4%)'
+        : 'Payment gateway charges';
 
   const quoteItems: Array<{ box_number?: string; name: string; quantity: number }> = Array.isArray(quotationRequest?.items)
     ? quotationRequest.items.filter((it: any) => it?.name)
@@ -1127,6 +1144,15 @@ export default function VerificationForm({ request, onVerificationComplete, curr
               Weights, boxes, items and chargeable kg are prefilled from Finance quotation{' '}
               <span className="font-semibold">{quotationRequest?.quotation_number || 'quote'}</span>.
               Adjust only if the physical shipment differs.
+              {quoteGatewayCharge > 0 && !hidePricing && (
+                <span className="mt-1 block text-xs">
+                  {quoteGatewayLabel} AED {quoteGatewayCharge.toFixed(2)} were added after the advance was recorded
+                  {Number(quoteAdvance?.amount_collected) > 0
+                    ? ` · amount received AED ${Number(quoteAdvance.amount_collected).toFixed(2)}`
+                    : ''}
+                  .
+                </span>
+              )}
             </div>
           )}
 
@@ -1365,6 +1391,14 @@ export default function VerificationForm({ request, onVerificationComplete, curr
                         <span className="font-bold">{quotedRate.toFixed(2)} AED/kg</span>
                         {Number(quotationRequest?.quotation_total) > 0 && (
                           <span className="ml-2">· Quote total AED {Number(quotationRequest.quotation_total).toFixed(2)}</span>
+                        )}
+                        {quoteGatewayCharge > 0 && (
+                          <span className="ml-2">
+                            · {quoteGatewayLabel} AED {quoteGatewayCharge.toFixed(2)}
+                            {Number(quoteAdvance?.amount_collected) > 0
+                              ? ` · received AED ${Number(quoteAdvance.amount_collected).toFixed(2)}`
+                              : ''}
+                          </span>
                         )}
                         {Number(quotationRequest?.quotation_discount_amount) > 0 && (
                           <span className="ml-2">

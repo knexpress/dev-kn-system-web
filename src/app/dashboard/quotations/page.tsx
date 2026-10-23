@@ -93,12 +93,16 @@ type SavedQuotation = {
   createdAt?: string;
   advance?: {
     amount?: number;
+    amount_collected?: number;
     mode?: string;
     journal_id?: string;
     journal_no?: string;
     collected_at?: string;
     void_journal_id?: string;
     void_journal_no?: string;
+    gateway_charge?: number;
+    gateway_net?: number;
+    gateway_vat?: number;
   };
 };
 
@@ -109,6 +113,30 @@ const ROUTE_LABELS: Record<RouteCode, string> = {
 
 function money(value: number) {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function liveAdvanceOf(adv?: SavedQuotation['advance'] | any) {
+  if (!adv) return null;
+  if (!adv.journal_id || adv.void_journal_id || adv.void_journal_no) return null;
+  return adv;
+}
+
+function quotationGatewayCharge(adv?: SavedQuotation['advance'] | any) {
+  const live = liveAdvanceOf(adv);
+  if (!live) return 0;
+  const stored = Number(live.gateway_charge) || 0;
+  if (stored > 0.009) return Math.round(stored * 100) / 100;
+  const collected = Number(live.amount_collected) || 0;
+  const amount = Number(live.amount) || 0;
+  if (collected > amount + 0.009) return Math.round((collected - amount) * 100) / 100;
+  return 0;
+}
+
+function quotationGatewayLabel(mode?: string) {
+  const key = String(mode || '').toUpperCase();
+  if (key === 'TABBY') return 'Tabby charges (10%)';
+  if (key === 'CARD') return 'Card payment charges (4%)';
+  return 'Payment gateway charges';
 }
 
 const HIDDEN_BOOKING_KEYS = new Set([
@@ -337,7 +365,7 @@ export default function QuotationsPage() {
       title: 'Advance recorded',
       description:
         advanceMode === 'TABBY' || advanceMode === 'CARD'
-          ? `${(result as { message?: string }).message || 'Posted to clearance.'} Close it from Accounting → Bank & Cash → Card & Tabby when the merchant remits.`
+          ? `${(result as { message?: string }).message || 'Posted to clearance.'} The quotation now includes ${advanceMode === 'TABBY' ? 'Tabby' : 'card'} charges. Close it from Accounting → Bank & Cash → Card & Tabby when the merchant remits.`
           : (result as { message?: string }).message || 'Credited to Customer Payment Due.',
     });
   };
@@ -792,7 +820,11 @@ export default function QuotationsPage() {
                         <Badge variant="outline">{ROUTE_LABELS[routeOf(request) as RouteCode] || request.service_code || 'Route not set'}</Badge>
                         {quoted ? (
                           <Badge className="bg-green-600 text-white">
-                            Quoted {qr.quotation_number} · AED {money(Number(qr.quotation_total || 0))} · not sent yet
+                            Quoted {qr.quotation_number} · AED {money(Number(qr.quotation_total || 0))}
+                            {quotationGatewayCharge(qr.advance) > 0
+                              ? ` + ${quotationGatewayLabel(qr.advance?.mode)} ${money(quotationGatewayCharge(qr.advance))}`
+                              : ''}
+                            {' '}· not sent yet
                           </Badge>
                         ) : (
                           <Badge className="bg-orange-500 text-white">Awaiting quotation</Badge>
@@ -914,6 +946,9 @@ export default function QuotationsPage() {
                             <p className="font-semibold text-emerald-900">Advance received</p>
                             <p className="text-xs text-emerald-800">
                               AED {money(Number(qr.advance?.amount_collected || qr.advance?.amount || 0))} via {qr.advance?.mode || '—'}
+                              {quotationGatewayCharge(qr.advance) > 0
+                                ? ` · ${quotationGatewayLabel(qr.advance?.mode)} AED ${money(quotationGatewayCharge(qr.advance))} added on the quotation`
+                                : ''}
                               {qr.advance?.collected_at ? ` · ${new Date(qr.advance.collected_at).toLocaleDateString()}` : ''}
                               {qr.advance?.journal_no ? ` · ${qr.advance.journal_no}` : ''}
                               {' '}on Customer Payment Due. Applied when the invoice journal posts, using this paid date.
@@ -1322,7 +1357,9 @@ export default function QuotationsPage() {
                       <div>AED {money(Number(quote.total_amount ?? quote.shipping_amount))}</div>
                       {quoteHasLiveAdvance(quote) ? (
                         <div className="text-xs text-emerald-700">
-                          Advance AED {money(Number(quote.advance?.amount || 0))}
+                          {quotationGatewayCharge(quote.advance) > 0
+                            ? `${quotationGatewayLabel(quote.advance?.mode)} +${money(quotationGatewayCharge(quote.advance))} · received ${money(Number(quote.advance?.amount_collected || 0))}`
+                            : `Advance AED ${money(Number(quote.advance?.amount || 0))}`}
                           {quote.advance?.journal_no ? ` · ${quote.advance.journal_no}` : ''}
                         </div>
                       ) : null}
@@ -1502,6 +1539,29 @@ export default function QuotationsPage() {
                           <td className="border border-gray-300 font-bold">Total Amount</td>
                           <td className="border border-gray-300 text-right font-bold">{Number(printTarget.total_amount ?? printTarget.shipping_amount).toFixed(2)} AED</td>
                         </tr>
+                        {quotationGatewayCharge(printTarget.advance) > 0 ? (
+                          <>
+                            <tr>
+                              <td className="border border-gray-300">
+                                {quotationGatewayLabel(printTarget.advance?.mode)}
+                              </td>
+                              <td className="border border-gray-300 text-right">
+                                {quotationGatewayCharge(printTarget.advance).toFixed(2)}
+                              </td>
+                            </tr>
+                            <tr className="bg-gray-100">
+                              <td className="border border-gray-300 font-bold">Amount received</td>
+                              <td className="border border-gray-300 text-right font-bold">
+                                {(
+                                  Number(printTarget.advance?.amount_collected) ||
+                                  Number(printTarget.total_amount ?? printTarget.shipping_amount) +
+                                    quotationGatewayCharge(printTarget.advance)
+                                ).toFixed(2)}{' '}
+                                AED
+                              </td>
+                            </tr>
+                          </>
+                        ) : null}
                       </tbody>
                     </table>
                   </td>
@@ -1580,6 +1640,16 @@ export default function QuotationsPage() {
                     <span className="truncate text-right">{receiver.name || '—'}</span>
                     <span className="text-muted-foreground">Quoted total</span>
                     <span className="text-right text-base font-semibold">AED {money(Number(qr.quotation_total || 0))}</span>
+                    {quotationGatewayCharge(qr.advance) > 0 ? (
+                      <>
+                        <span className="text-muted-foreground">{quotationGatewayLabel(qr.advance?.mode)}</span>
+                        <span className="text-right">AED {money(quotationGatewayCharge(qr.advance))}</span>
+                        <span className="text-muted-foreground">Amount received</span>
+                        <span className="text-right font-semibold">
+                          AED {money(Number(qr.advance?.amount_collected || Number(qr.quotation_total || 0) + quotationGatewayCharge(qr.advance)))}
+                        </span>
+                      </>
+                    ) : null}
                   </div>
                 </div>
 

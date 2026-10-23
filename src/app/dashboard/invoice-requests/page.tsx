@@ -3725,6 +3725,35 @@ export default function InvoiceRequestsPage() {
                     ) : null}
                     <span className="font-semibold">Quote total</span>
                     <span className="text-right font-semibold">{money(quote.quotation_total)}</span>
+                    {(() => {
+                      const adv = quote.advance;
+                      if (!adv?.journal_id || adv.void_journal_id || adv.void_journal_no) return null;
+                      const stored = Number(adv.gateway_charge) || 0;
+                      const collected = Number(adv.amount_collected) || 0;
+                      const amount = Number(adv.amount) || 0;
+                      const extra = stored > 0.009
+                        ? stored
+                        : collected > amount + 0.009
+                          ? Math.round((collected - amount) * 100) / 100
+                          : 0;
+                      if (!(extra > 0)) return null;
+                      const mode = String(adv.mode || '').toUpperCase();
+                      const label = mode === 'TABBY'
+                        ? 'Tabby charges (10%)'
+                        : mode === 'CARD'
+                          ? 'Card payment charges (4%)'
+                          : 'Payment gateway charges';
+                      return (
+                        <>
+                          <span>{label}</span>
+                          <span className="text-right">{money(extra)}</span>
+                          <span className="font-semibold">Amount received</span>
+                          <span className="text-right font-semibold">
+                            {money(collected || Number(quote.quotation_total) + extra)}
+                          </span>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   <div className="mt-2 space-y-1 text-xs text-amber-800">
