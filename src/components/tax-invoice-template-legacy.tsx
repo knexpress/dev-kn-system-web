@@ -217,18 +217,6 @@ export default function TaxInvoiceTemplateLegacy({ data }: TaxInvoiceTemplatePro
                   </tr>
                 ) : null;
               })()}
-              {Number(data.charges.discountAmount) > 0 ? (
-                <tr>
-                  <td className="border border-gray-300 px-4 py-2 text-left">
-                    {data.charges.discountType === 'PERCENT' && Number(data.charges.discountValue) > 0
-                      ? `Sales Discount (${Number(data.charges.discountValue)}%)`
-                      : 'Sales Discount'}
-                  </td>
-                  <td className="border border-gray-300 px-4 py-2 text-right">
-                    -{Number(data.charges.discountAmount).toFixed(2)}
-                  </td>
-                </tr>
-              ) : null}
               <tr>
                 <td className="border border-gray-300 px-4 py-2 text-left">Delivery Charge</td>
                 <td className="border border-gray-300 px-4 py-2 text-right">{data.charges.deliveryCharge.toFixed(2)}</td>
@@ -248,10 +236,22 @@ export default function TaxInvoiceTemplateLegacy({ data }: TaxInvoiceTemplatePro
                   </tr>
                 ) : null;
               })()}
-              {data.gatewayCharge && data.gatewayCharge.gross > 0 ? (
+              {data.gatewayCharge && data.gatewayCharge.gross > 0 && !data.gatewayCharge.includedInTotal ? (
                 <tr>
                   <td className="border border-gray-300 px-4 py-2 text-left">{data.gatewayCharge.label}</td>
                   <td className="border border-gray-300 px-4 py-2 text-right">{data.gatewayCharge.net.toFixed(2)}</td>
+                </tr>
+              ) : null}
+              {Number(data.charges.discountAmount) > 0 ? (
+                <tr>
+                  <td className="border border-gray-300 px-4 py-2 text-left">
+                    {data.charges.discountType === 'PERCENT' && Number(data.charges.discountValue) > 0
+                      ? `Sales Discount (${Number(data.charges.discountValue)}%)`
+                      : 'Sales Discount'}
+                  </td>
+                  <td className="border border-gray-300 px-4 py-2 text-right">
+                    -{Number(data.charges.discountAmount).toFixed(2)}
+                  </td>
                 </tr>
               ) : null}
               {(() => {

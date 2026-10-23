@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import InvoiceTemplate from "@/components/invoice-template";
-import TaxInvoiceTemplate, { usesUaeToPhTaxInvoiceLayout } from "@/components/tax-invoice-template";
+import TaxInvoiceTemplate from "@/components/tax-invoice-template";
 import { apiClient } from "@/lib/api-client";
 import { secureLog } from '@/lib/secure-logger';
 import { isPhToUaeService, isUaeToPhService, canSeeQuotePricing } from '@/lib/invoice-request-utils';
@@ -1743,9 +1743,7 @@ export default function InvoicePage() {
             }
 
             const taxDoc = invoiceElement.querySelector('.tax-invoice-document');
-            const useUaeToPhTaxLayout =
-                invoiceType === 'tax' && usesUaeToPhTaxInvoiceLayout(taxInvoiceData);
-            if (taxDoc && useUaeToPhTaxLayout) {
+            if (taxDoc) {
                 taxDoc.classList.add('tax-invoice-exporting');
             }
 
@@ -1765,7 +1763,7 @@ export default function InvoicePage() {
             try {
                 await html2pdf().set(opt).from(invoiceElement).save();
             } finally {
-                if (taxDoc && useUaeToPhTaxLayout) {
+                if (taxDoc) {
                     taxDoc.classList.remove('tax-invoice-exporting');
                 }
             }
