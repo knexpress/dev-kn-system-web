@@ -38,6 +38,14 @@ import {
 import { ArrowRight, Ban, Banknote, BellRing, ChevronDown, ChevronUp, Download, FileSignature, Pencil, PlusCircle, Printer, Send, Trash2 } from 'lucide-react';
 
 type RouteCode = 'PH_TO_UAE' | 'UAE_TO_PH';
+type PickupLocation = 'INSIDE_DUBAI' | 'OUTSIDE_DUBAI' | 'DROP_OFF' | 'FREE_PICKUP';
+
+function pickupLocationLabel(location?: string) {
+  if (location === 'OUTSIDE_DUBAI') return 'Outside Dubai';
+  if (location === 'INSIDE_DUBAI') return 'Inside Dubai';
+  if (location === 'FREE_PICKUP') return 'Free pickup';
+  return 'Drop off';
+}
 
 type QuoteItem = {
   id: string;
@@ -69,7 +77,7 @@ type SavedQuotation = {
   rate_per_kg: number;
   rate_bracket?: string;
   shipping_amount: number;
-  pickup_location?: 'INSIDE_DUBAI' | 'OUTSIDE_DUBAI' | 'DROP_OFF';
+  pickup_location?: PickupLocation;
   pickup_charge?: number;
   pickup_vat?: number;
   delivery_charge?: number;
@@ -198,7 +206,7 @@ export default function QuotationsPage() {
   const [ratePerKg, setRatePerKg] = useState('');
   const [notes, setNotes] = useState('');
   const [numberOfBoxes, setNumberOfBoxes] = useState('');
-  const [pickupLocation, setPickupLocation] = useState<'INSIDE_DUBAI' | 'OUTSIDE_DUBAI' | 'DROP_OFF' | ''>('');
+  const [pickupLocation, setPickupLocation] = useState<PickupLocation | ''>('');
   const [deliveryCharge, setDeliveryCharge] = useState('');
   const [insuranceCharge, setInsuranceCharge] = useState('');
   const [discountType, setDiscountType] = useState<'PERCENT' | 'AMOUNT' | ''>('');
@@ -610,7 +618,7 @@ export default function QuotationsPage() {
       return;
     }
     if (!pickupLocation) {
-      toast({ variant: 'destructive', title: 'Pickup required', description: 'Choose inside Dubai, outside Dubai, or drop off.' });
+      toast({ variant: 'destructive', title: 'Pickup required', description: 'Choose inside Dubai, outside Dubai, drop off, or free pickup.' });
       return;
     }
     const boxCount = parseInt(numberOfBoxes, 10) || distinctBoxCount(validItems.map((item) => item.boxNumber));
@@ -1147,14 +1155,15 @@ export default function QuotationsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <Label>Pickup *</Label>
-                    <Select value={pickupLocation} onValueChange={(value) => setPickupLocation(value as 'INSIDE_DUBAI' | 'OUTSIDE_DUBAI' | 'DROP_OFF')}>
+                    <Select value={pickupLocation} onValueChange={(value) => setPickupLocation(value as PickupLocation)}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Inside Dubai, outside Dubai, or drop off" />
+                        <SelectValue placeholder="Inside Dubai, outside Dubai, drop off, or free pickup" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="INSIDE_DUBAI">Inside Dubai — 20.00 AED</SelectItem>
                         <SelectItem value="OUTSIDE_DUBAI">Outside Dubai — 25.71 AED</SelectItem>
                         <SelectItem value="DROP_OFF">Drop off — 0.00 AED</SelectItem>
+                        <SelectItem value="FREE_PICKUP">Free pickup — 0.00 AED</SelectItem>
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground mt-1">VAT 5% is added on the pickup charge only.</p>
@@ -1463,7 +1472,7 @@ export default function QuotationsPage() {
                         </tr>
                         <tr>
                           <td className="border border-gray-300">
-                            Pickup Charge {printTarget.pickup_location === 'OUTSIDE_DUBAI' ? '(Outside Dubai)' : printTarget.pickup_location === 'INSIDE_DUBAI' ? '(Inside Dubai)' : '(Drop off)'}
+                            Pickup Charge ({pickupLocationLabel(printTarget.pickup_location)})
                           </td>
                           <td className="border border-gray-300 text-right">{Number(printTarget.pickup_charge || 0).toFixed(2)}</td>
                         </tr>

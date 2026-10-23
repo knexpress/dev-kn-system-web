@@ -226,6 +226,15 @@ export default function UaeToPhTaxInvoiceTemplate({ data }: UaeToPhTaxInvoiceTem
               <td className={`${cellBorder()} text-center`}>{isDomestic ? '5%' : 'Tax on Sales'}</td>
               <td className={`${cellBorder()} text-right`}>{fmt(mainTaxLineAmount)}</td>
             </tr>
+            {discountAmount > 0 && (
+              <tr>
+                <td className={cellBorder()}>{discountLabel}</td>
+                <td className={`${cellBorder()} text-center`}>1</td>
+                <td className={`${cellBorder()} text-right`}>-{fmt(discountAmount)}</td>
+                <td className={`${cellBorder()} text-center`}>0</td>
+                <td className={`${cellBorder()} text-right`}>-{fmt(discountAmount)}</td>
+              </tr>
+            )}
             {pickup > 0 && (
               <tr>
                 <td className={cellBorder()}>Pick up Charges</td>
@@ -244,15 +253,6 @@ export default function UaeToPhTaxInvoiceTemplate({ data }: UaeToPhTaxInvoiceTem
                 <td className={`${cellBorder()} text-right`}>{fmtUnit(gateway.unitPrice)}</td>
                 <td className={`${cellBorder()} text-center`}>5%</td>
                 <td className={`${cellBorder()} text-right`}>{fmt(gateway.net)}</td>
-              </tr>
-            )}
-            {discountAmount > 0 && (
-              <tr>
-                <td className={cellBorder()}>{discountLabel}</td>
-                <td className={`${cellBorder()} text-center`}>1</td>
-                <td className={`${cellBorder()} text-right`}>-{fmt(discountAmount)}</td>
-                <td className={`${cellBorder()} text-center`}>0</td>
-                <td className={`${cellBorder()} text-right`}>-{fmt(discountAmount)}</td>
               </tr>
             )}
           </tbody>
@@ -372,6 +372,16 @@ export default function UaeToPhTaxInvoiceTemplate({ data }: UaeToPhTaxInvoiceTem
               <td className={`${cellBorder()} text-center`}>0</td>
               <td className={`${cellBorder()} text-right`}>{fmt(shipping)}</td>
             </tr>
+            {discountAmount > 0 && (
+              <tr>
+                <td className={cellBorder()}>{discountLabel}</td>
+                <td className={`${cellBorder()} text-center`}>—</td>
+                <td className={cellBorder()}>—</td>
+                <td className={`${cellBorder()} text-center`}>—</td>
+                <td className={`${cellBorder()} text-center`}>0</td>
+                <td className={`${cellBorder()} text-right`}>-{fmt(discountAmount)}</td>
+              </tr>
+            )}
           </tbody>
         </table>
 
@@ -397,17 +407,6 @@ export default function UaeToPhTaxInvoiceTemplate({ data }: UaeToPhTaxInvoiceTem
               </tbody>
             </table>
           </>
-        )}
-
-        {discountAmount > 0 && (
-          <table className="w-full border-collapse mb-4 text-sm">
-            <tbody>
-              <tr>
-                <td className={`${cellBorder()} w-[70%]`}>{discountLabel}</td>
-                <td className={`${cellBorder()} text-right`}>-{fmt(discountAmount)}</td>
-              </tr>
-            </tbody>
-          </table>
         )}
 
         <div className="flex justify-end mb-8">

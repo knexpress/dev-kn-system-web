@@ -226,18 +226,25 @@ export default function InvoiceRequestsPage() {
   // For PH TO UAE: Check if delivery is required (old method)
   const isPhToUaeSelected = isPhToUaeService(selectedServiceCode);
   
-  const needsPickupCharge = (isUaeToPhSelected && (senderDeliveryOption === 'pickup')) || 
+  const quoteOnSelectedRequest =
+    selectedRequestForInvoice?.quotation_request?.stage === 'QUOTED'
+      ? selectedRequestForInvoice.quotation_request
+      : null;
+  const quotedPickupCharge = Number(quoteOnSelectedRequest?.quotation_pickup_charge) || 0;
+  const quotedDeliveryCharge = Number(quoteOnSelectedRequest?.quotation_delivery_charge) || 0;
+
+  const needsPickupCharge = (isUaeToPhSelected && (senderDeliveryOption === 'pickup' || quotedPickupCharge > 0)) || 
                             (isPhToUaeSelected && (senderDeliveryOption === 'pickup'));
-  const needsDeliveryCharge = isUaeToPhSelected && (receiverDeliveryOption === 'delivery');
+  const needsDeliveryCharge = isUaeToPhSelected && (receiverDeliveryOption === 'delivery' || quotedDeliveryCharge > 0);
   
   // For UAE TO PH: Show fields based on delivery option combinations
   // - sender="pickup" AND receiver="delivery" → show both fields
   // - sender="delivery" AND receiver="delivery" → show only delivery charge
   // - sender="pickup" AND receiver="pickup" → show only pickup charge
+  // Quoted pickup/delivery is always shown so the invoice matches the quotation.
   // For PH TO UAE: Show pickup charge field if sender delivery option is "pickup" (pickup in Philippines)
-  const showPickupChargeField = (isUaeToPhSelected && (senderDeliveryOption === 'pickup')) || 
-                                 (isPhToUaeSelected && (senderDeliveryOption === 'pickup'));
-  const showDeliveryChargeField = isUaeToPhSelected && (receiverDeliveryOption === 'delivery');
+  const showPickupChargeField = needsPickupCharge;
+  const showDeliveryChargeField = needsDeliveryCharge;
   
   // Get weight from selected request for PH TO UAE delivery check (fallback if user hasn't entered)
   const getRequestWeight = (request: any): number => {
@@ -2017,8 +2024,12 @@ export default function InvoiceRequestsPage() {
       // Get pickup and delivery charges from user input (manual entry only)
       // For PH TO UAE: Pickup charge is for pickup in Philippines
       // For UAE TO PH: Pickup charge is for pickup in UAE
-      const pickupChargeValue = needsPickupCharge ? parseFloat(pickupCharge) : 0;
-      const deliveryChargeValue = needsDeliveryCharge ? parseFloat(deliveryCharge) : 0;
+      const pickupChargeValue = needsPickupCharge
+        ? (parseFloat(pickupCharge) || 0)
+        : (quotedPickupCharge || 0);
+      const deliveryChargeValue = needsDeliveryCharge
+        ? (parseFloat(deliveryCharge) || 0)
+        : (quotedDeliveryCharge || 0);
       
       // Debug: Log pickup charge for PH TO UAE
       if (isPhToUaeSelected && needsPickupCharge) {
@@ -2281,7 +2292,7 @@ export default function InvoiceRequestsPage() {
       // For UAE_TO_PH: Use receiver_delivery_option
       const hasDeliveryFlag = isPhToUaeSelected 
         ? hasDelivery // PH_TO_UAE: checkbox state (always enabled, weight check in calculation)
-        : needsDeliveryCharge; // UAE_TO_PH: based on receiver_delivery_option
+        : (needsDeliveryCharge || deliveryChargeValue > 0); // UAE_TO_PH: booking option or quoted delivery
       
       // Determine delivery_base_amount
       // Required if has_delivery = true for PH_TO_UAE
@@ -2461,6 +2472,7 @@ export default function InvoiceRequestsPage() {
         tax_rate: (invoiceData as any)?.charges?.taxRate ?? taxRateForRequest, // REQUIRED - 0 for COD, 5 for Tax
         service_code: serviceCode, // REQUIRED for PH_TO_UAE
         has_delivery: hasDeliveryFlag, // REQUIRED - Boolean indicating if delivery is enabled
+        delivery_charge: deliveryChargeValue > 0 ? deliveryChargeValue : undefined,
         delivery_base_amount: deliveryBaseAmountValue, // REQUIRED if has_delivery = true for PH_TO_UAE
         pickup_base_amount: pickupBaseAmountValue, // REQUIRED if sender_delivery_option = "pickup" for PH_TO_UAE (pickup in Philippines)
         // Save pickup_charge to invoice object for both UAE TO PH and PH TO UAE
@@ -3716,11 +3728,11 @@ export default function InvoiceRequestsPage() {
                   </div>
 
                   <div className="mt-2 space-y-1 text-xs text-amber-800">
-                    {quotedPickup > 0 && !showPickupChargeField && (
-                      <p>Quoted pickup is not applied: the booking&apos;s sender option is not &quot;pickup&quot;.</p>
+                    {quotedPickup > 0 && showPickupChargeField && senderDeliveryOption !== 'pickup' && (
+                      <p>Quoted pickup is applied on this invoice even though the booking sender option is not &quot;pickup&quot;.</p>
                     )}
-                    {quotedDelivery > 0 && !isPhToUaeSelected && !showDeliveryChargeField && (
-                      <p>Quoted delivery is not applied: the booking&apos;s receiver option is not &quot;delivery&quot;.</p>
+                    {quotedDelivery > 0 && !isPhToUaeSelected && showDeliveryChargeField && receiverDeliveryOption !== 'delivery' && (
+                      <p>Quoted delivery is applied on this invoice even though the booking receiver option is not &quot;delivery&quot;.</p>
                     )}
                     {quotedDelivery > 0 && isPhToUaeSelected && (
                       <p>Quoted delivery is used as the base delivery amount (+5 AED per extra box on the tax invoice).</p>

@@ -94,6 +94,15 @@ export function gatewayChargeLineFromInvoice(invoice: any): InvoiceGatewayCharge
     };
   }
 
+  const adv =
+    invoice?.request_id?.quotation_request?.advance ||
+    invoice?.quotation_request?.advance ||
+    null;
+  const advGross = Number(adv?.gateway_charge) || 0;
+  if (advGross > 0.009) {
+    return fromGross(advGross, adv?.mode || mode, false);
+  }
+
   const sync = invoice.gl_sync || {};
   const includedGross =
     Number(sync.gateway_included_gross) ||
