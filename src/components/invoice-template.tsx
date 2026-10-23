@@ -5,6 +5,8 @@ import { secureLog } from '@/lib/secure-logger';
 import type { InvoiceGatewayChargeLine } from '@/lib/invoice-gateway-charge';
 import QRCode from './qr-code';
 import { InvoicePrintExtras } from '@/components/invoice-print-extras';
+import UaeToPhTaxInvoiceTemplate from '@/components/uae-to-ph-tax-invoice-template';
+import { isUaeToPhService } from '@/lib/invoice-request-utils';
 
 interface InvoiceData {
   invoiceNumber: string;
@@ -58,6 +60,7 @@ interface InvoiceData {
   disclaimer?: string;
   includeNotes?: boolean;
   includeDisclaimer?: boolean;
+  dueDate?: string;
   qrCode?: {
     url: string;
     code: string;
@@ -76,6 +79,26 @@ interface InvoiceTemplateProps {
 }
 
 export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
+  const isUaeToPh = data.isUaeToPh === true || isUaeToPhService(data.serviceCode);
+  if (isUaeToPh) {
+    return (
+      <UaeToPhTaxInvoiceTemplate
+        data={{
+          ...data,
+          documentKind: 'invoice',
+          gatewayCharge: null,
+          charges: {
+            ...data.charges,
+            subtotal: Number(data.charges.subtotal) || 0,
+            taxRate: Number(data.charges.taxRate) || 0,
+            taxAmount: 0,
+            total: Number(data.charges.total) || 0,
+          },
+        }}
+      />
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto bg-white p-8 shadow-lg">
       {/* Header Section */}
@@ -193,6 +216,14 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
                   <td className="border border-gray-300 px-4 py-2 text-right">{data.charges.pickupCharge.toFixed(2)}</td>
                 </tr>
               )}
+              <tr>
+                <td className="border border-gray-300 px-4 py-2 text-left">Delivery Charge</td>
+                <td className="border border-gray-300 px-4 py-2 text-right">{data.charges.deliveryCharge.toFixed(2)}</td>
+              </tr>
+              <tr>
+                <td className="border border-gray-300 px-4 py-2 text-left">Insurance Charge</td>
+                <td className="border border-gray-300 px-4 py-2 text-right">{(data.charges.insuranceCharge ?? 0).toFixed(2)}</td>
+              </tr>
               {Number(data.charges.discountAmount) > 0 && (
                 <tr>
                   <td className="border border-gray-300 px-4 py-2 text-left">
@@ -204,28 +235,6 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
                     -{Number(data.charges.discountAmount).toFixed(2)}
                   </td>
                 </tr>
-              )}
-              <tr>
-                <td className="border border-gray-300 px-4 py-2 text-left">Delivery Charge</td>
-                <td className="border border-gray-300 px-4 py-2 text-right">{data.charges.deliveryCharge.toFixed(2)}</td>
-              </tr>
-              <tr>
-                <td className="border border-gray-300 px-4 py-2 text-left">Insurance Charge</td>
-                <td className="border border-gray-300 px-4 py-2 text-right">{(data.charges.insuranceCharge ?? 0).toFixed(2)}</td>
-              </tr>
-              {data.gatewayCharge && data.gatewayCharge.gross > 0 && (
-                <>
-                  <tr>
-                    <td className="border border-gray-300 px-4 py-2 text-left">{data.gatewayCharge.label}</td>
-                    <td className="border border-gray-300 px-4 py-2 text-right">{data.gatewayCharge.net.toFixed(2)}</td>
-                  </tr>
-                  {data.gatewayCharge.vat > 0 && (
-                    <tr>
-                      <td className="border border-gray-300 px-4 py-2 text-left">VAT 5% on {data.gatewayCharge.label}</td>
-                      <td className="border border-gray-300 px-4 py-2 text-right">{data.gatewayCharge.vat.toFixed(2)}</td>
-                    </tr>
-                  )}
-                </>
               )}
               <tr className="bg-gray-100">
                 <td className="border border-gray-300 px-4 py-2 text-left font-bold">
@@ -274,15 +283,7 @@ export default function InvoiceTemplate({ data }: InvoiceTemplateProps) {
                     
                     if (!totalValue) return null;
                     // Convert to number and check - handle both string "0" and number 0
-                    let numValue = typeof totalValue === 'string' ? parseFloat(totalValue) : Number(totalValue);
-                    // Card/Tabby fee collected on top of the invoice amount
-                    if (
-                      data.gatewayCharge &&
-                      data.gatewayCharge.gross > 0 &&
-                      !data.gatewayCharge.includedInTotal
-                    ) {
-                      numValue += data.gatewayCharge.gross;
-                    }
+                    const numValue = typeof totalValue === 'string' ? parseFloat(totalValue) : Number(totalValue);
                     // Only render if it's a valid positive number
                     if (isNaN(numValue) || !isFinite(numValue) || numValue <= 0) {
                       return null; // Don't render anything if total is 0, NaN, or invalid
