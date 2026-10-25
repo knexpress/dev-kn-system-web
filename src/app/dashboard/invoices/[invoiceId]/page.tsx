@@ -1320,8 +1320,9 @@ export default function InvoicePage() {
         invoice.customer_name ||
         invoice.request_id?.customer_name ||
         invoice.request_id?.sender?.name ||
-        invoice.client_id?.company_name ||
-        invoice.client_id?.contact_name ||
+        (invoice.bill_to === 'RECEIVER'
+          ? undefined
+          : invoice.client_id?.company_name || invoice.client_id?.contact_name) ||
         'N/A';
     const senderAddress =
         requestDataSources?.invoiceRequest?.booking_data?.sender?.completeAddress ||

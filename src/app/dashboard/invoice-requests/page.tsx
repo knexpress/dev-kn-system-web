@@ -2175,15 +2175,14 @@ export default function InvoiceRequestsPage() {
       secureLog.debug('Selected request for invoice', selectedRequestForInvoice);
       secureLog.debug('Client ID from request', (selectedRequestForInvoice as any).client_id);
       
-      const billParties = invoiceBillParties(selectedRequestForInvoice);
-      const billedParty = billTo === 'RECEIVER' ? billParties.receiver : billParties.sender;
+      // Bill to only changes the first-page address block. The invoice customer / sender stays the sender.
       const clientData = {
-        company_name: billedParty.name,
-        contact_name: billedParty.name,
-        email: billedParty.email || (selectedRequestForInvoice as any).customer_email || 'customer@example.com',
-        phone: billedParty.phone || (selectedRequestForInvoice as any).customer_phone || '+971XXXXXXXXX',
-        address: billedParty.address || (selectedRequestForInvoice as any).origin_place || 'Address not provided',
-        city: billedParty.address || (selectedRequestForInvoice as any).origin_place || 'Dubai',
+        company_name: (selectedRequestForInvoice as any).customer_name,
+        contact_name: (selectedRequestForInvoice as any).customer_name,
+        email: (selectedRequestForInvoice as any).customer_email || 'customer@example.com',
+        phone: (selectedRequestForInvoice as any).customer_phone || '+971XXXXXXXXX',
+        address: (selectedRequestForInvoice as any).origin_place || 'Address not provided',
+        city: (selectedRequestForInvoice as any).origin_place || 'Dubai',
         country: 'UAE'
       };
       
