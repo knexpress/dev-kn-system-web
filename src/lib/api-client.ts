@@ -26,6 +26,8 @@ export type InvoiceNoteReason =
 export type InvoiceNoteLine = {
   category: InvoiceNoteCategory;
   description?: string;
+  weight_kg?: number;
+  rate_per_kg?: number;
   amount: number;
   vat_rate: 0 | 5;
   vat_amount?: number;
@@ -45,6 +47,12 @@ export type InvoiceNote = {
   customer_name?: string;
   customer_trn?: string;
   service_code?: string;
+  actual_weight?: number;
+  volumetric_weight?: number;
+  chargeable_weight?: number;
+  rate_per_kg?: number;
+  number_of_boxes?: number;
+  weight_type?: string;
   reason_code: InvoiceNoteReason;
   reason: string;
   lines: Required<InvoiceNoteLine>[];
@@ -784,6 +792,7 @@ class ApiClient {
     id: string,
     payload: {
       mode: InvoicePaymentMode;
+      payment_type?: 'FULL' | 'PARTIAL';
       amount?: number;
       reference?: string;
       collected_at?: string;
@@ -806,7 +815,13 @@ class ApiClient {
       amount?: number;
       vat_rate?: 0 | 5;
       reason?: string;
-      payment?: { mode: InvoicePaymentMode; reference?: string; collected_at?: string };
+      payment?: {
+        mode: InvoicePaymentMode;
+        payment_type?: 'FULL' | 'PARTIAL';
+        amount?: number;
+        reference?: string;
+        collected_at?: string;
+      };
     }
   ) {
     const result = await this.request(`/invoice-requests/${encodeURIComponent(id)}/cancel-shipment`, {
@@ -1180,7 +1195,13 @@ class ApiClient {
     customer_name?: string;
     customer_phone?: string;
     paid?: boolean;
-    payment?: { mode: InvoicePaymentMode; reference?: string; collected_at?: string };
+    payment?: {
+      mode: InvoicePaymentMode;
+      payment_type?: 'FULL' | 'PARTIAL';
+      amount?: number;
+      reference?: string;
+      collected_at?: string;
+    };
   }) {
     const result = await this.request('/invoices-unified/cancellation', {
       method: 'POST',
@@ -3012,6 +3033,7 @@ class ApiClient {
     id: string,
     payload: {
       mode: InvoicePaymentMode;
+      payment_type?: 'FULL' | 'PARTIAL';
       amount?: number;
       reference?: string;
       collected_at?: string;

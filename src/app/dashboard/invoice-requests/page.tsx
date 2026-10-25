@@ -51,6 +51,24 @@ const QuotationRequestDialog = dynamic(() => import('@/components/quotation-requ
   ssr: false
 });
 
+function invoiceBillParties(request: any) {
+  const senderSnap = request?.booking_snapshot?.sender || request?.booking_data?.sender || request?.sender || {};
+  const receiverSnap = request?.booking_snapshot?.receiver || request?.booking_data?.receiver || request?.receiver || {};
+  const sender = {
+    name: (request?.customer_name || request?.sender_name || senderSnap.fullName || senderSnap.name || senderSnap.companyName || '').toString().trim() || 'Sender',
+    phone: (request?.customer_phone || request?.sender_phone || senderSnap.contactNo || senderSnap.phoneNumber || senderSnap.phone || '').toString().trim(),
+    email: (request?.customer_email || request?.sender_email || senderSnap.emailAddress || senderSnap.email || '').toString().trim(),
+    address: (request?.origin_place || request?.sender_address || request?.verification?.sender_address || senderSnap.completeAddress || senderSnap.addressLine1 || senderSnap.address || '').toString().trim(),
+  };
+  const receiver = {
+    name: (request?.receiver_name || receiverSnap.fullName || receiverSnap.name || receiverSnap.companyName || '').toString().trim() || 'Receiver',
+    phone: (request?.receiver_phone || request?.verification?.receiver_phone || receiverSnap.contactNo || receiverSnap.phoneNumber || receiverSnap.phone || '').toString().trim(),
+    email: (request?.receiver_email || receiverSnap.emailAddress || receiverSnap.email || '').toString().trim(),
+    address: (request?.destination_place || request?.receiver_address || request?.verification?.receiver_address || receiverSnap.completeAddress || receiverSnap.addressLine1 || receiverSnap.address || '').toString().trim(),
+  };
+  return { sender, receiver };
+}
+
 export default function InvoiceRequestsPage() {
   const [invoiceRequests, setInvoiceRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,6 +124,7 @@ export default function InvoiceRequestsPage() {
   const [isSpecialCustomer, setIsSpecialCustomer] = useState(false); // Special customer checkbox
   const [specialRate, setSpecialRate] = useState(''); // Special rate input (float)
   const [quoteRatePerKg, setQuoteRatePerKg] = useState(''); // Rate carried from Finance's quotation (editable)
+  const [billTo, setBillTo] = useState<'SENDER' | 'RECEIVER'>('SENDER');
   const [prepaidMode, setPrepaidMode] = useState(''); // UAE→PH quoted: how the customer already paid
   const [prepaidReference, setPrepaidReference] = useState('');
   const [prepaidPaidAt, setPrepaidPaidAt] = useState(() => {
@@ -1466,6 +1485,7 @@ export default function InvoiceRequestsPage() {
         setIsSpecialCustomer(false);
         setSpecialRate('');
         applyQuotationDefaults(request);
+        setBillTo('SENDER');
       } else {
         const apiError = 'error' in result ? result.error : undefined;
         // Fallback to cached request if API fails
@@ -1516,6 +1536,7 @@ export default function InvoiceRequestsPage() {
           setIsSpecialCustomer(false);
           setSpecialRate('');
           applyQuotationDefaults(request);
+          setBillTo('SENDER');
         } else {
           toast({
             variant: 'destructive',
@@ -2094,6 +2115,7 @@ export default function InvoiceRequestsPage() {
           customerTRN: customerTRN || undefined, // Pass customer TRN to invoice data
           totalKg: isPhToUaeSelected && totalKgInput ? parseFloat(totalKgInput) : undefined, // Pass user-entered total kg for PH TO UAE
           ratePerKg: quotedRateOverride,
+          billTo,
         }
       );
       
@@ -2153,16 +2175,16 @@ export default function InvoiceRequestsPage() {
       secureLog.debug('Selected request for invoice', selectedRequestForInvoice);
       secureLog.debug('Client ID from request', (selectedRequestForInvoice as any).client_id);
       
-      // For now, we'll create a client record from the customer information
-      // In the future, you might want to add client_id to the InvoiceRequest schema
+      const billParties = invoiceBillParties(selectedRequestForInvoice);
+      const billedParty = billTo === 'RECEIVER' ? billParties.receiver : billParties.sender;
       const clientData = {
-        company_name: (selectedRequestForInvoice as any).customer_name,
-        contact_name: (selectedRequestForInvoice as any).customer_name,
-        email: (selectedRequestForInvoice as any).customer_email || 'customer@example.com',
-        phone: (selectedRequestForInvoice as any).customer_phone || '+971XXXXXXXXX',
-        address: (selectedRequestForInvoice as any).origin_place || 'Address not provided',
-        city: (selectedRequestForInvoice as any).origin_place || 'Dubai', // Use origin place as city
-        country: 'UAE' // Default to UAE since this is a UAE-based company
+        company_name: billedParty.name,
+        contact_name: billedParty.name,
+        email: billedParty.email || (selectedRequestForInvoice as any).customer_email || 'customer@example.com',
+        phone: billedParty.phone || (selectedRequestForInvoice as any).customer_phone || '+971XXXXXXXXX',
+        address: billedParty.address || (selectedRequestForInvoice as any).origin_place || 'Address not provided',
+        city: billedParty.address || (selectedRequestForInvoice as any).origin_place || 'Dubai',
+        country: 'UAE'
       };
       
       // Create client first
@@ -2479,6 +2501,7 @@ export default function InvoiceRequestsPage() {
         // For PH TO UAE: Only save if > 0 (will only appear in COD invoice, not Tax invoice)
         pickup_charge: pickupChargeValue > 0 ? pickupChargeValue : undefined,
         customer_trn: customerTRN || undefined,
+        bill_to: billTo,
         batch_number: batchNumber || undefined, // REQUIRED
         notes: invoiceData.notes,
         created_by: (userProfile as any)?.employee_id || (userProfile as any)?._id, // REQUIRED
@@ -2717,6 +2740,7 @@ export default function InvoiceRequestsPage() {
             setIsSpecialCustomer(false);
             setSpecialRate('');
             setQuoteRatePerKg('');
+            setBillTo('SENDER');
             fetchInvoiceRequests(currentPage, false); // Skip cache to get fresh data after invoice generation
           }
         }
@@ -2762,6 +2786,7 @@ export default function InvoiceRequestsPage() {
       customerTRN?: string; // Customer TRN from invoice generation
       totalKg?: number; // User-entered total kilograms for PH TO UAE (overrides verification weight)
       ratePerKg?: number; // Rate confirmed in the dialog (quoted requests); overrides verification rate
+      billTo?: 'SENDER' | 'RECEIVER';
     } = {}
   ) => {
     secureLog.debug('Converting request to invoice data', { taxRateOverride, hasRequest: !!request, hasQrCodeData: !!qrCodeData, hasOptions: !!options });
@@ -3156,6 +3181,7 @@ export default function InvoiceRequestsPage() {
         email: senderEmail || undefined,
         phone: senderPhone
       },
+      billTo: options.billTo === 'RECEIVER' ? 'RECEIVER' : 'SENDER',
       shipmentDetails: {
         numberOfBoxes: numberOfBoxes,
         weight: weight,
@@ -3681,6 +3707,45 @@ export default function InvoiceRequestsPage() {
                     {' '}The rate and charges are pre-filled from the quote. Review and edit before generating.
                   </p>
 
+                  {(() => {
+                    const parties = invoiceBillParties(selectedRequestForInvoice);
+                    return (
+                      <div className="mb-3">
+                        <Label className="block text-sm font-medium text-gray-700 mb-1">Bill to *</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([
+                            { value: 'SENDER' as const, title: 'Sender', party: parties.sender },
+                            { value: 'RECEIVER' as const, title: 'Receiver', party: parties.receiver },
+                          ]).map((opt) => {
+                            const selected = billTo === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => setBillTo(opt.value)}
+                                className={`rounded-lg border px-3 py-2 text-left text-sm ${
+                                  selected
+                                    ? 'border-amber-700 bg-amber-100 text-amber-950'
+                                    : 'border-amber-200 bg-white text-gray-700'
+                                }`}
+                              >
+                                <span className="flex items-center gap-2 font-semibold">
+                                  <span className={`flex h-4 w-4 items-center justify-center rounded-sm border ${
+                                    selected ? 'border-amber-800 bg-amber-800 text-white' : 'border-gray-400 bg-white'
+                                  }`}>
+                                    {selected ? '✓' : ''}
+                                  </span>
+                                  {opt.title}
+                                </span>
+                                <span className="mt-1 block truncate text-xs">{opt.party.name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <Label className="block text-sm font-medium text-gray-700 mb-1">
                     Rate per kg (AED) *
                   </Label>
@@ -3774,18 +3839,63 @@ export default function InvoiceRequestsPage() {
               );
             })()}
 
+            {!getInvoiceQuote(selectedRequestForInvoice) && selectedRequestForInvoice && (() => {
+              const parties = invoiceBillParties(selectedRequestForInvoice);
+              return (
+                <div className="mb-4">
+                  <Label className="block text-sm font-medium text-gray-700 mb-1">Bill to *</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { value: 'SENDER' as const, title: 'Sender', party: parties.sender },
+                      { value: 'RECEIVER' as const, title: 'Receiver', party: parties.receiver },
+                    ]).map((opt) => {
+                      const selected = billTo === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setBillTo(opt.value)}
+                          className={`rounded-lg border px-3 py-2 text-left text-sm ${
+                            selected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2 font-semibold">
+                            <span className={`flex h-4 w-4 items-center justify-center rounded-sm border ${
+                              selected ? 'border-white bg-white text-slate-900' : 'border-gray-400 bg-white'
+                            }`}>
+                              {selected ? '✓' : ''}
+                            </span>
+                            {opt.title}
+                          </span>
+                          <span className={`mt-1 block truncate text-xs ${selected ? 'text-white/80' : 'text-muted-foreground'}`}>
+                            {opt.party.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
             {(() => {
-              const adv = (selectedRequestForInvoice as any)?.quotation_request?.advance;
+              const qr = (selectedRequestForInvoice as any)?.quotation_request || {};
+              const adv = qr.advance;
               const liveAdvance = Boolean(adv?.journal_id) && !adv?.void_journal_id && !adv?.void_journal_no;
+              const quoteTotal = Number(qr.quotation_total || 0);
+              const collected = Number(adv?.amount_collected || adv?.amount || 0);
+              const isPartial = adv?.payment_type === 'PARTIAL' || (quoteTotal > 0 && collected + 0.009 < quoteTotal);
               if (liveAdvance) {
                 return (
               <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3">
-                <p className="text-sm font-semibold text-emerald-900">Quotation advance already recorded</p>
+                <p className="text-sm font-semibold text-emerald-900">
+                  {isPartial ? 'Partial quotation payment recorded' : 'Quotation payment already recorded'}
+                </p>
                 <p className="text-xs text-emerald-800">
-                  AED {Number(adv.amount || 0).toFixed(2)} via {adv.mode || '—'}
+                  AED {Number(adv.amount_collected || adv.amount || 0).toFixed(2)} via {adv.mode || '—'}
                   {adv.collected_at ? ` on ${new Date(adv.collected_at).toLocaleDateString()}` : ''}
                   {adv.journal_no ? ` · ${adv.journal_no}` : ''} sits in Customer Payment Due. Generating this invoice
-                  posts the invoice journal, then a payment journal dated the day the advance was recorded.
+                  applies that amount on the original paid date. Record any remaining balance on Quotations first if the customer has paid more.
                 </p>
               </div>
                 );
@@ -4093,6 +4203,7 @@ export default function InvoiceRequestsPage() {
                   setHasInsurance(false);
                   setInsuranceManualAmount('');
                   setQuoteRatePerKg('');
+                  setBillTo('SENDER');
                 }}
               >
                 Cancel

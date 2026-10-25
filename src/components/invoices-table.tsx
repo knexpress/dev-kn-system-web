@@ -957,7 +957,7 @@ export default function InvoicesTable({ invoices, department, onRemit, onCancel,
                                             Remit
                                         </Button>
                                     )}
-                                    {onRecordPayment && !invoiceIsCancelled(invoice) && (['UNPAID', 'OVERDUE'].includes(invoice.status) || (['PAID', 'REMITTED'].includes(invoice.status) && invoiceBalance(invoice).balance > 0.009)) && (
+                                    {onRecordPayment && !invoiceIsCancelled(invoice) && (['UNPAID', 'OVERDUE', 'PARTIAL'].includes(invoice.status) || (['PAID', 'REMITTED'].includes(invoice.status) && invoiceBalance(invoice).balance > 0.009)) && (
                                         <Button
                                             variant="outline"
                                             size="sm"

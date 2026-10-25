@@ -1421,6 +1421,7 @@ export default function InvoicePage() {
             phone: senderPhone,
             deliveryOption: senderDeliveryOption || undefined
         },
+        billTo: invoice.bill_to === 'RECEIVER' ? 'RECEIVER' : 'SENDER',
         shipmentDetails: {
             numberOfBoxes: numberOfBoxes,
             weight: displayWeight,

@@ -441,6 +441,10 @@ export default function InvoiceNotesTab() {
                       { label: 'AWB', value: detail.awb_number || '—' },
                       { label: 'Customer', value: detail.customer_name || '—' },
                       { label: 'Invoice total', value: `AED ${money(detail.invoice_total)}` },
+                      { label: 'Actual weight', value: detail.actual_weight ? `${detail.actual_weight} kg` : '—' },
+                      { label: 'Volumetric', value: detail.volumetric_weight ? `${detail.volumetric_weight} kg` : '—' },
+                      { label: 'Chargeable', value: detail.chargeable_weight ? `${detail.chargeable_weight} kg` : '—' },
+                      { label: 'Rate', value: detail.rate_per_kg ? `AED ${money(detail.rate_per_kg)} / kg` : '—' },
                     ]}
                   />
                 </ErpDialogSection>
@@ -467,6 +471,8 @@ export default function InvoiceNotesTab() {
                       <TableRow>
                         <TableHead>Charge</TableHead>
                         <TableHead>Description</TableHead>
+                        <TableHead className="text-right">Kg</TableHead>
+                        <TableHead className="text-right">Rate</TableHead>
                         <TableHead className="text-right">Net</TableHead>
                         <TableHead className="text-right">VAT</TableHead>
                         <TableHead className="text-right">Total</TableHead>
@@ -477,6 +483,8 @@ export default function InvoiceNotesTab() {
                         <TableRow key={i}>
                           <TableCell className="font-medium">{categoryLabel(l.category)}</TableCell>
                           <TableCell className="text-slate-600">{l.description}</TableCell>
+                          <TableCell className="text-right tabular-nums">{l.weight_kg || '—'}</TableCell>
+                          <TableCell className="text-right tabular-nums">{l.rate_per_kg ? money(l.rate_per_kg) : '—'}</TableCell>
                           <TableCell className="text-right tabular-nums">{money(l.amount)}</TableCell>
                           <TableCell className="text-right tabular-nums">
                             {l.vat_rate}% · {money(l.vat_amount)}
@@ -583,7 +591,7 @@ export default function InvoiceNotesTab() {
                 </div>
                 <p className="pt-1 text-xs text-slate-500">
                   {approveFor.note_type === 'CREDIT'
-                    ? 'Dr revenue & VAT output / Cr Accounts Receivable'
+                    ? 'Dr Sales Return & VAT output / Cr Accounts Receivable'
                     : 'Dr Accounts Receivable / Cr revenue & VAT output'}
                 </p>
               </div>

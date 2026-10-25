@@ -50,6 +50,11 @@ type Candidate = {
   service_code?: string;
   quotation_number?: string;
   quotation_total?: number;
+  actual_weight?: number;
+  volumetric_weight?: number;
+  chargeable_weight?: number;
+  rate_per_kg?: number;
+  number_of_boxes?: number;
   has_advance?: boolean;
   advance_amount?: number;
 };
@@ -76,6 +81,8 @@ export function CancellationInvoiceDialog({
   const [reason, setReason] = useState('');
   const [paid, setPaid] = useState(false);
   const [payMode, setPayMode] = useState<InvoicePaymentMode | ''>('');
+  const [payType, setPayType] = useState<'FULL' | 'PARTIAL'>('FULL');
+  const [payAmount, setPayAmount] = useState('');
   const [payRef, setPayRef] = useState('');
   const [payDate, setPayDate] = useState(today);
   const [saving, setSaving] = useState(false);
@@ -91,6 +98,8 @@ export function CancellationInvoiceDialog({
     setReason('');
     setPaid(false);
     setPayMode('');
+    setPayType('FULL');
+    setPayAmount('');
     setPayRef('');
     setPayDate(today());
   };
@@ -121,6 +130,8 @@ export function CancellationInvoiceDialog({
       const adv = Number(row.advance_amount);
       setAmount(vat === '5' ? (Math.round((adv / 1.05) * 100) / 100).toFixed(2) : adv.toFixed(2));
       setPaid(true);
+      setPayType('FULL');
+      setPayAmount('');
     }
   };
 
@@ -137,10 +148,14 @@ export function CancellationInvoiceDialog({
       toast({ variant: 'destructive', title: 'Customer required', description: 'Choose a cancelled shipment or enter the customer name.' });
       return;
     }
-    if (paid && !selected?.has_advance && !payMode) {
-      toast({ variant: 'destructive', title: 'Payment method required', description: 'Choose how the customer paid, or leave unpaid and record it later.' });
+    const advanceLeft = selected?.has_advance ? Number(selected.advance_amount) || 0 : 0;
+    const appliedAdvance = Math.min(advanceLeft, total);
+    const remainingDue = Math.round(Math.max(0, total - appliedAdvance) * 100) / 100;
+    if (paid && remainingDue > 0.009 && !payMode) {
+      toast({ variant: 'destructive', title: 'Payment method required', description: 'Choose how the customer paid the remaining fee, or leave it unpaid.' });
       return;
     }
+    const collected = Math.round((parseFloat(payAmount) || 0) * 100) / 100;
     setSaving(true);
     const result = await apiClient.createCancellationInvoice({
       request_id: selected?._id,
@@ -151,8 +166,14 @@ export function CancellationInvoiceDialog({
       customer_name: customerName.trim() || undefined,
       customer_phone: customerPhone.trim() || undefined,
       paid: paid || Boolean(selected?.has_advance),
-      payment: paid && payMode
-        ? { mode: payMode, reference: payRef.trim() || undefined, collected_at: payDate || undefined }
+      payment: payMode
+        ? {
+            mode: payMode,
+            payment_type: payType,
+            amount: collected || undefined,
+            reference: payRef.trim() || undefined,
+            collected_at: payDate || undefined,
+          }
         : undefined,
     });
     setSaving(false);
@@ -210,9 +231,13 @@ export function CancellationInvoiceDialog({
                       <span className="font-mono font-medium">{row.awb || 'No AWB'}</span>
                       <span className="text-slate-500"> · {row.customer_name || 'Customer'}</span>
                     </span>
-                    {row.quotation_number ? (
-                      <span className="shrink-0 text-xs text-slate-500">{row.quotation_number}</span>
-                    ) : null}
+                    <span className="shrink-0 text-xs text-slate-500">
+                      {[
+                        row.quotation_number,
+                        row.chargeable_weight ? `${row.chargeable_weight} kg` : '',
+                        row.rate_per_kg ? `AED ${money(row.rate_per_kg)}/kg` : '',
+                      ].filter(Boolean).join(' · ')}
+                    </span>
                   </button>
                 ))
               )}
@@ -234,6 +259,19 @@ export function CancellationInvoiceDialog({
             </div>
           </div>
 
+          {selected && (selected.actual_weight || selected.chargeable_weight || selected.rate_per_kg) ? (
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-md border bg-slate-50 px-3 py-2 text-xs">
+              <span className="text-slate-500">Actual weight</span>
+              <span className="text-right">{selected.actual_weight ? `${selected.actual_weight} kg` : '—'}</span>
+              <span className="text-slate-500">Volumetric</span>
+              <span className="text-right">{selected.volumetric_weight ? `${selected.volumetric_weight} kg` : '—'}</span>
+              <span className="text-slate-500">Chargeable</span>
+              <span className="text-right">{selected.chargeable_weight ? `${selected.chargeable_weight} kg` : '—'}</span>
+              <span className="text-slate-500">Rate</span>
+              <span className="text-right">{selected.rate_per_kg ? `AED ${money(selected.rate_per_kg)} / kg` : '—'}</span>
+            </div>
+          ) : null}
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Domestic delivery fee (AED, before VAT) *</Label>
@@ -251,17 +289,48 @@ export function CancellationInvoiceDialog({
           </div>
 
           {selected?.has_advance ? (
-            <p className="text-xs text-emerald-800">
-              Quotation advance AED {money(Number(selected.advance_amount || 0))} will apply to this invoice on the original paid date.
-            </p>
-          ) : (
+            <div className="space-y-1 text-xs text-emerald-800">
+              <p>
+                Quotation payment AED {money(Math.min(Number(selected.advance_amount || 0), total))} applies to this invoice.
+                {Number(selected.advance_amount || 0) > total + 0.009
+                  ? ` Unused AED ${money(Number(selected.advance_amount || 0) - total)} is refunded from Customer Payment Due.`
+                  : ''}
+                {Number(selected.advance_amount || 0) + 0.009 < total
+                  ? ` Remaining AED ${money(total - Number(selected.advance_amount || 0))} can be recorded below.`
+                  : ''}
+              </p>
+            </div>
+          ) : null}
+          {(paid || (selected?.has_advance && Number(selected.advance_amount || 0) + 0.009 < total)) && (
             <>
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={paid} onCheckedChange={(checked) => setPaid(Boolean(checked))} />
-                Customer already paid
-              </label>
-              {paid && (
+              {!selected?.has_advance && (
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={paid} onCheckedChange={(checked) => setPaid(Boolean(checked))} />
+                  Customer already paid
+                </label>
+              )}
+              {(paid || (selected?.has_advance && Number(selected.advance_amount || 0) + 0.009 < total)) && (
                 <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1 col-span-2">
+                    <Label>Payment</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['FULL', 'PARTIAL'] as const).map((t) => (
+                        <Button
+                          key={t}
+                          type="button"
+                          size="sm"
+                          variant={payType === t ? 'default' : 'outline'}
+                          onClick={() => {
+                            setPayType(t);
+                            const due = Math.max(0, total - (selected?.has_advance ? Number(selected.advance_amount || 0) : 0));
+                            setPayAmount(t === 'FULL' && due > 0 ? String(due) : '');
+                          }}
+                        >
+                          {t === 'FULL' ? 'Full remaining' : 'Partial remaining'}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="space-y-1">
                     <Label>Mode *</Label>
                     <Select value={payMode} onValueChange={(value) => setPayMode(value as InvoicePaymentMode)}>
@@ -276,16 +345,26 @@ export function CancellationInvoiceDialog({
                     </Select>
                   </div>
                   <div className="space-y-1">
+                    <Label>Amount collected</Label>
+                    <Input type="number" min="0.01" step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
                     <Label>Date paid</Label>
                     <Input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
                   </div>
-                  <div className="space-y-1 col-span-2">
+                  <div className="space-y-1">
                     <Label>Reference</Label>
                     <Input value={payRef} onChange={(e) => setPayRef(e.target.value)} />
                   </div>
                 </div>
               )}
             </>
+          )}
+          {!selected?.has_advance && !paid && (
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={paid} onCheckedChange={(checked) => setPaid(Boolean(checked))} />
+              Customer already paid
+            </label>
           )}
 
           <div className="space-y-1">

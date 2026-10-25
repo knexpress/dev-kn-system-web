@@ -17,7 +17,7 @@ import { fmtDate, money } from '@/components/accounting/erp-format';
 import { NoteStatusPill, categoryLabel, reasonLabel, refundModeLabel } from './invoice-note-shared';
 
 export function noteDocumentTitle(note: Pick<InvoiceNote, 'note_type'>) {
-  return note.note_type === 'CREDIT' ? 'TAX CREDIT NOTE' : 'TAX DEBIT NOTE';
+  return note.note_type === 'CREDIT' ? 'TAX CREDIT NOTE' : 'DEBIT NOTE';
 }
 
 function cellBorder() {
@@ -89,6 +89,20 @@ export function InvoiceNoteDocument({ note, invoice }: { note: InvoiceNote; invo
               <span className="font-semibold">AIR WAYBILL NO :</span> {note.awb_number}
             </p>
           ) : null}
+          {note.chargeable_weight || note.actual_weight ? (
+            <p>
+              <span className="font-semibold">Weight :</span>{' '}
+              {note.chargeable_weight ? `${note.chargeable_weight} kg chargeable` : '—'}
+              {note.actual_weight || note.volumetric_weight
+                ? ` (Actual ${note.actual_weight ?? '—'} kg · Volumetric ${note.volumetric_weight ?? '—'} kg)`
+                : ''}
+            </p>
+          ) : null}
+          {note.rate_per_kg ? (
+            <p>
+              <span className="font-semibold">Rate :</span> AED {money(note.rate_per_kg)} / kg
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -107,9 +121,12 @@ export function InvoiceNoteDocument({ note, invoice }: { note: InvoiceNote; invo
             <tr key={i}>
               <td className={cellBorder()}>
                 {line.description || categoryLabel(line.category)}
+                {line.weight_kg || line.rate_per_kg
+                  ? ` · ${line.weight_kg || '—'} kg × AED ${money(line.rate_per_kg || 0)}/kg`
+                  : ''}
               </td>
-              <td className={`${cellBorder()} text-center`}>1</td>
-              <td className={`${cellBorder()} text-right`}>{money(line.amount)}</td>
+              <td className={`${cellBorder()} text-center`}>{line.weight_kg || 1}</td>
+              <td className={`${cellBorder()} text-right`}>{money(line.rate_per_kg || line.amount)}</td>
               <td className={`${cellBorder()} text-center`}>{line.vat_rate}%</td>
               <td className={`${cellBorder()} text-right`}>{money(line.amount)}</td>
             </tr>

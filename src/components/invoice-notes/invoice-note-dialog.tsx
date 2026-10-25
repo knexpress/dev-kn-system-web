@@ -39,7 +39,24 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 const aed = (n: number) => `AED ${n.toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const today = () => new Date().toISOString().slice(0, 10);
 
-type DraftLine = { key: number; category: InvoiceNoteCategory; description: string; amount: string; vat_rate: 0 | 5 };
+type DraftLine = {
+  key: number;
+  category: InvoiceNoteCategory;
+  description: string;
+  weight_kg: string;
+  rate_per_kg: string;
+  amount: string;
+  vat_rate: 0 | 5;
+};
+
+type ShipmentCharge = {
+  actual_weight?: number;
+  volumetric_weight?: number;
+  chargeable_weight?: number;
+  rate_per_kg?: number;
+  number_of_boxes?: number;
+  weight_type?: string;
+};
 
 type Context = {
   notes: InvoiceNote[];
@@ -48,6 +65,7 @@ type Context = {
   creditable: number;
   creditable_vat: number;
   gl_status: string | null;
+  shipment?: ShipmentCharge;
 };
 
 type Props = {
@@ -59,7 +77,17 @@ type Props = {
 };
 
 let lineKey = 0;
-const newLine = (vat: 0 | 5): DraftLine => ({ key: ++lineKey, category: 'SHIPPING', description: '', amount: '', vat_rate: vat });
+const newLine = (vat: 0 | 5, shipment?: ShipmentCharge): DraftLine => ({
+  key: ++lineKey,
+  category: 'SHIPPING',
+  description: '',
+  weight_kg: shipment?.chargeable_weight ? String(shipment.chargeable_weight) : '',
+  rate_per_kg: shipment?.rate_per_kg ? String(shipment.rate_per_kg) : '',
+  amount: shipment?.chargeable_weight && shipment?.rate_per_kg
+    ? String(round2((shipment.chargeable_weight || 0) * (shipment.rate_per_kg || 0)))
+    : '',
+  vat_rate: vat,
+});
 
 export function InvoiceNoteDialog({ invoice, open, onOpenChange, onChanged, defaultType = 'CREDIT' }: Props) {
   const { toast } = useToast();
@@ -80,6 +108,7 @@ export function InvoiceNoteDialog({ invoice, open, onOpenChange, onChanged, defa
   const [refundReference, setRefundReference] = useState('');
   const [saving, setSaving] = useState(false);
   const [viewing, setViewing] = useState<InvoiceNote | null>(null);
+  const [shipmentReady, setShipmentReady] = useState(false);
 
   const load = useCallback(async () => {
     if (!invoice?._id) return;
@@ -100,8 +129,17 @@ export function InvoiceNoteDialog({ invoice, open, onOpenChange, onChanged, defa
     setRefundMode('');
     setRefundReference('');
     setCtx(null);
+    setShipmentReady(false);
     void load();
   }, [open, invoice?._id, defaultType, defaultVat, load]);
+
+  useEffect(() => {
+    if (!open || shipmentReady || !ctx) return;
+    setShipmentReady(true);
+    const ship = ctx.shipment;
+    if (!ship?.chargeable_weight && !ship?.rate_per_kg) return;
+    setLines((prev) => prev.map((l, i) => (i === 0 && !l.amount ? newLine(l.vat_rate, ship) : l)));
+  }, [open, ctx, shipmentReady]);
 
   const isCredit = noteType === 'CREDIT';
   const reasons = NOTE_REASONS.filter((r) => r.types.includes(noteType));
@@ -139,7 +177,18 @@ export function InvoiceNoteDialog({ invoice, open, onOpenChange, onChanged, defa
   })();
 
   const updateLine = (key: number, patch: Partial<DraftLine>) =>
-    setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.key !== key) return l;
+        const next = { ...l, ...patch };
+        if (patch.weight_kg !== undefined || patch.rate_per_kg !== undefined) {
+          const w = num(next.weight_kg);
+          const r = num(next.rate_per_kg);
+          if (w > 0 && r > 0) next.amount = String(round2(w * r));
+        }
+        return next;
+      })
+    );
 
   const save = async () => {
     if (!invoice?._id || problem || !reasonCode) return;
@@ -153,7 +202,9 @@ export function InvoiceNoteDialog({ invoice, open, onOpenChange, onChanged, defa
       lines: lines.map((l) => ({
         category: l.category,
         description: l.description.trim() || undefined,
-        amount: round2(num(l.amount)),
+        weight_kg: num(l.weight_kg) || undefined,
+        rate_per_kg: num(l.rate_per_kg) || undefined,
+        amount: round2(num(l.amount) || (num(l.weight_kg) * num(l.rate_per_kg))),
         vat_rate: l.vat_rate,
       })),
       refund_mode: isCredit && refundMode ? refundMode : undefined,
@@ -206,6 +257,31 @@ export function InvoiceNoteDialog({ invoice, open, onOpenChange, onChanged, defa
                 <p className="font-semibold text-slate-900">{ctx ? aed(ctx.creditable) : '—'}</p>
               </div>
             </div>
+
+            {ctx?.shipment && (ctx.shipment.chargeable_weight || ctx.shipment.actual_weight || ctx.shipment.rate_per_kg) ? (
+              <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-3 text-sm sm:grid-cols-5">
+                <div>
+                  <p className="text-xs text-slate-500">Actual weight</p>
+                  <p className="font-semibold text-slate-900">{ctx.shipment.actual_weight ? `${ctx.shipment.actual_weight} kg` : '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Volumetric</p>
+                  <p className="font-semibold text-slate-900">{ctx.shipment.volumetric_weight ? `${ctx.shipment.volumetric_weight} kg` : '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Chargeable</p>
+                  <p className="font-semibold text-slate-900">{ctx.shipment.chargeable_weight ? `${ctx.shipment.chargeable_weight} kg` : '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Rate</p>
+                  <p className="font-semibold text-slate-900">{ctx.shipment.rate_per_kg ? `${aed(ctx.shipment.rate_per_kg)} / kg` : '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Boxes</p>
+                  <p className="font-semibold text-slate-900">{ctx.shipment.number_of_boxes || '—'}</p>
+                </div>
+              </div>
+            ) : null}
 
             {loading && !ctx && (
               <div className="flex h-24 items-center justify-center">
@@ -279,7 +355,7 @@ export function InvoiceNoteDialog({ invoice, open, onOpenChange, onChanged, defa
                       variant="outline"
                       size="sm"
                       className="rounded-xl"
-                      onClick={() => setLines((prev) => [...prev, newLine(vatAllowed ? defaultVat : 0)])}
+                      onClick={() => setLines((prev) => [...prev, newLine(vatAllowed ? defaultVat : 0, ctx.shipment)])}
                     >
                       <Plus className="mr-1 h-3.5 w-3.5" />
                       Add line
@@ -287,7 +363,8 @@ export function InvoiceNoteDialog({ invoice, open, onOpenChange, onChanged, defa
                   </div>
                   <div className="space-y-2">
                     {lines.map((l, i) => (
-                      <div key={l.key} className="grid grid-cols-12 items-center gap-2 rounded-2xl border border-slate-200 p-2">
+                      <div key={l.key} className="space-y-2 rounded-2xl border border-slate-200 p-2">
+                      <div className="grid grid-cols-12 items-center gap-2">
                         <div className="col-span-12 sm:col-span-3">
                           <Select value={l.category} onValueChange={(v) => updateLine(l.key, { category: v as InvoiceNoteCategory })}>
                             <SelectTrigger className="rounded-xl">
@@ -346,6 +423,38 @@ export function InvoiceNoteDialog({ invoice, open, onOpenChange, onChanged, defa
                           </Button>
                         </div>
                       </div>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <div className="space-y-1">
+                          <Label className="text-xs text-slate-500">Weight (kg)</Label>
+                          <Input
+                            className="rounded-xl"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder={ctx.shipment?.chargeable_weight ? String(ctx.shipment.chargeable_weight) : 'kg'}
+                            value={l.weight_kg}
+                            onChange={(e) => updateLine(l.key, { weight_kg: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-slate-500">Rate (AED / kg)</Label>
+                          <Input
+                            className="rounded-xl"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder={ctx.shipment?.rate_per_kg ? String(ctx.shipment.rate_per_kg) : 'rate'}
+                            value={l.rate_per_kg}
+                            onChange={(e) => updateLine(l.key, { rate_per_kg: e.target.value })}
+                          />
+                        </div>
+                        <div className="col-span-2 flex items-end text-xs text-slate-500">
+                          {num(l.weight_kg) > 0 && num(l.rate_per_kg) > 0
+                            ? `${num(l.weight_kg)} kg × ${aed(num(l.rate_per_kg))} = ${aed(round2(num(l.weight_kg) * num(l.rate_per_kg)))}`
+                            : 'Enter kg and rate to price this line from the quotation weight.'}
+                        </div>
+                      </div>
+                      </div>
                     ))}
                   </div>
                   {!vatAllowed && <p className="text-xs text-slate-500">This invoice has no VAT, so the credit note carries none.</p>}
@@ -369,7 +478,10 @@ export function InvoiceNoteDialog({ invoice, open, onOpenChange, onChanged, defa
                     <span className="font-medium">{aed(Math.max(0, dueAfter))}</span>
                   </div>
                   <p className="pt-1 text-xs text-slate-500">
-                    On approval: {isCredit ? 'Dr revenue & VAT output / Cr Accounts Receivable' : 'Dr Accounts Receivable / Cr revenue & VAT output'}.
+                    On approval: {isCredit ? 'Dr Sales Return & VAT output / Cr Accounts Receivable' : 'Dr Accounts Receivable / Cr revenue & VAT output'}.
+                    {isCredit && summary && summary.paid + 0.009 < summary.total
+                      ? ' If the invoice is only partly paid, the refund is limited to the amount already collected.'
+                      : ''}
                   </p>
                   {problem && <p className="pt-1 text-xs font-medium text-rose-600">{problem}</p>}
                 </div>

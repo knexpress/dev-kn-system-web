@@ -89,7 +89,7 @@ export function invoiceCanRecordPayment(invoice: any) {
   const status = String(invoice.status || '').toUpperCase();
   const { balance } = invoiceBalance(invoice);
   return (
-    ['UNPAID', 'OVERDUE'].includes(status) ||
+    ['UNPAID', 'OVERDUE', 'PARTIAL'].includes(status) ||
     (['PAID', 'REMITTED'].includes(status) && balance > 0.009)
   );
 }

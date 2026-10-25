@@ -70,6 +70,7 @@ export interface UaeToPhTaxInvoiceData {
   domesticDeliveryFee?: boolean;
   /** `invoice` = same layout as tax invoice, without Tabby; pickup VAT is shown; total matches quotation. */
   documentKind?: 'tax' | 'invoice';
+  billTo?: 'SENDER' | 'RECEIVER';
 }
 
 interface UaeToPhTaxInvoiceTemplateProps {
@@ -172,17 +173,35 @@ export default function UaeToPhTaxInvoiceTemplate({ data }: UaeToPhTaxInvoiceTem
         <div className="grid grid-cols-2 gap-8 mb-6 text-sm">
           <div>
             <p className="font-semibold mb-2">Bill To :</p>
-            <p className="font-medium">{data.senderInfo.name || data.receiverInfo.name}</p>
-            <p className="whitespace-pre-line leading-relaxed">{data.senderInfo.address}</p>
-            {data.receiverInfo.emirate && data.receiverInfo.emirate !== 'N/A' && (
-              <p>{data.receiverInfo.emirate}</p>
+            {data.billTo === 'RECEIVER' ? (
+              <>
+                <p className="font-medium">{data.receiverInfo.name}</p>
+                <p className="whitespace-pre-line leading-relaxed">{data.receiverInfo.address}</p>
+                {data.receiverInfo.emirate && data.receiverInfo.emirate !== 'N/A' && (
+                  <p>{data.receiverInfo.emirate}</p>
+                )}
+                <p>UAE</p>
+                {data.receiverInfo.trn ? (
+                  <p className="mt-2">
+                    <span className="font-medium">TRN :</span> {data.receiverInfo.trn}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <p className="font-medium">{data.senderInfo.name || data.receiverInfo.name}</p>
+                <p className="whitespace-pre-line leading-relaxed">{data.senderInfo.address}</p>
+                {data.receiverInfo.emirate && data.receiverInfo.emirate !== 'N/A' && (
+                  <p>{data.receiverInfo.emirate}</p>
+                )}
+                <p>UAE</p>
+                {data.receiverInfo.trn ? (
+                  <p className="mt-2">
+                    <span className="font-medium">TRN :</span> {data.receiverInfo.trn}
+                  </p>
+                ) : null}
+              </>
             )}
-            <p>UAE</p>
-            {data.receiverInfo.trn ? (
-              <p className="mt-2">
-                <span className="font-medium">TRN :</span> {data.receiverInfo.trn}
-              </p>
-            ) : null}
           </div>
           <div className="space-y-1">
             <p>
