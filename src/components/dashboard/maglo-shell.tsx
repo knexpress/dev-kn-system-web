@@ -1,8 +1,9 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   ErpBreadcrumb,
@@ -173,26 +174,91 @@ type MagloModuleTileProps = {
   description?: string;
   icon: React.ComponentType<{ className?: string }>;
   index?: number;
+  starred?: boolean;
+  onToggleStar?: () => void;
 };
 
 /** Centered quick-access card with a line icon */
-export function MagloModuleTile({ href, title, description, icon: Icon }: MagloModuleTileProps) {
+export function MagloModuleTile({
+  href,
+  title,
+  description,
+  icon: Icon,
+  starred,
+  onToggleStar,
+}: MagloModuleTileProps) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close();
+    };
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
+
+  const onContextMenu = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!onToggleStar) return;
+    event.preventDefault();
+    setMenu({ x: event.clientX, y: event.clientY });
+  };
+
   return (
-    <Link
-      href={href}
-      className={cn(
-        magloCardClass,
-        'group flex flex-col items-center px-5 py-6 text-center transition-all duration-300 hover:-translate-y-1 hover:border-brand-100 hover:shadow-[0_24px_48px_-28px_rgba(91,78,245,0.45)]'
-      )}
-    >
-      <span className="flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-slate-800/80 text-slate-800 transition-colors group-hover:border-brand-500 group-hover:bg-brand-500 group-hover:text-white">
-        <Icon className="h-6 w-6" />
-      </span>
-      <h2 className="mt-4 text-[15px] font-bold tracking-tight text-slate-900">{title}</h2>
-      {description && (
-        <p className="mt-1 max-w-[200px] text-xs leading-relaxed text-slate-400">{description}</p>
-      )}
-    </Link>
+    <>
+      <Link
+        href={href}
+        onContextMenu={onContextMenu}
+        className={cn(
+          magloCardClass,
+          'group relative flex flex-col items-center px-5 py-6 text-center transition-all duration-300 hover:-translate-y-1 hover:border-brand-100 hover:shadow-[0_24px_48px_-28px_rgba(91,78,245,0.45)]'
+        )}
+      >
+        {starred && (
+          <span className="absolute right-4 top-4 text-amber-400">
+            <Star className="h-4 w-4 fill-current" />
+          </span>
+        )}
+        <span className="flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-slate-800/80 text-slate-800 transition-colors group-hover:border-brand-500 group-hover:bg-brand-500 group-hover:text-white">
+          <Icon className="h-6 w-6" />
+        </span>
+        <h2 className="mt-4 text-[15px] font-bold tracking-tight text-slate-900">{title}</h2>
+        {description && (
+          <p className="mt-1 max-w-[200px] text-xs leading-relaxed text-slate-400">{description}</p>
+        )}
+      </Link>
+      {menu &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            role="menu"
+            style={{ left: menu.x, top: menu.y }}
+            className="fixed z-[80] min-w-[220px] overflow-hidden rounded-2xl border border-slate-100 bg-white py-1 shadow-[0_18px_40px_-20px_rgba(43,38,120,0.45)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-700"
+              onClick={() => {
+                onToggleStar?.();
+                setMenu(null);
+              }}
+            >
+              <Star className={cn('h-4 w-4', starred ? 'fill-amber-400 text-amber-400' : 'text-slate-400')} />
+              {starred ? 'Remove highlight' : 'Highlight with star'}
+            </button>
+          </div>,
+          document.body
+        )}
+    </>
   );
 }
 
@@ -201,5 +267,68 @@ export function MagloSectionLabel({ children }: { children: ReactNode }) {
     <p className="text-[11px] font-semibold tracking-[0.14em] text-brand-500/80 uppercase">
       {children}
     </p>
+  );
+}
+
+const magloDateFieldClass =
+  'h-8 min-w-[9.75rem] w-[9.75rem] cursor-pointer border-0 bg-transparent p-0 text-sm font-medium text-slate-700 outline-none [color-scheme:light] focus-visible:ring-0';
+
+type MagloDateRangeProps = {
+  from: string;
+  to: string;
+  onFromChange: (value: string) => void;
+  onToChange: (value: string) => void;
+  fromLabel?: string;
+  toLabel?: string;
+  className?: string;
+};
+
+/** Compact From–To date filter that stays readable on Maglo cards in dark mode. */
+export function MagloDateRange({
+  from,
+  to,
+  onFromChange,
+  onToChange,
+  fromLabel = 'From',
+  toLabel = 'To',
+  className,
+}: MagloDateRangeProps) {
+  return (
+    <div
+      className={cn(
+        'inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 shadow-[0_1px_2px_rgba(16,24,40,0.04)]',
+        className
+      )}
+    >
+      <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+      <label className="flex min-w-0 items-center gap-1.5">
+        <span className="hidden text-[11px] font-semibold uppercase tracking-wide text-slate-400 sm:inline">
+          {fromLabel}
+        </span>
+        <input
+          type="date"
+          value={from}
+          onChange={(event) => onFromChange(event.target.value)}
+          aria-label="Date from"
+          className={magloDateFieldClass}
+        />
+      </label>
+      <span className="text-slate-300" aria-hidden>
+        –
+      </span>
+      <label className="flex min-w-0 items-center gap-1.5">
+        <span className="hidden text-[11px] font-semibold uppercase tracking-wide text-slate-400 sm:inline">
+          {toLabel}
+        </span>
+        <input
+          type="date"
+          value={to}
+          onChange={(event) => onToChange(event.target.value)}
+          aria-label="Date to"
+          min={from || undefined}
+          className={magloDateFieldClass}
+        />
+      </label>
+    </div>
   );
 }

@@ -33,11 +33,9 @@ import { secureLog } from '@/lib/secure-logger';
 import { getAwbNumber, isPhToUaeService, isUaeToPhService, canSeeQuotePricing } from '@/lib/invoice-request-utils';
 import { computeSalesDiscount, salesDiscountLabel } from '@/lib/sales-discount';
 import InvoiceRequestCard from '@/components/invoice-request-card';
-import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText, ArrowRight, Phone, MapPin, AlertTriangle, Hash, Download, ChevronLeft, ChevronRight, Loader2, ArrowUp, X } from 'lucide-react';
+import { Edit, Trash2, Package, Truck, CheckCircle, XCircle, FileText, ArrowRight, Phone, MapPin, AlertTriangle, Hash, Download, ChevronLeft, ChevronRight, Loader2, ArrowUp, X, Search } from 'lucide-react';
 import {
   DashboardPageShell,
-  ErpToolbar,
-  erpOutlineControlClass,
 } from '@/components/dashboard/maglo-shell';
 import { cn } from '@/lib/utils';
 
@@ -3430,91 +3428,124 @@ export default function InvoiceRequestsPage() {
 
   if (!userProfile) return null;
 
+  const departmentName = userProfile.department?.name;
+  const isFinance = departmentName === 'Finance';
+  const statusChips = isFinance
+    ? [
+        { value: 'VERIFIED', label: 'Verified', hint: 'Ready to invoice' },
+        { value: 'COMPLETED', label: 'Completed', hint: 'Invoice generated' },
+        { value: 'CANCELLED', label: 'Cancelled', hint: 'Stopped jobs' },
+      ]
+    : [
+        { value: 'all', label: 'All', hint: 'Every status' },
+        { value: 'SUBMITTED', label: 'Submitted', hint: 'New bookings' },
+        { value: 'QUOTATION_REQUEST', label: 'Quotation', hint: 'Sent to Finance' },
+        { value: 'IN_PROGRESS', label: 'In progress', hint: 'Needs verification' },
+        { value: 'VERIFIED', label: 'Verified', hint: 'Ready to invoice' },
+        { value: 'COMPLETED', label: 'Completed', hint: 'Invoiced' },
+        { value: 'CANCELLED', label: 'Cancelled', hint: 'Stopped' },
+      ];
+  const applyStatus = (value: string) => {
+    setStatusFilter(value);
+    setCurrentPage(1);
+    if (!isFetchingRef.current) {
+      setTimeout(() => {
+        fetchInvoiceRequests(1, false, value);
+      }, 150);
+    } else {
+      pendingFilterChangeRef.current = value;
+    }
+  };
+  const placeAwbDropdown = () => {
+    if (!awbInputRef.current) return;
+    const rect = awbInputRef.current.getBoundingClientRect();
+    setDropdownPosition({
+      top: rect.bottom + window.scrollY + 4,
+      left: rect.left + window.scrollX,
+      width: rect.width,
+    });
+  };
+  const totalCount = pagination?.total ?? filteredRequests.length;
+  const emptyCopy =
+    statusFilter === 'VERIFIED'
+      ? 'No verified shipments are waiting for an invoice.'
+      : statusFilter === 'COMPLETED'
+        ? 'No completed invoice requests in this view.'
+        : statusFilter === 'CANCELLED'
+          ? 'No cancelled shipments here.'
+          : 'No invoice requests match this view.';
+  const pageSubtitle =
+    departmentName === 'Operations'
+      ? 'Shipments that need verification before they go to Finance.'
+      : departmentName === 'Sales'
+        ? 'Bookings you submitted and where each one sits in the invoice queue.'
+        : 'Verified shipments ready to invoice, plus completed and cancelled jobs.';
+
+  const pageHero = {
+    eyebrow: 'Queue',
+    title: 'Invoice Requests',
+    subtitle: pageSubtitle,
+    actions:
+      departmentName === 'Sales' ? (
+        <SalesBookingForm
+          onBookingCreated={fetchInvoiceRequests}
+          currentUser={userProfile}
+          skipAutoReview
+        />
+      ) : undefined,
+    panel: false as const,
+  };
+
   if (loading) {
     return (
-      <DashboardPageShell title="Invoice Requests">
-        <div className="flex h-48 items-center justify-center text-sm text-slate-500">
-          Loading invoice requests...
+      <DashboardPageShell {...pageHero}>
+        <div className="rounded-[28px] border border-slate-100 bg-white px-6 py-16 text-center shadow-[0_18px_40px_-28px_rgba(43,38,120,0.25)]">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-brand-500" />
+          <p className="mt-3 text-sm font-medium text-slate-500">Loading invoice requests…</p>
         </div>
       </DashboardPageShell>
     );
   }
 
   return (
-    <DashboardPageShell
-      title="Invoice Requests"
-      actions={
-        userProfile.department.name === 'Sales' ? (
-          <SalesBookingForm
-            onBookingCreated={fetchInvoiceRequests}
-            currentUser={userProfile}
-            skipAutoReview
-          />
-        ) : undefined
-      }
-    >
-      <ErpToolbar
-        title={
-          pagination
-            ? `Requests · ${pagination.displayText || `${pagination.startRecord || 0}-${pagination.endRecord || 0} of ${pagination.total || 0}`}`
-            : `Requests · ${filteredRequests.length}`
-        }
-        filters={
-          <>
-            <Select
-              value={statusFilter}
-              onValueChange={(value) => {
-                setStatusFilter(value);
-                setCurrentPage(1);
-                if (!isFetchingRef.current) {
-                  setTimeout(() => {
-                    fetchInvoiceRequests(1, false, value);
-                  }, 150);
-                } else {
-                  pendingFilterChangeRef.current = value;
-                }
-              }}
-            >
-              <SelectTrigger className={cn(erpOutlineControlClass(), 'w-[150px]')}>
-                <SelectValue placeholder={userProfile?.department?.name === 'Finance' ? 'Select Status' : 'All Statuses'} />
-              </SelectTrigger>
-              <SelectContent>
-                {userProfile?.department?.name === 'Finance' ? (
-                  <>
-                    <SelectItem value="VERIFIED">VERIFIED</SelectItem>
-                    <SelectItem value="COMPLETED">COMPLETED</SelectItem>
-                    <SelectItem value="CANCELLED">CANCELLED</SelectItem>
-                  </>
-                ) : (
-                  <>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="SUBMITTED">SUBMITTED</SelectItem>
-                    <SelectItem value="QUOTATION_REQUEST">QUOTATION_REQUEST</SelectItem>
-                    <SelectItem value="IN_PROGRESS">IN_PROGRESS</SelectItem>
-                    <SelectItem value="VERIFIED">VERIFIED</SelectItem>
-                    <SelectItem value="COMPLETED">COMPLETED</SelectItem>
-                    <SelectItem value="CANCELLED">CANCELLED</SelectItem>
-                  </>
+    <DashboardPageShell {...pageHero}>
+      <section className="rounded-[28px] border border-slate-100 bg-white p-4 shadow-[0_18px_40px_-28px_rgba(43,38,120,0.25)] sm:p-5">
+        <div className="flex flex-wrap gap-2">
+          {statusChips.map((chip) => {
+            const active = statusFilter === chip.value;
+            return (
+              <button
+                key={chip.value}
+                type="button"
+                onClick={() => applyStatus(chip.value)}
+                className={cn(
+                  'rounded-2xl px-3.5 py-2 text-left transition-all',
+                  active
+                    ? 'bg-brand-500 text-white shadow-md shadow-brand-500/25'
+                    : 'bg-slate-50 text-slate-600 ring-1 ring-slate-200/80 hover:bg-brand-50 hover:text-brand-700'
                 )}
-              </SelectContent>
-            </Select>
+              >
+                <span className="block text-sm font-semibold">{chip.label}</span>
+                <span className={cn('block text-[11px]', active ? 'text-white/75' : 'text-slate-400')}>
+                  {chip.hint}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
               ref={awbInputRef}
               type="text"
-              placeholder="AWB number…"
+              placeholder="Search AWB number"
               value={awbSearch}
-              className={cn(erpOutlineControlClass(), 'w-[160px] sm:w-[180px]')}
+              className="h-11 rounded-2xl border-slate-200 bg-slate-50/80 pl-10 shadow-none focus-visible:bg-white"
               onChange={(e) => {
                 setAwbSearch(e.target.value);
                 setShowAwbSuggestions(true);
-                if (awbInputRef.current) {
-                  const rect = awbInputRef.current.getBoundingClientRect();
-                  setDropdownPosition({
-                    top: rect.bottom + window.scrollY + 4,
-                    left: rect.left + window.scrollX,
-                    width: rect.width,
-                  });
-                }
+                placeAwbDropdown();
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -3524,42 +3555,37 @@ export default function InvoiceRequestsPage() {
               }}
               onFocus={() => {
                 setShowAwbSuggestions(true);
-                if (awbInputRef.current) {
-                  const rect = awbInputRef.current.getBoundingClientRect();
-                  setDropdownPosition({
-                    top: rect.bottom + window.scrollY + 4,
-                    left: rect.left + window.scrollX,
-                    width: rect.width,
-                  });
-                }
+                placeAwbDropdown();
               }}
               onBlur={() => {
                 setTimeout(() => setShowAwbSuggestions(false), 200);
               }}
             />
+          </label>
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
               type="text"
-              placeholder="Customer name…"
+              placeholder="Search customer name"
               value={nameSearch}
-              className={cn(erpOutlineControlClass(), 'w-[160px] sm:w-[200px]')}
+              className="h-11 rounded-2xl border-slate-200 bg-slate-50/80 pl-10 shadow-none focus-visible:bg-white"
               onChange={(e) => setNameSearch(e.target.value)}
             />
-          </>
-        }
-        actions={
-          filteredRequests.length > 0 && userProfile?.department?.name !== 'Sales' ? (
+          </label>
+          {filteredRequests.length > 0 && departmentName !== 'Sales' ? (
             <Button
               variant="outline"
-              size="sm"
               onClick={handleExportToExcel}
-              className={cn(erpOutlineControlClass(), 'gap-2')}
+              className="h-11 rounded-2xl border-slate-200 bg-white px-4"
             >
-              <Download className="h-4 w-4" />
+              <Download className="mr-2 h-4 w-4" />
               Excel
             </Button>
-          ) : undefined
-        }
-      />
+          ) : (
+            <div className="hidden md:block" />
+          )}
+        </div>
+      </section>
 
       {/* AWB Suggestions Dropdown Portal */}
       {typeof window !== 'undefined' && showAwbSuggestions && (awbSuggestions.length > 0 || searchingBookings) && createPortal(
@@ -3597,37 +3623,35 @@ export default function InvoiceRequestsPage() {
         document.body
       )}
 
-      {/* Invoice Requests Table */}
-      <Card className="mx-5 mb-5 border-slate-200/70 shadow-none sm:mx-6">
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base font-semibold text-slate-800">
-              List
-            </CardTitle>
+      <section className="overflow-hidden rounded-[28px] border border-slate-100 bg-white shadow-[0_18px_40px_-28px_rgba(43,38,120,0.25)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 sm:px-6">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">
+              {statusChips.find((chip) => chip.value === statusFilter)?.label || 'Requests'}
+            </p>
+            <p className="text-xs text-slate-400">
+              {totalCount} {totalCount === 1 ? 'shipment' : 'shipments'}
+              {pagination && pagination.pages > 1
+                ? ` · page ${currentPage} of ${pagination.pages}`
+                : ''}
+            </p>
           </div>
-        </CardHeader>
-        {/* Pagination Controls */}
-        {pagination && pagination.pages > 1 && (
-          <div className="flex items-center justify-between px-6 pb-4 border-b">
-            <div className="text-sm text-muted-foreground">
-              Showing {pagination.startRecord || ((currentPage - 1) * pageLimit + 1)} to {pagination.endRecord || (currentPage * pageLimit)} of {pagination.total || 0} results
-            </div>
+          {pagination && pagination.pages > 1 && (
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
+                className="h-9 rounded-full"
                 onClick={() => fetchInvoiceRequests(currentPage - 1, false)}
                 disabled={!pagination.hasPreviousPage || currentPage === 1 || loading}
               >
                 <ChevronLeft className="h-4 w-4" />
                 Previous
               </Button>
-              <div className="text-sm text-muted-foreground px-2">
-                Page {currentPage} of {pagination.pages}
-              </div>
               <Button
                 variant="outline"
                 size="sm"
+                className="h-9 rounded-full"
                 onClick={() => fetchInvoiceRequests(currentPage + 1, false)}
                 disabled={!pagination.hasNextPage || currentPage >= pagination.pages || loading}
               >
@@ -3635,25 +3659,23 @@ export default function InvoiceRequestsPage() {
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
-          </div>
-        )}
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center h-32">
-              <div className="text-lg">Loading invoice requests...</div>
-            </div>
-          ) : filteredRequests.length === 0 ? (
-            <div className="flex flex-col items-center space-y-2 py-12 text-center">
-              <Package className="h-10 w-10 text-muted-foreground" />
-              <p className="text-muted-foreground">No invoice requests right now</p>
-              {userProfile.department.name === 'Sales' && (
-                <p className="text-sm text-muted-foreground">
-                  Create your first invoice request using the button above
-                </p>
-              )}
+          )}
+        </div>
+        <div className="p-4 sm:p-5">
+          {filteredRequests.length === 0 ? (
+            <div className="flex flex-col items-center px-4 py-16 text-center">
+              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
+                <Package className="h-6 w-6" />
+              </span>
+              <p className="mt-4 text-base font-semibold text-slate-900">{emptyCopy}</p>
+              <p className="mt-1 max-w-sm text-sm text-slate-400">
+                {departmentName === 'Sales'
+                  ? 'Create a booking above, or switch status to see earlier jobs.'
+                  : 'Try another status, or search by AWB or customer name.'}
+              </p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {filteredRequests.map((request) => (
                 <InvoiceRequestCard
                   key={request._id}
@@ -3665,12 +3687,15 @@ export default function InvoiceRequestsPage() {
                   getStatusBadgeColor={getStatusBadgeColor}
                   renderActionControls={renderActionControls}
                   fetchInvoiceRequests={() => fetchInvoiceRequests(currentPage, false)}
+                  onOpenInvoice={(invoiceKey) =>
+                    router.push(`/dashboard/invoices/${encodeURIComponent(invoiceKey)}`)
+                  }
                 />
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       {/* Tax Input Dialog */}
       {showTaxInputDialog && selectedRequestForInvoice && (

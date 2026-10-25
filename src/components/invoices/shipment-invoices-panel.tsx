@@ -9,7 +9,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { useNotifications } from '@/contexts/NotificationContext';
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useToast } from '@/hooks/use-toast';
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -22,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { secureLog } from '@/lib/secure-logger';
 import {
   ErpToolbar,
+  MagloDateRange,
   erpOutlineControlClass,
   erpPrimaryButtonClass,
 } from "@/components/dashboard/maglo-shell";
@@ -265,19 +265,11 @@ export default function ShipmentInvoicesPanel() {
                 <SelectItem value="CANCELLED">Cancelled</SelectItem>
               </SelectContent>
             </Select>
-            <Input
-              type="date"
-              value={filterDateFrom}
-              onChange={(e) => setFilterDateFrom(e.target.value)}
-              className={cn(erpOutlineControlClass(), 'w-[140px]')}
-              aria-label="Date from"
-            />
-            <Input
-              type="date"
-              value={filterDateTo}
-              onChange={(e) => setFilterDateTo(e.target.value)}
-              className={cn(erpOutlineControlClass(), 'w-[140px]')}
-              aria-label="Date to"
+            <MagloDateRange
+              from={filterDateFrom}
+              to={filterDateTo}
+              onFromChange={setFilterDateFrom}
+              onToChange={setFilterDateTo}
             />
             {hasActiveFilters && (
               <Button variant="outline" size="sm" onClick={clearFilters} className={erpOutlineControlClass()}>

@@ -12,7 +12,7 @@ import { parseDecimal } from '@/lib/invoice-utils';
 import { gatewayChargeLineFromInvoice } from '@/lib/invoice-gateway-charge';
 import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, FileText, Receipt, AlertCircle, Download, Printer, FileSpreadsheet, Database, FileDiff, Wallet } from 'lucide-react';
+import { ArrowLeft, FileText, Receipt, AlertCircle, Download, Printer, FileSpreadsheet, Database, FileDiff, Wallet, MoreHorizontal, Paperclip, SlidersHorizontal } from 'lucide-react';
 import { SupportingDocumentsPanel } from '@/components/accounting/supporting-documents-panel';
 import { InvoiceNoteDialog } from '@/components/invoice-notes/invoice-note-dialog';
 import {
@@ -39,7 +39,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import {
     DashboardPageShell,
+    MagloPanel,
     erpOutlineControlClass,
     erpPrimaryButtonClass,
 } from '@/components/dashboard/maglo-shell';
@@ -185,6 +194,7 @@ export default function InvoicePage() {
         invoicePrintOptionsFrom(null)
     );
     const [savingPrintOptions, setSavingPrintOptions] = useState(false);
+    const [toolsPanel, setToolsPanel] = useState<'print' | 'files' | null>(null);
 
     useEffect(() => {
         if (!invoice) return;
@@ -2706,235 +2716,190 @@ export default function InvoicePage() {
         <DashboardPageShell
             title={String(pageTitle)}
             eyebrow="Invoice"
+            subtitle={[invoice?.awb_number, invoice?.customer_name || invoice?.receiver_name].filter(Boolean).join(' · ') || undefined}
             backHref="/dashboard/accounting/sales?tab=shipments"
             backLabel="Back to Invoices"
             panel={false}
-        >
-            {/* Navigation Bar */}
-            <div className="no-print mb-4 rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white to-slate-50/80 p-4 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.35)]">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-3">
-                        <Button
-                            variant="outline"
-                            className={erpOutlineControlClass()}
-                            onClick={() => router.push('/dashboard/accounting/sales?tab=shipments')}
+            actions={
+                <div className="no-print flex flex-wrap items-center gap-2">
+                    {invoice && invoiceIsCancelled(invoice) ? (
+                        <span className="inline-flex rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
+                            Cancelled
+                        </span>
+                    ) : invoice?.status ? (
+                        <span className={cn(
+                            'inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ring-1',
+                            ['PAID', 'REMITTED'].includes(String(invoice.status).toUpperCase())
+                                ? 'bg-emerald-50 text-emerald-800 ring-emerald-200'
+                                : invoice.status === 'COLLECTED_BY_DRIVER'
+                                    ? 'bg-sky-50 text-sky-800 ring-sky-200'
+                                    : 'bg-amber-50 text-amber-800 ring-amber-200'
+                        )}>
+                            {String(invoice.status).replace(/_/g, ' ')}
+                        </span>
+                    ) : null}
+                    <div className="inline-flex rounded-full bg-white p-1 shadow-[0_1px_2px_rgba(16,24,40,0.04)] ring-1 ring-slate-200/70">
+                        <button
+                            type="button"
+                            onClick={() => setInvoiceType('normal')}
+                            className={cn(
+                                'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
+                                invoiceType === 'normal' ? 'bg-brand-500 text-white' : 'text-slate-500 hover:text-slate-800'
+                            )}
                         >
-                            <ArrowLeft className="h-4 w-4 mr-2" />
-                            Back to Invoices
-                        </Button>
-                        <div className="hidden h-6 w-px bg-slate-200 sm:block" />
-                        <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-[11px] font-medium tracking-wide text-slate-400">
-                                Invoice View
-                            </span>
-                            <Button
-                                size="sm"
-                                className={cn(
-                                    invoiceType === 'normal'
-                                        ? erpPrimaryButtonClass()
-                                        : erpOutlineControlClass()
-                                )}
-                                variant={invoiceType === 'normal' ? 'default' : 'outline'}
-                                onClick={() => setInvoiceType('normal')}
-                            >
-                                <FileText className="h-4 w-4 mr-2" />
-                                Normal Invoice
-                            </Button>
-                            <Button
-                                size="sm"
-                                className={cn(
-                                    invoiceType === 'tax'
-                                        ? erpPrimaryButtonClass()
-                                        : erpOutlineControlClass()
-                                )}
-                                variant={invoiceType === 'tax' ? 'default' : 'outline'}
-                                onClick={() => setInvoiceType('tax')}
-                            >
-                                <Receipt className="h-4 w-4 mr-2" />
-                                Tax Invoice
-                            </Button>
-                        </div>
+                            <FileText className="h-3.5 w-3.5" />
+                            Invoice
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setInvoiceType('tax')}
+                            className={cn(
+                                'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
+                                invoiceType === 'tax' ? 'bg-brand-500 text-white' : 'text-slate-500 hover:text-slate-800'
+                            )}
+                        >
+                            <Receipt className="h-3.5 w-3.5" />
+                            Tax
+                        </button>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        {invoice && invoiceIsCancelled(invoice) ? (
-                            <span className="inline-flex rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
-                                Cancelled
-                            </span>
-                        ) : invoice?.status ? (
-                            <span className={cn(
-                                'inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ring-1',
-                                ['PAID', 'REMITTED'].includes(String(invoice.status).toUpperCase())
-                                    ? 'bg-emerald-50 text-emerald-800 ring-emerald-200'
-                                    : invoice.status === 'COLLECTED_BY_DRIVER'
-                                        ? 'bg-sky-50 text-sky-800 ring-sky-200'
-                                        : 'bg-amber-50 text-amber-800 ring-amber-200'
-                            )}>
-                                {String(invoice.status).replace(/_/g, ' ')}
-                            </span>
-                        ) : null}
-                        {invoiceCanRecordPayment(invoice) ? (
-                            <Button
-                                className="rounded-xl bg-sky-600 text-white hover:bg-sky-700"
-                                onClick={() => setShowPaymentDialog(true)}
-                            >
-                                <Wallet className="h-4 w-4 mr-2" />
-                                Record payment
-                            </Button>
-                        ) : invoice && !invoiceIsCancelled(invoice) && (invoice.payments?.length ?? 0) > 0 ? (
-                            <Button
-                                variant="outline"
-                                className={erpOutlineControlClass()}
-                                onClick={() => setShowPaymentDialog(true)}
-                            >
-                                <Wallet className="h-4 w-4 mr-2" />
-                                Payments
-                            </Button>
-                        ) : null}
-                        <Button
-                            variant="outline"
-                            className={erpOutlineControlClass()}
-                            onClick={handlePrint}
-                        >
-                            <Printer className="h-4 w-4 mr-2" />
-                            Print
+                </div>
+            }
+        >
+            <div className="no-print flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                    {invoiceCanRecordPayment(invoice) ? (
+                        <Button className="h-10 rounded-full bg-sky-600 px-4 text-white hover:bg-sky-700" onClick={() => setShowPaymentDialog(true)}>
+                            <Wallet className="mr-2 h-4 w-4" />
+                            Record payment
                         </Button>
+                    ) : invoice && !invoiceIsCancelled(invoice) && (invoice.payments?.length ?? 0) > 0 ? (
+                        <Button variant="outline" className={cn(erpOutlineControlClass(), 'h-10 rounded-full')} onClick={() => setShowPaymentDialog(true)}>
+                            <Wallet className="mr-2 h-4 w-4" />
+                            Payments
+                        </Button>
+                    ) : null}
+                    <Button variant="outline" className={cn(erpOutlineControlClass(), 'h-10 rounded-full')} onClick={handlePrint}>
+                        <Printer className="mr-2 h-4 w-4" />
+                        Print
+                    </Button>
+                    <Button className={cn(erpPrimaryButtonClass(), 'h-10 rounded-full')} onClick={handleDownloadPDF}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Download PDF
+                    </Button>
+                </div>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className={cn(erpOutlineControlClass(), 'h-10 rounded-full')}>
+                            <MoreHorizontal className="mr-2 h-4 w-4" />
+                            More
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56 rounded-2xl">
                         {isPhToUae ? (
                             <>
-                                <Button
-                                    variant="outline"
-                                    onClick={() => setShowCodEditDialog(true)}
-                                    className={cn(erpOutlineControlClass(), 'hover:border-sky-200 hover:bg-sky-50')}
-                                >
-                                    Edit COD Invoice
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    onClick={() => setShowTaxEditDialog(true)}
-                                    className={cn(erpOutlineControlClass(), 'hover:border-emerald-200 hover:bg-emerald-50')}
-                                >
-                                    Edit Tax Invoice
-                                </Button>
+                                <DropdownMenuItem onClick={() => setShowCodEditDialog(true)}>Edit COD invoice</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setShowTaxEditDialog(true)}>Edit tax invoice</DropdownMenuItem>
                             </>
                         ) : (
-                            <Button
-                                variant="outline"
-                                className={erpOutlineControlClass()}
-                                onClick={() => setShowEditDialog(true)}
-                            >
-                                Edit Invoice
-                            </Button>
+                            <DropdownMenuItem onClick={() => setShowEditDialog(true)}>Edit invoice</DropdownMenuItem>
                         )}
-                        <Button
-                            variant="outline"
-                            className={erpOutlineControlClass()}
-                            onClick={handleDownloadExcel}
-                        >
-                            <FileSpreadsheet className="h-4 w-4 mr-2" />
+                        <DropdownMenuItem onClick={handleDownloadExcel}>
+                            <FileSpreadsheet className="mr-2 h-4 w-4" />
                             Download Excel
-                        </Button>
-                        <Button
-                            className={erpPrimaryButtonClass()}
-                            onClick={handleDownloadPDF}
-                        >
-                            <Download className="h-4 w-4 mr-2" />
-                            Download PDF
-                        </Button>
-                        <Button
-                            variant="outline"
-                            onClick={() => setShowRequestDataDialog(true)}
-                            className={cn(erpOutlineControlClass(), 'hover:border-slate-300 hover:bg-slate-50')}
-                        >
-                            <Database className="h-4 w-4 mr-2" />
-                            View Request Data
-                        </Button>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setShowRequestDataDialog(true)}>
+                            <Database className="mr-2 h-4 w-4" />
+                            Request data
+                        </DropdownMenuItem>
                         {invoice && invoice.status !== 'CANCELLED' && (
-                            <Button
-                                variant="outline"
-                                onClick={() => setShowNoteDialog(true)}
-                                className={erpOutlineControlClass()}
-                            >
-                                <FileDiff className="h-4 w-4 mr-2" />
-                                Credit / Debit Note
-                            </Button>
+                            <DropdownMenuItem onClick={() => setShowNoteDialog(true)}>
+                                <FileDiff className="mr-2 h-4 w-4" />
+                                Credit / debit note
+                            </DropdownMenuItem>
                         )}
-                    </div>
-                </div>
-                {invoice && (Number(invoice.credit_notes_total) > 0 || Number(invoice.debit_notes_total) > 0) && (() => {
-                    const { total, paid, balance } = invoiceBalance(invoice);
-                    return (
-                        <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                            <span>
-                                Invoice total <span className="font-semibold text-slate-900">AED {parseDecimal(invoice.total_amount).toFixed(2)}</span>
-                            </span>
-                            {Number(invoice.credit_notes_total) > 0 && (
-                                <span>
-                                    Credit notes <span className="font-semibold text-sky-700">−AED {Number(invoice.credit_notes_total).toFixed(2)}</span>
-                                </span>
-                            )}
-                            {Number(invoice.debit_notes_total) > 0 && (
-                                <span>
-                                    Debit notes <span className="font-semibold text-violet-700">+AED {Number(invoice.debit_notes_total).toFixed(2)}</span>
-                                </span>
-                            )}
-                            <span>
-                                Amount due <span className="font-semibold text-slate-900">AED {total.toFixed(2)}</span>
-                            </span>
-                            <span>
-                                Paid <span className="font-semibold text-slate-900">AED {paid.toFixed(2)}</span>
-                            </span>
-                            <span>
-                                Balance <span className={cn('font-semibold', balance > 0.009 ? 'text-rose-600' : 'text-emerald-600')}>AED {balance.toFixed(2)}</span>
-                            </span>
-                            <button type="button" className="font-semibold text-brand-600 hover:underline" onClick={() => setShowNoteDialog(true)}>
-                                View notes
-                            </button>
-                        </div>
-                    );
-                })()}
-                {invoice && invoiceStatusHint(invoice) ? (
-                    <Alert
-                        variant={invoiceIsCancelled(invoice) ? 'destructive' : 'default'}
-                        className={cn(
-                            'mt-3',
-                            invoiceIsCancelled(invoice)
-                                ? 'border-rose-200 bg-rose-50 text-rose-900'
-                                : 'border-amber-200 bg-amber-50 text-amber-950'
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => setToolsPanel('print')}>
+                            <SlidersHorizontal className="mr-2 h-4 w-4" />
+                            Print options
+                        </DropdownMenuItem>
+                        {invoice?._id && (
+                            <DropdownMenuItem onClick={() => setToolsPanel('files')}>
+                                <Paperclip className="mr-2 h-4 w-4" />
+                                Supporting documents
+                            </DropdownMenuItem>
                         )}
-                    >
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertTitle>
-                            {invoiceIsCancelled(invoice) ? 'Invoice cancelled' : 'Cancellation charge'}
-                        </AlertTitle>
-                        <AlertDescription>
-                            {invoiceIsCancelled(invoice)
-                                ? 'This invoice is cancelled. There is no payment to collect.'
-                                : 'This is a cancellation fee, not a voided invoice. Record payment if the customer has paid.'}
-                        </AlertDescription>
-                    </Alert>
-                ) : null}
+                    </DropdownMenuContent>
+                </DropdownMenu>
             </div>
 
-            {invoice?._id ? (
-                <div className="no-print mb-4 space-y-4">
-                    <div className="rounded-2xl border border-slate-200/70 bg-white p-4">
-                        <p className="mb-3 text-sm font-semibold text-slate-900">Disclaimer and notes</p>
-                        <InvoicePrintOptionsPanel
-                            value={printOptions}
-                            onChange={setPrintOptions}
-                            onSave={() => void savePrintOptions()}
-                            saving={savingPrintOptions}
-                        />
+            {invoice && (Number(invoice.credit_notes_total) > 0 || Number(invoice.debit_notes_total) > 0) && (() => {
+                const { total, paid, balance } = invoiceBalance(invoice);
+                return (
+                    <div className="no-print flex flex-wrap items-center gap-x-5 gap-y-1 rounded-2xl bg-white px-4 py-2.5 text-xs text-slate-600 ring-1 ring-slate-200/70">
+                        <span>Invoice total <span className="font-semibold text-slate-900">AED {parseDecimal(invoice.total_amount).toFixed(2)}</span></span>
+                        {Number(invoice.credit_notes_total) > 0 && (
+                            <span>Credit notes <span className="font-semibold text-sky-700">−AED {Number(invoice.credit_notes_total).toFixed(2)}</span></span>
+                        )}
+                        {Number(invoice.debit_notes_total) > 0 && (
+                            <span>Debit notes <span className="font-semibold text-violet-700">+AED {Number(invoice.debit_notes_total).toFixed(2)}</span></span>
+                        )}
+                        <span>Amount due <span className="font-semibold text-slate-900">AED {total.toFixed(2)}</span></span>
+                        <span>Paid <span className="font-semibold text-slate-900">AED {paid.toFixed(2)}</span></span>
+                        <span>Balance <span className={cn('font-semibold', balance > 0.009 ? 'text-rose-600' : 'text-emerald-600')}>AED {balance.toFixed(2)}</span></span>
+                        <button type="button" className="font-semibold text-brand-600 hover:underline" onClick={() => setShowNoteDialog(true)}>
+                            View notes
+                        </button>
                     </div>
-                    <div className="rounded-2xl border border-slate-200/70 bg-white p-4">
-                    <SupportingDocumentsPanel
-                        kind="shipment-invoice"
-                        id={String(invoice._id)}
-                        documents={invoice.supporting_documents}
-                        onChange={(docs) => setInvoice((prev: any) => (prev ? { ...prev, supporting_documents: docs } : prev))}
-                    />
-                    </div>
-                </div>
+                );
+            })()}
+            {invoice && invoiceStatusHint(invoice) ? (
+                <Alert
+                    variant={invoiceIsCancelled(invoice) ? 'destructive' : 'default'}
+                    className={cn(
+                        'no-print',
+                        invoiceIsCancelled(invoice)
+                            ? 'border-rose-200 bg-rose-50 text-rose-900'
+                            : 'border-amber-200 bg-amber-50 text-amber-950'
+                    )}
+                >
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>
+                        {invoiceIsCancelled(invoice) ? 'Invoice cancelled' : 'Cancellation charge'}
+                    </AlertTitle>
+                    <AlertDescription>
+                        {invoiceIsCancelled(invoice)
+                            ? 'This invoice is cancelled. There is no payment to collect.'
+                            : 'This is a cancellation fee, not a voided invoice. Record payment if the customer has paid.'}
+                    </AlertDescription>
+                </Alert>
             ) : null}
+
+            <Sheet open={Boolean(toolsPanel)} onOpenChange={(open) => !open && setToolsPanel(null)}>
+                <SheetContent className="w-full overflow-y-auto sm:max-w-md">
+                    <SheetHeader>
+                        <SheetTitle>{toolsPanel === 'files' ? 'Supporting documents' : 'Print options'}</SheetTitle>
+                    </SheetHeader>
+                    <div className="mt-6">
+                        {toolsPanel === 'print' && (
+                            <InvoicePrintOptionsPanel
+                                compact
+                                value={printOptions}
+                                onChange={setPrintOptions}
+                                onSave={() => void savePrintOptions()}
+                                saving={savingPrintOptions}
+                            />
+                        )}
+                        {toolsPanel === 'files' && invoice?._id && (
+                            <SupportingDocumentsPanel
+                                kind="shipment-invoice"
+                                id={String(invoice._id)}
+                                documents={invoice.supporting_documents}
+                                onChange={(docs) => setInvoice((prev: any) => (prev ? { ...prev, supporting_documents: docs } : prev))}
+                            />
+                        )}
+                    </div>
+                </SheetContent>
+            </Sheet>
 
             <InvoiceNoteDialog
                 invoice={invoice}
@@ -2952,7 +2917,7 @@ export default function InvoicePage() {
                 }}
             />
 
-            {/* Invoice Template */}
+            <MagloPanel className="overflow-x-auto bg-white p-3 sm:p-6">
             <div id="invoice-content" className="theme-light">
                 {invoiceData && invoiceData.invoiceNumber ? (
                     invoiceType === 'tax' ? (
@@ -2982,6 +2947,7 @@ export default function InvoicePage() {
                     </Card>
                 )}
             </div>
+            </MagloPanel>
 
             {/* PH TO UAE COD Invoice Edit Dialog */}
             {isPhToUae && (

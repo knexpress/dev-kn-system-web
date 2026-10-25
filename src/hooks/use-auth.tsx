@@ -48,7 +48,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const userData = getUserData();
       if (userData) {
         setUserProfile(userData);
-        
+        storeUserData(userData);
+
         // Ensure API client has the token if user is logged in
         const storedToken = apiClient.getToken();
         if (storedToken) {
