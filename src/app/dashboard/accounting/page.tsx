@@ -6,12 +6,14 @@ import { AlertCircle } from 'lucide-react';
 import { ACCOUNTING_MODULES } from '@/components/accounting/erp-shell';
 import { ACCOUNTING_ROUTES } from '@/components/accounting/erp-format';
 import { MagloHero, MagloModuleTile } from '@/components/dashboard/maglo-shell';
+import { useStarredShortcuts } from '@/hooks/use-starred-shortcuts';
 import { SlidersHorizontal } from 'lucide-react';
 
 const ALLOWED_DEPARTMENTS = new Set(['Finance', 'Management', 'Auditor', 'IT']);
 
 export default function AccountingHubPage() {
   const { userProfile } = useAuth();
+  const { isStarred, toggle } = useStarredShortcuts();
   const departmentName = userProfile?.department?.name;
 
   if (departmentName && !ALLOWED_DEPARTMENTS.has(departmentName)) {
@@ -42,6 +44,14 @@ export default function AccountingHubPage() {
           title="Finance Setup"
           description="Readiness, opening balances, and go-live"
           icon={SlidersHorizontal}
+          starred={isStarred('/dashboard/finance-setup')}
+          onToggleStar={() =>
+            toggle({
+              href: '/dashboard/finance-setup',
+              title: 'Finance Setup',
+              description: 'Readiness, opening balances, and go-live',
+            })
+          }
         />
         {ACCOUNTING_MODULES.map((m) => {
           const route = ACCOUNTING_ROUTES[m.id];
@@ -52,6 +62,14 @@ export default function AccountingHubPage() {
               title={route.title}
               description={route.subtitle}
               icon={m.icon}
+              starred={isStarred(route.href)}
+              onToggleStar={() =>
+                toggle({
+                  href: route.href,
+                  title: route.title,
+                  description: route.subtitle,
+                })
+              }
             />
           );
         })}

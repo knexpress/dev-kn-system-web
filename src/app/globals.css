@@ -339,62 +339,10 @@ body {
   0%, 100% { transform: translateY(0) scaleY(1); opacity: 0.2; }
   50% { transform: translateY(-8px) scaleY(1.4); opacity: 0.45; }
 }
-/* Sidebar rail: bubble reveal from the cursor position (--rx / --ry) */
-.rail-bubble {
-  clip-path: circle(0px at var(--rx, 50%) var(--ry, 50%));
-  transform-origin: var(--rx, 50%) var(--ry, 50%);
-}
-.rail-bubble[data-state='open'] {
-  clip-path: circle(160% at var(--rx, 50%) var(--ry, 50%));
-  animation: rail-bubble-in 780ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-.rail-bubble[data-state='closed'] {
-  animation: rail-bubble-out 340ms cubic-bezier(0.55, 0, 0.8, 0.2) both;
-}
-@keyframes rail-bubble-in {
-  0% { clip-path: circle(0px at var(--rx, 50%) var(--ry, 50%)); transform: scale(0.82, 0.9); }
-  35% { clip-path: circle(34% at var(--rx, 50%) var(--ry, 50%)); transform: scale(1.08, 1.03); }
-  55% { transform: scale(0.96, 0.99); }
-  72% { transform: scale(1.025, 1.005); }
-  86% { transform: scale(0.995, 1); }
-  100% { clip-path: circle(160% at var(--rx, 50%) var(--ry, 50%)); transform: scale(1, 1); }
-}
-@keyframes rail-bubble-out {
-  0% { clip-path: circle(160% at var(--rx, 50%) var(--ry, 50%)); transform: scale(1, 1); }
-  100% { clip-path: circle(0px at var(--rx, 50%) var(--ry, 50%)); transform: scale(0.9, 0.95); }
-}
-/* Rail icons — launch out of the cursor point, spring into place, get pulled back on close */
-.rail-item {
-  opacity: 0;
-}
-.rail-bubble[data-state='open'] .rail-item {
-  animation: rail-item-in 820ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-.rail-bubble[data-state='closed'] .rail-item {
-  animation: rail-item-out 300ms cubic-bezier(0.55, 0, 0.8, 0.2) both;
-}
-@keyframes rail-item-in {
-  0% {
-    opacity: 0;
-    transform: translate(-22px, var(--from-y, 0px)) scale(0.15) rotate(var(--spin, -30deg));
-    filter: blur(8px);
-  }
-  45% {
-    opacity: 1;
-    transform: translate(6px, calc(var(--from-y, 0px) * -0.12)) scale(1.24) rotate(calc(var(--spin, -30deg) * -0.3));
-    filter: blur(0);
-  }
-  68% { transform: translate(-2px, calc(var(--from-y, 0px) * 0.04)) scale(0.92) rotate(calc(var(--spin, -30deg) * 0.1)); }
-  84% { transform: translate(1px, 0) scale(1.05) rotate(0deg); }
-  100% { opacity: 1; transform: none; filter: none; }
-}
-@keyframes rail-item-out {
-  0% { opacity: 1; transform: none; filter: none; }
-  100% {
-    opacity: 0;
-    transform: translate(-14px, calc(var(--from-y, 0px) * 0.6)) scale(0.25) rotate(var(--spin, -30deg));
-    filter: blur(5px);
-  }
+/* Sidebar rail: show or hide with no reveal animation */
+.rail-bubble:not([data-state='open']) {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 /* Dock-style magnify driven by --mag (0–1) from the cursor distance */
@@ -424,15 +372,6 @@ body {
 @keyframes rail-active-glow {
   0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.6); }
   70%, 100% { box-shadow: 0 0 0 11px rgba(255, 255, 255, 0); }
-}
-
-@keyframes rail-pop {
-  0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
-  25% { opacity: 1; }
-  100% {
-    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1);
-    opacity: 0;
-  }
 }
 
 /* Login orbit — inner ring clockwise, outer ring anticlockwise */
@@ -578,5 +517,27 @@ body {
 
   .tax-invoice-document.tax-invoice-exporting .tax-invoice-nav {
     display: none !important;
+  }
+}
+
+@keyframes ops-pulse-ring {
+  0% { transform: scale(1); opacity: 0.45; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+@keyframes ops-shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+.ops-pulse-ring {
+  animation: ops-pulse-ring 1.8s ease-out infinite;
+}
+.ops-live-shimmer {
+  background-size: 200% 100%;
+  animation: ops-shimmer 4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ops-pulse-ring,
+  .ops-live-shimmer {
+    animation: none;
   }
 }

@@ -66,6 +66,8 @@ export default function GeneralLedgerTab({
   const openEntry = searchParams?.get('entry') || '';
   const openId = searchParams?.get('id') || '';
   const openInvoice = searchParams?.get('invoice') || '';
+  const openQuote = searchParams?.get('quote') || '';
+  const openAwb = searchParams?.get('awb') || '';
   const autoOpenedKey = useRef('');
 
   useEffect(() => {
@@ -180,30 +182,36 @@ export default function GeneralLedgerTab({
 
   useEffect(() => {
     if (mode !== 'journals' || loadingJournals) return;
-    const key = `${openId}|${openEntry}|${openInvoice}`;
-    if (key === '||' || autoOpenedKey.current === key) return;
-    if (!journals.length && !openEntry && !openId && !openInvoice) return;
+    const key = `${openId}|${openEntry}|${openInvoice}|${openQuote}|${openAwb}`;
+    if (key === '||||' || autoOpenedKey.current === key) return;
+    if (!journals.length && !openEntry && !openId && !openInvoice && !openQuote && !openAwb) return;
 
     const idNorm = String(openId);
     const entryNorm = openEntry.trim().toLowerCase();
     const invoiceNorm = openInvoice.trim().toLowerCase();
-    if (!idNorm && !entryNorm && !invoiceNorm) return;
+    const quoteNorm = openQuote.trim().toLowerCase();
+    const awbNorm = openAwb.trim().toLowerCase();
+    if (!idNorm && !entryNorm && !invoiceNorm && !quoteNorm && !awbNorm) return;
 
-    const rank = (j: any) => {
-      const posted = j.status === 'POSTED' ? 2 : j.status === 'DRAFT' ? 1 : 0;
-      const invoiceSource = j.source === 'INVOICE' ? 2 : 0;
-      return posted + invoiceSource;
-    };
+    const textOf = (j: any) =>
+      `${j.entry_no || ''} ${j.source_reference || ''} ${j.memo || ''} ${j.source_label || ''}`.toLowerCase();
 
     const matches = journals.filter((j) => {
       if (idNorm && String(j._id) === idNorm) return true;
       if (entryNorm && String(j.entry_no || '').toLowerCase() === entryNorm) return true;
       if (invoiceNorm && String(j.source_reference || '').toLowerCase() === invoiceNorm) return true;
       if (invoiceNorm && String(j.memo || '').toLowerCase().includes(invoiceNorm)) return true;
+      if (quoteNorm && textOf(j).includes(quoteNorm)) return true;
+      if (awbNorm && textOf(j).includes(awbNorm)) return true;
       return false;
     });
     autoOpenedKey.current = key;
+
+    const filterTerm = openQuote || openInvoice || openAwb || openEntry;
+    if (filterTerm) setSearch(filterTerm);
+
     if (!matches.length) {
+      if (openQuote || openAwb) return;
       toast({
         variant: 'destructive',
         title: 'Journal not found',
@@ -213,11 +221,20 @@ export default function GeneralLedgerTab({
       });
       return;
     }
-    matches.sort((a, b) => rank(b) - rank(a));
-    const picked = matches[0];
-    setSearch(picked.entry_no || openInvoice || openEntry);
-    openJournal(picked);
-  }, [mode, loadingJournals, journals, openEntry, openId, openInvoice, toast]);
+
+    const timeOf = (j: any) => new Date(j.posted_at || j.createdAt || j.updatedAt || 0).getTime();
+    matches.sort((a, b) => {
+      if (openQuote || openAwb) return timeOf(b) - timeOf(a);
+      if (entryNorm) {
+        const aExact = String(a.entry_no || '').toLowerCase() === entryNorm ? 1 : 0;
+        const bExact = String(b.entry_no || '').toLowerCase() === entryNorm ? 1 : 0;
+        if (aExact !== bExact) return bExact - aExact;
+      }
+      const rank = (j: any) => (j.status === 'POSTED' ? 2 : j.status === 'DRAFT' ? 1 : 0) + (j.source === 'INVOICE' ? 2 : 0);
+      return rank(b) - rank(a);
+    });
+    openJournal(matches[0]);
+  }, [mode, loadingJournals, journals, openEntry, openId, openInvoice, openQuote, openAwb, toast]);
 
   const openJournalFromLedger = async (row: any) => {
     if (row.journal_id) {

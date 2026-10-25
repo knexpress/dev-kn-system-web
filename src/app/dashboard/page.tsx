@@ -1,18 +1,20 @@
 'use client';
 
+import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
-import { getNavigationLinks } from '@/lib/navigation';
 import PerformanceMetrics from '@/components/performance-metrics';
 import DashboardWeather from '@/components/dashboard-weather';
 import EmpostPendingWidget from '@/components/empost-pending-widget';
 import { MotivationQuote } from '@/components/motivation-quote';
 import { WorldClock } from '@/components/world-clock';
 import { openCommandPalette } from '@/components/command-palette';
-import {
-  MagloModuleTile,
-  MagloSectionLabel,
-} from '@/components/dashboard/maglo-shell';
+import { MagloModuleTile } from '@/components/dashboard/maglo-shell';
+import FinanceOpsOverview from '@/components/dashboard/finance-ops-overview';
+import { KnexSkullLottie } from '@/components/dashboard/knex-skull-lottie';
+import { KnexAiChat } from '@/components/dashboard/knex-ai-chat';
+import { useStarredShortcuts } from '@/hooks/use-starred-shortcuts';
+import { cn } from '@/lib/utils';
 
 function greetingForHour(hour: number) {
   if (hour < 12) return 'Good morning';
@@ -22,16 +24,15 @@ function greetingForHour(hour: number) {
 
 export default function Dashboard() {
   const { userProfile, department } = useAuth();
-
-  const quickLinks = getNavigationLinks(department).filter((link) => link.href !== '/dashboard');
+  const { extras, toggle, iconForShortcut } = useStarredShortcuts();
   const isSuperAdmin = userProfile?.role === 'SUPERADMIN';
+  const [aiOpen, setAiOpen] = useState(false);
 
   if (!userProfile || !department) {
     return null;
   }
 
   const firstName = userProfile?.full_name?.split(' ')[0] || 'User';
-  const featured = quickLinks.slice(0, 3);
   const showMetrics =
     department.name !== 'Operations' &&
     department.name !== 'Sales' &&
@@ -40,7 +41,26 @@ export default function Dashboard() {
   return (
     <div className="flex flex-col gap-6">
       <section className="grid gap-5 xl:grid-cols-12">
-        <div className="flex flex-col justify-center gap-3 px-1 xl:col-span-4">
+        <div className={cn('flex flex-col justify-center gap-3 px-1', extras.length ? 'xl:col-span-4' : 'xl:col-span-12')}>
+          <button
+            type="button"
+            onClick={() => setAiOpen(true)}
+            className="group relative -ml-2 flex w-fit flex-col items-start overflow-visible rounded-[28px] p-1 text-left transition-transform hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+            aria-label="Open KNEX Assistant"
+          >
+            <KnexSkullLottie
+              exploded={aiOpen}
+              className="h-[168px] w-[168px] sm:h-[200px] sm:w-[200px] [&_svg]:brightness-0 dark:[&_svg]:brightness-100"
+            />
+            <span
+              className={cn(
+                'absolute bottom-3 left-4 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200/80 transition-opacity group-hover:text-brand-600',
+                aiOpen && 'opacity-0'
+              )}
+            >
+              Ask KNEX
+            </span>
+          </button>
           <p className="flex items-center gap-2 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-[28px]">
             Hi, {firstName}!
             <span className="inline-flex -space-x-1.5">
@@ -54,32 +74,34 @@ export default function Dashboard() {
           <p className="max-w-sm text-sm leading-relaxed text-slate-400">
             {greetingForHour(new Date().getHours())} —{' '}
             {department.name === 'Management'
-              ? 'here is your company-wide overview and quick access to every module.'
-              : `your ${department.name} workspace is ready. Jump into a module below.`}
+              ? 'here is your company-wide overview.'
+              : `your ${department.name} workspace is ready.`}
           </p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 xl:col-span-8">
           <button
             type="button"
             onClick={openCommandPalette}
-            className="group flex min-h-[170px] items-center justify-center rounded-[28px] bg-brand-50 transition-colors hover:bg-brand-100"
-            aria-label="Open search"
+            className="mt-1 inline-flex w-fit items-center gap-2 rounded-full bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-600 transition-colors hover:bg-brand-100"
           >
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-500 text-white shadow-lg shadow-brand-500/40 transition-transform group-hover:scale-105">
-              <Plus className="h-5 w-5" />
-            </span>
+            <Plus className="h-4 w-4" />
+            Search or jump to a module
           </button>
-          {featured.map((link) => (
-            <MagloModuleTile
-              key={link.href}
-              href={link.href}
-              title={link.label}
-              description={`Open ${link.label.toLowerCase()}`}
-              icon={link.icon}
-            />
-          ))}
         </div>
+
+        {extras.length > 0 && (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 xl:col-span-8">
+            {extras.map((shortcut) => (
+              <MagloModuleTile
+                key={shortcut.href}
+                href={shortcut.href}
+                title={shortcut.title}
+                description={shortcut.description}
+                icon={iconForShortcut(shortcut.href)}
+                starred
+                onToggleStar={() => toggle(shortcut)}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-12">
@@ -94,27 +116,18 @@ export default function Dashboard() {
         </div>
       </section>
 
+      <FinanceOpsOverview />
+
       {isSuperAdmin && <EmpostPendingWidget />}
 
       {showMetrics && <PerformanceMetrics department={department.name as any} />}
 
-      <section className="space-y-4">
-        <div className="px-1">
-          <MagloSectionLabel>Quick access</MagloSectionLabel>
-          <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-900">All modules</h2>
-        </div>
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
-          {quickLinks.map((link) => (
-            <MagloModuleTile
-              key={link.href}
-              href={link.href}
-              title={link.label}
-              description={`Open ${link.label.toLowerCase()}`}
-              icon={link.icon}
-            />
-          ))}
-        </div>
-      </section>
+      <KnexAiChat
+        open={aiOpen}
+        onOpenChange={setAiOpen}
+        firstName={firstName}
+        department={department.name}
+      />
     </div>
   );
 }

@@ -9,6 +9,17 @@ import { storeAuthToken, getAuthToken, removeAuthToken } from './security/secure
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
+export type AppNotification = {
+  _id: string;
+  type: string;
+  title: string;
+  message: string;
+  href?: string;
+  item_id?: string;
+  is_read: boolean;
+  createdAt: string;
+};
+
 export type InvoicePaymentMode = 'TABBY' | 'CARD' | 'CASH' | 'BANK_TRANSFER';
 
 export type InvoiceNoteType = 'CREDIT' | 'DEBIT';
@@ -572,6 +583,14 @@ class ApiClient {
     return this.request('/reports');
   }
 
+  async searchAuditTransactions(params?: { q?: string; page?: number; limit?: number }) {
+    const query = new URLSearchParams();
+    if (params?.q) query.set('q', params.q);
+    query.set('page', String(params?.page || 1));
+    query.set('limit', String(params?.limit || 25));
+    return this.request(`/reports/transactions?${query.toString()}`, {}, false);
+  }
+
   async createReport(reportData: any) {
     return this.request('/reports', {
       method: 'POST',
@@ -907,20 +926,33 @@ class ApiClient {
     return this.request('/collections/summary/stats');
   }
 
-  // Notifications
-  // Disabled: Notification endpoints removed
+  async getNotifications() {
+    return this.request<{ items: AppNotification[]; unread: number }>('/notifications', {}, false);
+  }
+
   async getNotificationCounts() {
-    return { success: true, data: { invoices: 0, invoiceRequests: 0, requests: 0 } };
+    return this.request('/notifications/counts', {}, false);
   }
 
-  async markAsViewed(type: string, itemId: string) {
-    // Disabled: No API call
-    return { success: true };
+  async markNotificationRead(id: string) {
+    return this.request('/notifications/mark-read', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    }, false);
   }
 
-  async markAllAsViewed(type: string) {
-    // Disabled: No API call
-    return { success: true };
+  async markAsViewed(type: string, itemId?: string) {
+    return this.request('/notifications/mark-viewed', {
+      method: 'POST',
+      body: JSON.stringify({ type, itemId }),
+    }, false);
+  }
+
+  async markAllAsViewed(type?: string) {
+    return this.request('/notifications/mark-all-viewed', {
+      method: 'POST',
+      body: JSON.stringify(type ? { type } : {}),
+    }, false);
   }
 
   // Get full invoice request details by AWB (for verification form)
@@ -1080,7 +1112,7 @@ class ApiClient {
   }
 
   async getInvoiceUnified(id: string) {
-    return this.request(`/invoices-unified/${id}`);
+    return this.request(`/invoices-unified/${encodeURIComponent(id)}`, {}, false);
   }
 
   async remitInvoiceUnified(id: string) {
@@ -1279,6 +1311,21 @@ class ApiClient {
   }
 
   // Motivation quotes (10-minute windows)
+  async chatWithAssistant(payload: {
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+    firstName?: string;
+    department?: string;
+  }) {
+    return this.request<{ reply: string; model?: string }>(
+      '/ai/chat',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+      false
+    );
+  }
+
   async getMotivationQuote(params?: { firstName?: string; department?: string }) {
     const search = new URLSearchParams();
     if (params?.firstName) search.set('firstName', params.firstName);
@@ -3007,6 +3054,10 @@ class ApiClient {
   // Health check
   async healthCheck() {
     return this.request('/health');
+  }
+
+  async getDashboardOverview() {
+    return this.request('/dashboard/overview', {}, false, 0);
   }
 
   async getQuotations(params?: { page?: number; limit?: number; search?: string }) {

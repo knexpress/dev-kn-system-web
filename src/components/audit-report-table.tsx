@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { Request, Invoice } from '@/lib/types';
+import { useRef } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from './ui/button';
 import { Download, Upload } from 'lucide-react';
@@ -14,315 +13,221 @@ import {
   erpPrimaryButtonClass,
 } from '@/components/dashboard/maglo-shell';
 
-type AuditData = Request & { invoice?: Invoice };
+export type AuditTransaction = {
+  id: string;
+  awbNumber?: string;
+  deliveryDate?: string;
+  invoicingDate?: string;
+  clientName?: string;
+  receiverName?: string;
+  origin?: string;
+  destination?: string;
+  shipmentType?: string;
+  serviceType?: string;
+  deliveryStatus?: string;
+  weight?: string | number;
+  leviableItem?: string;
+};
 
-interface AuditReportTableProps {
-    data: AuditData[];
-}
+type AuditReportTableProps = {
+  data: AuditTransaction[];
+  loading?: boolean;
+  search: string;
+  onSearchChange: (value: string) => void;
+  page: number;
+  pages: number;
+  total: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+};
 
-export default function AuditReportTable({ data: initialData }: AuditReportTableProps) {
-    const [tableData, setTableData] = useState<AuditData[]>(initialData);
-    const { toast } = useToast();
-    const fileInputRef = useRef<HTMLInputElement>(null);
+export default function AuditReportTable({
+  data,
+  loading,
+  search,
+  onSearchChange,
+  page,
+  pages,
+  total,
+  pageSize,
+  onPageChange,
+}: AuditReportTableProps) {
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const isLeviable = (shipmentType?: string, leviableItem?: string) => {
-        // If leviableItem is explicitly provided (from historical data), use it
-        if (leviableItem && leviableItem !== 'N/A') {
-            return leviableItem;
-        }
-        
-        // Otherwise, determine from shipment type
-        const nonLeviableTypes = ['Docs', 'Documents', 'DOCUMENT'];
-        if (!shipmentType) return 'N/A';
-        return nonLeviableTypes.includes(shipmentType.toUpperCase()) ? 'Non-Leviable' : 'Leviable';
-    };
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, total);
 
-    const handleExport = async () => {
-        try {
-            // Dynamically import XLSX only when needed
-            const XLSX = await import('xlsx');
-            
-            console.log("Exporting to Excel...");
-            
-            // Prepare data for export
-            const dataToExport = tableData.map(item => ({
-                'AWB Number': item.awbNumber || 'N/A',
-                'Delivery Date': item.deliveryDate || 'N/A',
-                'Invoicing Date': item.invoice?.issueDate || (item as any).invoicingDate || 'N/A',
-                'Customer / sender name': item.clientName || 'N/A',
-                'Receiver name': item.receiverName || 'N/A',
-                'Origin': item.origin || 'N/A',
-                'Destination': item.destination || 'N/A',
-                'Shipment type': item.shipmentType || 'N/A',
-                'Service type': item.serviceType || 'N/A',
-                'Delivery status': item.deliveryStatus || 'N/A',
-                'Weight': item.weight || 'N/A',
-                'Leviable Item': isLeviable(item.shipmentType, (item as any).leviableItem)
-            }));
-            
-            // Create worksheet
-            const ws = XLSX.utils.json_to_sheet(dataToExport);
-            
-            // Create workbook
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Audit Report');
-            
-            // Generate filename with timestamp
-            const filename = `audit-report-${new Date().toISOString().split('T')[0]}.xlsx`;
-            
-            // Export file
-            XLSX.writeFile(wb, filename);
-            
-            toast({
-                title: "Export Successful",
-                description: `${dataToExport.length} rows have been exported to ${filename}`,
-            });
-        } catch (error) {
-            console.error("Failed to export Excel file:", error);
-            toast({
-                variant: "destructive",
-                title: "Export Failed",
-                description: "There was an error exporting the Excel file.",
-            });
-        }
-    };
+  const handleExport = async () => {
+    try {
+      const XLSX = await import('xlsx');
+      const dataToExport = data.map((item) => ({
+        'AWB Number': item.awbNumber || 'N/A',
+        'Delivery Date': item.deliveryDate || 'N/A',
+        'Invoicing Date': item.invoicingDate || 'N/A',
+        'Customer / sender name': item.clientName || 'N/A',
+        'Receiver name': item.receiverName || 'N/A',
+        Origin: item.origin || 'N/A',
+        Destination: item.destination || 'N/A',
+        'Shipment type': item.shipmentType || 'N/A',
+        'Service type': item.serviceType || 'N/A',
+        'Delivery status': item.deliveryStatus || 'N/A',
+        Weight: item.weight || 'N/A',
+        'Leviable Item': item.leviableItem || 'N/A',
+      }));
+      const ws = XLSX.utils.json_to_sheet(dataToExport);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Audit Report');
+      XLSX.writeFile(wb, `audit-report-${new Date().toISOString().split('T')[0]}.xlsx`);
+      toast({
+        title: 'Export Successful',
+        description: `${dataToExport.length} rows from this page were exported.`,
+      });
+    } catch (error) {
+      console.error('Failed to export Excel file:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Export Failed',
+        description: 'There was an error exporting the Excel file.',
+      });
+    }
+  };
 
-    const handleImportClick = () => {
-        fileInputRef.current?.click();
-    };
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    toast({
+      title: 'Import kept local',
+      description: 'Use search to find live system transactions. Import still reads the file for review only.',
+    });
+    event.target.value = '';
+  };
 
-    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                // Dynamically import XLSX only when needed
-                const XLSX = await import('xlsx');
-                
-                const data = e.target?.result;
-                if (!data) {
-                    throw new Error('No data read from file');
-                }
-                
-                const workbook = XLSX.read(data, { type: 'binary' });
-                if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-                    throw new Error('No sheets found in Excel file');
-                }
-                
-                const sheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[sheetName];
-                const json: any[] = XLSX.utils.sheet_to_json(worksheet);
-                
-                if (!json || json.length === 0) {
-                    throw new Error('No data found in Excel file');
-                }
-                
-                console.log('📊 Importing Excel data:', json.length, 'rows');
-                console.log('📊 Sample row:', json[0]);
-                
-                // Map Excel columns to audit data structure
-                const importedData: AuditData[] = json.map((row: any, index: number) => {
-                    // Handle various possible column names
-                    const getValue = (keys: string[]) => {
-                        for (const key of keys) {
-                            if (row[key] !== undefined && row[key] !== null && row[key] !== '') {
-                                return row[key];
-                            }
-                        }
-                        return null;
-                    };
-                    
-                    const awbNumber = getValue(['AWB Number', 'AWB number', 'AWB', 'awbNumber']);
-                    const deliveryDate = getValue(['Transaction - delivery date', 'Delivery Date', 'Delivery date', 'deliveryDate']);
-                    const invoicingDate = getValue(['Invoicing date if available', 'Invoicing Date', 'Invoice Date', 'invoicingDate']);
-                    const clientName = getValue(['Customer / sender name', 'Customer', 'Sender name', 'clientName']);
-                    const receiverName = getValue(['Receiver name', 'Receiver Name', 'Receiver', 'receiverName']);
-                    const origin = getValue(['Origin', 'origin']);
-                    const destination = getValue(['Destination', 'destination']);
-                    const shipmentType = getValue(['Shipment type', 'Shipment Type', 'shipmentType']);
-                    const serviceType = getValue(['Service type', 'Service Type', 'serviceType']);
-                    const deliveryStatus = getValue(['Delivery status', 'Delivery Status', 'deliveryStatus']);
-                    const weight = getValue(['Weight', 'weight', 'Weight (kg)']);
-                    
-                    return {
-                        id: awbNumber || `imp-${Date.now()}-${index}`,
-                        awbNumber: awbNumber || 'N/A',
-                        deliveryDate: deliveryDate || 'N/A',
-                        clientName: clientName || 'N/A',
-                        receiverName: receiverName || 'N/A',
-                        origin: origin || 'N/A',
-                        destination: destination || 'N/A',
-                        shipmentType: shipmentType || 'N/A',
-                        serviceType: serviceType || 'N/A',
-                        deliveryStatus: deliveryStatus || 'N/A',
-                        weight: weight ? parseFloat(weight) : 0,
-                        invoice: invoicingDate ? { issueDate: invoicingDate } as Invoice : undefined,
-                        clientId: 'imported',
-                        description: 'Imported from Excel',
-                        status: 'Completed',
-                    };
-                });
-
-                setTableData(prevData => [...prevData, ...importedData]);
-
-                toast({
-                    title: "Import Successful",
-                    description: `${importedData.length} rows have been added to the report.`,
-                });
-                
-                console.log('✅ Successfully imported', importedData.length, 'rows');
-
-            } catch (error) {
-                console.error("❌ Failed to import Excel file:", error);
-                toast({
-                    variant: "destructive",
-                    title: "Import Failed",
-                    description: error instanceof Error ? error.message : "There was an error processing the Excel file. Please ensure it's in the correct format.",
-                });
-            } finally {
-                // Reset file input
-                if(fileInputRef.current) {
-                    fileInputRef.current.value = '';
-                }
-            }
-        };
-        
-        reader.onerror = () => {
-            console.error("FileReader error");
-            toast({
-                variant: "destructive",
-                title: "Import Failed",
-                description: "There was an error reading the file.",
-            });
-        };
-        
-        reader.readAsBinaryString(file);
-    };
-
-    return (
-        <div className="flex h-full min-h-0 flex-col">
-            <ErpToolbar
-                title={`Transactions · ${tableData.length}`}
-                actions={
-                    <>
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            onChange={handleFileChange}
-                            className="hidden"
-                            accept=".xlsx, .xls"
-                        />
-                        <Button
-                            onClick={handleImportClick}
-                            variant="outline"
-                            className={erpOutlineControlClass()}
-                        >
-                            <Upload className="mr-2 h-4 w-4" />
-                            Import
-                        </Button>
-                        <Button onClick={handleExport} className={erpPrimaryButtonClass()}>
-                            <Download className="mr-2 h-4 w-4" />
-                            Export
-                        </Button>
-                    </>
-                }
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <ErpToolbar
+        title={`Transactions · ${total.toLocaleString()}`}
+        description={search ? `Matching “${search}”` : 'All invoice requests in the system'}
+        search={search}
+        onSearchChange={onSearchChange}
+        searchPlaceholder="AWB, invoice, customer, receiver, route…"
+        actions={
+          <>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              className="hidden"
+              accept=".xlsx, .xls"
             />
-            <ErpGrid maxHeight="min(65vh, 720px)">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>AWB Number</TableHead>
-                            <TableHead>Delivery Date</TableHead>
-                            <TableHead>Invoicing Date</TableHead>
-                            <TableHead>Customer</TableHead>
-                            <TableHead>Receiver</TableHead>
-                            <TableHead>Origin</TableHead>
-                            <TableHead>Destination</TableHead>
-                            <TableHead>Shipment Type</TableHead>
-                            <TableHead>Service Type</TableHead>
-                            <TableHead>Delivery Status</TableHead>
-                            <TableHead>Weight (kg)</TableHead>
-                            <TableHead>Leviable Item</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {tableData
-                            .filter((item) => {
-                                // Filter out rows that are essentially empty (all N/A or missing data)
-                                return item.awbNumber || 
-                                       item.deliveryDate || 
-                                       item.invoice?.issueDate || 
-                                       item.clientName || 
-                                       item.receiverName || 
-                                       item.origin || 
-                                       item.destination || 
-                                       item.shipmentType || 
-                                       item.serviceType || 
-                                       item.deliveryStatus || 
-                                       item.weight;
-                            })
-                            .map((item) => {
-                                const invoicingDate = item.invoice?.issueDate || (item as any).invoicingDate || 'N/A';
-                                const leviableItem = isLeviable(item.shipmentType, (item as any).leviableItem);
-                                
-                                return (
-                            <TableRow key={item.id}>
-                                <TableCell className="font-mono">{item.awbNumber || 'N/A'}</TableCell>
-                                <TableCell>{item.deliveryDate || 'N/A'}</TableCell>
-                                        <TableCell>{invoicingDate}</TableCell>
-                                <TableCell>{item.clientName || 'N/A'}</TableCell>
-                                <TableCell>{item.receiverName || 'N/A'}</TableCell>
-                                <TableCell>{item.origin || 'N/A'}</TableCell>
-                                <TableCell>{item.destination || 'N/A'}</TableCell>
-                                <TableCell>
-                                    <Badge variant="outline">{item.shipmentType || 'N/A'}</Badge>
-                                </TableCell>
-                                <TableCell>
-                                    <Badge variant="secondary">{item.serviceType || 'N/A'}</Badge>
-                                </TableCell>
-                                <TableCell>
-                                    {(() => {
-                                        const statusRaw = item.deliveryStatus || 'N/A';
-                                        const normalized = statusRaw.toString().trim().toUpperCase();
-                                        const isDelivered = normalized === 'COMPLETED' || normalized === 'DELIVERED';
-                                        const display = isDelivered ? 'DELIVERED' : statusRaw || 'N/A';
-                                        const badgeClass = isDelivered ? 'bg-green-500' : 'bg-gray-500';
-                                        return (
-                                            <Badge className={badgeClass}>
-                                                {display}
-                                            </Badge>
-                                        );
-                                    })()}
-                                </TableCell>
-                                <TableCell>{item.weight || 'N/A'}</TableCell>
-                                        <TableCell>{leviableItem}</TableCell>
-                            </TableRow>
-                                );
-                            })}
-                        {tableData.filter((item) => {
-                            return item.awbNumber || 
-                                   item.deliveryDate || 
-                                   item.invoice?.issueDate || 
-                                   item.clientName || 
-                                   item.receiverName || 
-                                   item.origin || 
-                                   item.destination || 
-                                   item.shipmentType || 
-                                   item.serviceType || 
-                                   item.deliveryStatus || 
-                                   item.weight;
-                        }).length === 0 && (
-                            <TableRow>
-                                <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
-                                    No data available. Import data from Excel or add records manually.
-                                </TableCell>
-                            </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
-            </ErpGrid>
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              variant="outline"
+              className={erpOutlineControlClass()}
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              Import
+            </Button>
+            <Button onClick={handleExport} className={erpPrimaryButtonClass()}>
+              <Download className="mr-2 h-4 w-4" />
+              Export page
+            </Button>
+          </>
+        }
+      />
+      <ErpGrid maxHeight="min(65vh, 720px)">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>AWB Number</TableHead>
+              <TableHead>Delivery Date</TableHead>
+              <TableHead>Invoicing Date</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead>Receiver</TableHead>
+              <TableHead>Origin</TableHead>
+              <TableHead>Destination</TableHead>
+              <TableHead>Shipment Type</TableHead>
+              <TableHead>Service Type</TableHead>
+              <TableHead>Delivery Status</TableHead>
+              <TableHead>Weight (kg)</TableHead>
+              <TableHead>Leviable Item</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading && data.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={12} className="py-10 text-center text-slate-400">
+                  Searching transactions…
+                </TableCell>
+              </TableRow>
+            ) : data.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={12} className="py-10 text-center text-slate-400">
+                  {search ? 'No transactions match that search.' : 'No transactions found.'}
+                </TableCell>
+              </TableRow>
+            ) : (
+              data.map((item) => {
+                const statusRaw = item.deliveryStatus || 'N/A';
+                const normalized = statusRaw.toString().trim().toUpperCase();
+                const isDelivered = normalized === 'COMPLETED' || normalized === 'DELIVERED';
+                return (
+                  <TableRow key={item.id}>
+                    <TableCell className="font-mono">{item.awbNumber || 'N/A'}</TableCell>
+                    <TableCell>{item.deliveryDate || 'N/A'}</TableCell>
+                    <TableCell>{item.invoicingDate || 'N/A'}</TableCell>
+                    <TableCell>{item.clientName || 'N/A'}</TableCell>
+                    <TableCell>{item.receiverName || 'N/A'}</TableCell>
+                    <TableCell>{item.origin || 'N/A'}</TableCell>
+                    <TableCell>{item.destination || 'N/A'}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{item.shipmentType || 'N/A'}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{item.serviceType || 'N/A'}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={isDelivered ? 'bg-green-500' : 'bg-gray-500'}>
+                        {isDelivered ? 'DELIVERED' : statusRaw}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{item.weight || 'N/A'}</TableCell>
+                    <TableCell>{item.leviableItem || 'N/A'}</TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </ErpGrid>
+      <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 sm:px-6">
+        <p className="text-sm text-slate-500">
+          {loading ? 'Loading…' : `Showing ${start}–${end} of ${total.toLocaleString()}`}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className={erpOutlineControlClass()}
+            onClick={() => onPageChange(Math.max(1, page - 1))}
+            disabled={page <= 1 || loading}
+          >
+            Previous
+          </Button>
+          <span className="text-sm text-slate-600">
+            Page {page} of {pages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className={erpOutlineControlClass()}
+            onClick={() => onPageChange(Math.min(pages, page + 1))}
+            disabled={page >= pages || loading}
+          >
+            Next
+          </Button>
         </div>
-    );
+      </div>
+    </div>
+  );
 }

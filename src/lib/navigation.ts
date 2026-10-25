@@ -23,6 +23,7 @@ export interface NavLink {
   label: string;
   icon: LucideIcon;
   departments: Department[];
+  hiddenFromRail?: boolean;
 }
 
 const allLinks: NavLink[] = [
@@ -79,6 +80,7 @@ const allLinks: NavLink[] = [
     label: 'Finance Setup',
     icon: SlidersHorizontal,
     departments: ['Finance', 'Management', 'IT'],
+    hiddenFromRail: true,
   },
   {
     href: '/dashboard/price-brackets',
@@ -162,3 +164,9 @@ export const getNavigationLinks = (department: DepartmentData | null) => {
   }
   return allLinks.filter((link) => link.departments.includes(departmentName));
 };
+
+export const getRailLinks = (department: DepartmentData | null) =>
+  getNavigationLinks(department).filter((link) => !link.hiddenFromRail);
+
+export const getFooterLinks = (department: DepartmentData | null) =>
+  getNavigationLinks(department).filter((link) => link.hiddenFromRail);

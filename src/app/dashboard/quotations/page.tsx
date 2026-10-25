@@ -35,7 +35,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { ArrowRight, Ban, Banknote, BellRing, Calculator, ChevronDown, ChevronUp, Download, FileSignature, Pencil, PlusCircle, Printer, Send, Trash2 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { ArrowRight, Ban, Banknote, BellRing, Calculator, ChevronDown, ClipboardList, Download, FileSignature, MapPin, Package, Pencil, PlusCircle, Printer, Send, Trash2, UserRound } from 'lucide-react';
+import Link from 'next/link';
+import QuotationWizardDialog from '@/components/quotation-wizard-dialog';
+import { cn } from '@/lib/utils';
 
 type RouteCode = 'PH_TO_UAE' | 'UAE_TO_PH';
 type PickupLocation = 'INSIDE_DUBAI' | 'OUTSIDE_DUBAI' | 'DROP_OFF' | 'FREE_PICKUP';
@@ -314,6 +323,100 @@ function canGenerateQuotation(userProfile: any) {
   const role = String(userProfile?.role || '').toUpperCase();
   const dept = userProfile?.department?.name;
   return role === 'SUPERADMIN' || role === 'ADMIN' || dept === 'Finance' || dept === 'IT';
+}
+
+function quotationJournalsHref(quote: SavedQuotation) {
+  const params = new URLSearchParams();
+  if (quote.quotation_number) params.set('quote', quote.quotation_number);
+  if (quote.awb) params.set('awb', quote.awb);
+  return `/dashboard/accounting/journals?${params.toString()}`;
+}
+
+function BookingDetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100/80 py-2 last:border-0">
+      <span className="shrink-0 pt-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-400">{label}</span>
+      <span className="min-w-0 text-right text-sm font-medium leading-snug text-slate-800">{value}</span>
+    </div>
+  );
+}
+
+function BookingFormPanel({
+  senderEntries,
+  receiverEntries,
+  shipmentEntries,
+  items,
+  awb,
+}: {
+  senderEntries: [string, string][];
+  receiverEntries: [string, string][];
+  shipmentEntries: [string, string][];
+  items: any[];
+  awb: string;
+}) {
+  const sections = [
+    { title: 'Sender', hint: 'From the booking form', icon: UserRound, entries: senderEntries },
+    { title: 'Receiver', hint: 'From the booking form', icon: MapPin, entries: receiverEntries },
+    { title: 'Shipment', hint: 'Route, weights, and extras', icon: Package, entries: shipmentEntries },
+  ];
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_18px_40px_-28px_rgba(15,23,42,0.35)]">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">Booking form</p>
+          <p className="text-xs text-slate-400">Sender, receiver, and shipment captured by Operations</p>
+        </div>
+        <span className="rounded-full bg-white px-2.5 py-1 font-mono text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200/80">
+          {awb}
+        </span>
+      </div>
+      <div className="grid gap-px bg-slate-100 md:grid-cols-3">
+        {sections.map((section) => {
+          const Icon = section.icon;
+          return (
+            <div key={section.title} className="bg-white p-4">
+              <div className="mb-3 flex items-center gap-2.5">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{section.title}</p>
+                  <p className="text-[11px] text-slate-400">{section.hint}</p>
+                </div>
+              </div>
+              {section.entries.length ? (
+                section.entries.map(([label, value]) => (
+                  <BookingDetailRow key={label} label={label} value={value} />
+                ))
+              ) : (
+                <p className="text-sm text-slate-400">No details on the booking form</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-3">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Items</p>
+        {items.length ? (
+          <div className="flex flex-wrap gap-2">
+            {items.map((item, index) => (
+              <span
+                key={index}
+                className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200/80"
+              >
+                <span className="font-mono text-[10px] text-slate-400">{index + 1}</span>
+                {item.commodity || item.name || item.description || 'Item'}
+                <span className="text-slate-400">× {item.qty ?? item.quantity ?? 1}</span>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-400">No items on the booking form</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function QuotationsPage() {
@@ -605,7 +708,6 @@ export default function QuotationsPage() {
     }
     setLinkedRequest(request);
     setShowForm(true);
-    window.setTimeout(() => document.getElementById('quotation-form')?.scrollIntoView({ behavior: 'smooth' }), 50);
   };
 
   // Same calls Operations used for the IN_PROGRESS move (status endpoint incl. EMPOST sync,
@@ -1009,10 +1111,21 @@ export default function QuotationsPage() {
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Button size="sm" variant="outline" onClick={() => setExpandedRequestId(expanded ? null : request._id)}>
-                        {expanded ? <ChevronUp className="mr-2 h-4 w-4" /> : <ChevronDown className="mr-2 h-4 w-4" />}
+                      <button
+                        type="button"
+                        aria-expanded={expanded}
+                        onClick={() => setExpandedRequestId(expanded ? null : request._id)}
+                        className={cn(
+                          'inline-flex h-9 items-center gap-2 rounded-full px-3.5 text-xs font-semibold ring-1 transition-all',
+                          expanded
+                            ? 'bg-brand-500 text-white ring-brand-500 shadow-md shadow-brand-500/25'
+                            : 'bg-white text-slate-600 ring-slate-200 hover:bg-brand-50 hover:text-brand-700 hover:ring-brand-200'
+                        )}
+                      >
+                        <ClipboardList className="h-3.5 w-3.5" />
                         Booking form
-                      </Button>
+                        <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-200', expanded && 'rotate-180')} />
+                      </button>
                       {canQuote && !quoted && (
                         <>
                           <Button size="sm" onClick={() => startFromRequest(request)}>
@@ -1052,7 +1165,6 @@ export default function QuotationsPage() {
                               const quote = await findLinkedQuote(request);
                               if (!quote) return;
                               startEdit(quote);
-                              window.setTimeout(() => document.getElementById('quotation-form')?.scrollIntoView({ behavior: 'smooth' }), 50);
                             }}
                           >
                             <Pencil className="mr-2 h-4 w-4" />
@@ -1161,38 +1273,13 @@ export default function QuotationsPage() {
                   })()}
 
                   {expanded && (
-                    <div className="grid gap-4 rounded-lg bg-muted/40 p-3 text-sm md:grid-cols-3">
-                      {[
-                        { title: 'Sender (booking form)', entries: flatEntries(booking.sender) },
-                        { title: 'Receiver (booking form)', entries: flatEntries(booking.receiver) },
-                        { title: 'Shipment', entries: otherEntries },
-                      ].map((section) => (
-                        <div key={section.title}>
-                          <p className="mb-1 font-semibold">{section.title}</p>
-                          {section.entries.length ? (
-                            section.entries.map(([label, value]) => (
-                              <p key={label}>
-                                <span className="text-muted-foreground">{label}:</span> {value}
-                              </p>
-                            ))
-                          ) : (
-                            <p className="text-muted-foreground">No details</p>
-                          )}
-                        </div>
-                      ))}
-                      <div className="md:col-span-3">
-                        <p className="mb-1 font-semibold">Items (booking form)</p>
-                        {bookingItems.length ? (
-                          bookingItems.map((item, index) => (
-                            <p key={index}>
-                              {index + 1}. {item.commodity || item.name || item.description || 'Item'} × {item.qty ?? item.quantity ?? 1}
-                            </p>
-                          ))
-                        ) : (
-                          <p className="text-muted-foreground">No items on the booking form</p>
-                        )}
-                      </div>
-                    </div>
+                    <BookingFormPanel
+                      senderEntries={flatEntries(booking.sender)}
+                      receiverEntries={flatEntries(booking.receiver)}
+                      shipmentEntries={otherEntries}
+                      items={bookingItems}
+                      awb={awb}
+                    />
                   )}
                 </div>
               );
@@ -1201,270 +1288,66 @@ export default function QuotationsPage() {
         </CardContent>
       </Card>
 
-      {showForm && (
-        <Card id="quotation-form">
-          <CardHeader>
-            <CardTitle>
-              {editingId
-                ? 'Edit quotation'
-                : linkedRequest
-                  ? `Quotation for AWB ${linkedRequest.tracking_code || linkedRequest.awb_number || linkedRequest._id}`
-                  : 'New manual quotation'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Sender</h3>
-                  <div>
-                    <Label htmlFor="sender_name">Name *</Label>
-                    <Input id="sender_name" value={senderName} onChange={(e) => setSenderName(e.target.value)} required />
-                  </div>
-                  <div>
-                    <Label htmlFor="sender_phone">Phone *</Label>
-                    <Input id="sender_phone" type="tel" value={senderPhone} onChange={(e) => setSenderPhone(e.target.value)} required />
-                  </div>
-                  <div>
-                    <Label htmlFor="sender_address">Address *</Label>
-                    <Textarea id="sender_address" value={senderAddress} onChange={(e) => setSenderAddress(e.target.value)} required rows={2} />
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Receiver</h3>
-                  <div>
-                    <Label htmlFor="customer_name">Name *</Label>
-                    <Input id="customer_name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} required />
-                  </div>
-                  <div>
-                    <Label htmlFor="customer_phone">Phone *</Label>
-                    <Input id="customer_phone" type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} required />
-                  </div>
-                  <div>
-                    <Label htmlFor="customer_address">Address *</Label>
-                    <Textarea id="customer_address" value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} required rows={2} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Route</h3>
-                <div className="max-w-md">
-                  <Label>Route *</Label>
-                  <Select value={route} onValueChange={(value) => setRoute(value as RouteCode)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select route" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="PH_TO_UAE">Philippines to UAE</SelectItem>
-                      <SelectItem value="UAE_TO_PH">UAE to Philippines</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Weight (kg)</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="actual_weight">Actual weight (kg) *</Label>
-                    <Input id="actual_weight" type="number" min="0.01" step="0.01" value={actualWeight} onChange={(e) => setActualWeight(e.target.value)} required />
-                  </div>
-                  <div>
-                    <Label htmlFor="volumetric_weight">Volumetric weight (kg) *</Label>
-                    <Input id="volumetric_weight" type="number" min="0.01" step="0.01" value={volumetricWeight} onChange={(e) => setVolumetricWeight(e.target.value)} required />
-                  </div>
-                  <div>
-                    <Label htmlFor="rate_per_kg">Rate per kg (AED) *</Label>
-                    <Input id="rate_per_kg" type="number" min="0.01" step="0.01" placeholder="Enter rate" value={ratePerKg} onChange={(e) => setRatePerKg(e.target.value)} required />
-                  </div>
-                </div>
-                <div className="rounded-lg border bg-muted/40 p-4 text-sm grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-muted-foreground">Chargeable weight</p>
-                    <p className="font-semibold">{chargeable > 0 ? `${chargeable.toFixed(2)} kg` : '—'}</p>
-                    <p className="text-xs text-muted-foreground">{chargeable > 0 ? weightType : 'Higher of actual and volumetric'}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Quoted shipping</p>
-                    <p className="font-semibold">{shippingAmount > 0 ? `AED ${money(shippingAmount)}` : '—'}</p>
-                    <p className="text-xs text-muted-foreground">Chargeable weight × the rate you enter</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="number_of_boxes">Number of boxes *</Label>
-                    <Input
-                      id="number_of_boxes"
-                      type="number"
-                      min="1"
-                      step="1"
-                      placeholder={String(distinctBoxCount(items.map((item) => item.boxNumber)))}
-                      value={numberOfBoxes}
-                      onChange={(e) => setNumberOfBoxes(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Items</h3>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setItems([...items, { id: Date.now().toString(), boxNumber: String(items.length + 1), name: '', quantity: 1 }])}
-                  >
-                    <PlusCircle className="mr-2 h-4 w-4" />
-                    Add item
-                  </Button>
-                </div>
-                {items.map((item, index) => (
-                  <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                    <div className="md:col-span-1">
-                      <Label>S.No</Label>
-                      <Input value={String(index + 1)} readOnly />
-                    </div>
-                    <div className="md:col-span-2">
-                      <Label>Box number *</Label>
-                      <Input
-                        value={item.boxNumber}
-                        placeholder={String(index + 1)}
-                        onChange={(e) => setItems(items.map((row) => row.id === item.id ? { ...row, boxNumber: e.target.value } : row))}
-                        required
-                      />
-                    </div>
-                    <div className="md:col-span-5">
-                      <Label>Item {index + 1} *</Label>
-                      <Input
-                        value={item.name}
-                        placeholder="Item name"
-                        onChange={(e) => setItems(items.map((row) => row.id === item.id ? { ...row, name: e.target.value } : row))}
-                        required
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <Label>Quantity *</Label>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => setItems(items.map((row) => row.id === item.id ? { ...row, quantity: parseInt(e.target.value, 10) || 1 } : row))}
-                        required
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      {items.length > 1 && (
-                        <Button type="button" variant="outline" onClick={() => setItems(items.filter((row) => row.id !== item.id))}>
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Remove
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Charges</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <Label>Pickup *</Label>
-                    <Select value={pickupLocation} onValueChange={(value) => setPickupLocation(value as PickupLocation)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Inside Dubai, outside Dubai, drop off, or free pickup" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="INSIDE_DUBAI">Inside Dubai — 20.00 AED</SelectItem>
-                        <SelectItem value="OUTSIDE_DUBAI">Outside Dubai — 25.71 AED</SelectItem>
-                        <SelectItem value="DROP_OFF">Drop off — 0.00 AED</SelectItem>
-                        <SelectItem value="FREE_PICKUP">Free pickup — 0.00 AED</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground mt-1">VAT 5% is added on the pickup charge only.</p>
-                  </div>
-                  <div>
-                    <Label htmlFor="delivery_charge">Delivery charge (AED)</Label>
-                    <Input id="delivery_charge" type="number" min="0" step="0.01" placeholder="0.00" value={deliveryCharge} onChange={(e) => setDeliveryCharge(e.target.value)} />
-                  </div>
-                  <div>
-                    <Label htmlFor="insurance_charge">Insurance charge (AED)</Label>
-                    <Input id="insurance_charge" type="number" min="0" step="0.01" placeholder="0.00" value={insuranceCharge} onChange={(e) => setInsuranceCharge(e.target.value)} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <Label>Sales discount</Label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {(['PERCENT', 'AMOUNT'] as const).map((kind) => (
-                        <Button
-                          key={kind}
-                          type="button"
-                          variant={discountType === kind ? 'default' : 'outline'}
-                          onClick={() => setDiscountType((current) => (current === kind ? '' : kind))}
-                        >
-                          {kind === 'PERCENT' ? '% off' : 'AED off'}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="discount_value">
-                      {discountType === 'PERCENT' ? 'Discount %' : discountType === 'AMOUNT' ? 'Discount amount (AED)' : 'Discount'}
-                    </Label>
-                    <Input
-                      id="discount_value"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder={discountType === 'PERCENT' ? 'e.g. 10' : '0.00'}
-                      value={discountValue}
-                      onChange={(e) => setDiscountValue(e.target.value)}
-                      disabled={!discountType}
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">Applied to the shipping charge only.</p>
-                  </div>
-                </div>
-                <div className="rounded-lg border bg-muted/40 p-4 text-sm space-y-1">
-                  <div className="flex justify-between"><span>Shipping</span><span>AED {money(shippingAmount)}</span></div>
-                  <div className="flex justify-between"><span>Pickup</span><span>AED {money(pickupCharge)}</span></div>
-                  <div className="flex justify-between"><span>VAT 5% on pickup</span><span>AED {money(pickupVat)}</span></div>
-                  <div className="flex justify-between"><span>Delivery</span><span>AED {money(delivery)}</span></div>
-                  <div className="flex justify-between"><span>Insurance</span><span>AED {money(insurance)}</span></div>
-                  {discount.amount > 0 ? (
-                    <div className="flex justify-between text-rose-700">
-                      <span>{salesDiscountLabel(discount.type, discount.value, discount.amount)}</span>
-                      <span>- AED {money(discount.amount)}</span>
-                    </div>
-                  ) : null}
-                  <div className="flex justify-between font-semibold pt-1"><span>Final price</span><span>AED {money(finalAmount)}</span></div>
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="notes">Notes</Label>
-                <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Optional note for the client" />
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => { setShowForm(false); resetForm(); }}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={submitting}>
-                  {submitting
-                    ? 'Saving...'
-                    : editingId
-                      ? 'Save changes'
-                      : linkedRequest
-                        ? 'Generate quotation'
-                        : 'Save quotation'}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+      <QuotationWizardDialog
+        key={`${editingId || ''}-${linkedRequest?._id || 'new'}`}
+        open={showForm}
+        title={
+          editingId
+            ? 'Edit quotation'
+            : linkedRequest
+              ? `Quotation for AWB ${linkedRequest.tracking_code || linkedRequest.awb_number || linkedRequest._id}`
+              : 'New manual quotation'
+        }
+        submitLabel={editingId ? 'Save changes' : linkedRequest ? 'Generate quotation' : 'Save quotation'}
+        submitting={submitting}
+        senderName={senderName}
+        senderPhone={senderPhone}
+        senderAddress={senderAddress}
+        customerName={customerName}
+        customerPhone={customerPhone}
+        customerAddress={customerAddress}
+        route={route}
+        actualWeight={actualWeight}
+        volumetricWeight={volumetricWeight}
+        ratePerKg={ratePerKg}
+        numberOfBoxes={numberOfBoxes}
+        pickupLocation={pickupLocation}
+        deliveryCharge={deliveryCharge}
+        insuranceCharge={insuranceCharge}
+        discountType={discountType}
+        discountValue={discountValue}
+        notes={notes}
+        items={items}
+        chargeable={chargeable}
+        weightType={weightType}
+        shippingAmount={shippingAmount}
+        pickupCharge={pickupCharge}
+        pickupVat={pickupVat}
+        delivery={delivery}
+        insurance={insurance}
+        discount={discount}
+        finalAmount={finalAmount}
+        onSenderName={setSenderName}
+        onSenderPhone={setSenderPhone}
+        onSenderAddress={setSenderAddress}
+        onCustomerName={setCustomerName}
+        onCustomerPhone={setCustomerPhone}
+        onCustomerAddress={setCustomerAddress}
+        onRoute={setRoute}
+        onActualWeight={setActualWeight}
+        onVolumetricWeight={setVolumetricWeight}
+        onRatePerKg={setRatePerKg}
+        onNumberOfBoxes={setNumberOfBoxes}
+        onPickupLocation={setPickupLocation}
+        onDeliveryCharge={setDeliveryCharge}
+        onInsuranceCharge={setInsuranceCharge}
+        onDiscountType={setDiscountType}
+        onDiscountValue={setDiscountValue}
+        onNotes={setNotes}
+        onItems={setItems}
+        onClose={() => { setShowForm(false); resetForm(); }}
+        onSubmit={handleSubmit}
+      />
 
       <Card>
         <CardHeader>
@@ -1521,8 +1404,16 @@ export default function QuotationsPage() {
                 {filteredQuotations.map((quote) => (
                   <TableRow key={quote._id}>
                     <TableCell className="font-medium">
-                      <div>{quote.quotation_number}</div>
-                      {quote.awb ? <div className="text-xs font-normal text-muted-foreground">AWB {quote.awb}</div> : null}
+                      <Link
+                        href={quotationJournalsHref(quote)}
+                        title="Open journal entries for this quotation"
+                        className="group block text-brand-600 underline-offset-2 hover:text-brand-700 hover:underline"
+                      >
+                        <div>{quote.quotation_number}</div>
+                        {quote.awb ? (
+                          <div className="text-xs font-normal text-slate-400 group-hover:text-brand-500">AWB {quote.awb}</div>
+                        ) : null}
+                      </Link>
                     </TableCell>
                     <TableCell>
                       <div>{quote.sender_name || '—'}</div>
@@ -1588,8 +1479,16 @@ export default function QuotationsPage() {
         </CardContent>
       </Card>
 
-      {printTarget && (
-        <div id="quotation-print" className="theme-light fixed inset-0 z-50 overflow-y-auto bg-neutral-200 text-black">
+      <Dialog open={Boolean(printTarget)} onOpenChange={(open) => { if (!open) closePrint(); }}>
+        <DialogContent className="theme-light flex max-h-[92vh] w-[min(860px,calc(100vw-1.5rem))] max-w-[860px] flex-col gap-0 overflow-hidden p-0 [&>button.absolute]:hidden">
+          <DialogTitle className="sr-only">
+            {printTarget ? `Quotation ${printTarget.quotation_number}` : 'Quotation preview'}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Preview, download, or print this quotation. Close to return to the quotations list.
+          </DialogDescription>
+          {printTarget && (
+        <div id="quotation-print" className="theme-light flex min-h-0 flex-1 flex-col overflow-hidden bg-neutral-100 text-black">
           <style>{`
             @page { size: A4 portrait; margin: 8mm; }
             .quote-sheet { width: 190mm; font-family: Arial, Helvetica, sans-serif; line-height: 1.45; }
@@ -1606,7 +1505,7 @@ export default function QuotationsPage() {
               .quote-sheet { width: 100%; box-shadow: none !important; margin: 0 !important; page-break-after: avoid; }
             }
           `}</style>
-          <div className="no-print sticky top-0 z-10 flex flex-wrap items-center justify-end gap-2 border-b bg-white px-6 py-3">
+          <div className="no-print flex shrink-0 flex-wrap items-center justify-end gap-2 border-b bg-white px-5 py-3">
             {quotationGatewayCharge(printTarget.advance) <= 0 && (
               <div className="mr-auto flex flex-wrap items-center gap-2">
                 <Label className="text-xs text-muted-foreground">Simulate charges</Label>
@@ -1641,7 +1540,8 @@ export default function QuotationsPage() {
               Print
             </Button>
           </div>
-          <div id="quotation-sheet" className="quote-sheet mx-auto my-6 bg-white px-6 py-5 shadow-lg text-[12px] text-black">
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+          <div id="quotation-sheet" className="quote-sheet mx-auto bg-white px-6 py-5 shadow-lg text-[12px] text-black">
             <table className="mb-4" style={{ border: 'none' }}>
               <tbody>
                 <tr>
@@ -1823,8 +1723,11 @@ export default function QuotationsPage() {
               </tbody>
             </table>
           </div>
+          </div>
         </div>
-      )}
+          )}
+      </DialogContent>
+      </Dialog>
 
       <AlertDialog open={Boolean(sendTarget)} onOpenChange={(open) => !open && setSendTarget(null)}>
         <AlertDialogContent className="max-w-md">
@@ -2129,7 +2032,12 @@ export default function QuotationsPage() {
       </AlertDialog>
 
       <AlertDialog open={Boolean(cancelTarget)} onOpenChange={(open) => { if (!open) { setCancelTarget(null); resetCancelForm(); } }}>
-        <AlertDialogContent className="max-w-lg">
+        <AlertDialogContent
+          className={cn(
+            'max-h-[92vh] gap-0 overflow-hidden p-0 transition-[max-width] duration-300 ease-out',
+            cancelCharge ? 'sm:max-w-[52rem]' : 'max-w-lg'
+          )}
+        >
           {cancelTarget && (() => {
             const qr = cancelTarget.quotation_request || {};
             const awb = cancelTarget.tracking_code || cancelTarget.awb_number || cancelTarget._id;
@@ -2149,7 +2057,9 @@ export default function QuotationsPage() {
             const collected = Math.round((parseFloat(cancelPayAmount) || 0) * 100) / 100;
             const suggestedFull = Math.round(remainingDue * (1 + rate) * 100) / 100;
             return (
-              <>
+              <div className="flex max-h-[92vh] flex-col">
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
+                <div className="min-w-0 flex-1 space-y-4 overflow-y-auto p-6">
                 <AlertDialogHeader>
                   <div className="mb-1 flex h-11 w-11 items-center justify-center rounded-full bg-rose-100 text-rose-700">
                     <Ban className="h-5 w-5" />
@@ -2257,9 +2167,25 @@ export default function QuotationsPage() {
                   </div>
                 )}
 
+                </div>
+
                 {cancelCharge && (
-                  <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/40">
-                    <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">Cancellation fee and payment</p>
+                  <aside className="flex w-full flex-col overflow-y-auto border-t border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-emerald-50/70 p-5 animate-in fade-in slide-in-from-bottom-3 duration-300 md:w-[23rem] md:shrink-0 md:border-l md:border-t-0 md:slide-in-from-right-8">
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-600">Cancellation fee</p>
+                        <p className="text-sm font-semibold text-emerald-950">Live invoice</p>
+                      </div>
+                      <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm shadow-emerald-600/30">
+                        VAT {cancelVat}%
+                      </span>
+                    </div>
+                    <div className="mb-4 rounded-2xl bg-emerald-600 px-4 py-3 text-white shadow-lg shadow-emerald-600/25">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-white/70">Invoice total</p>
+                      <p className="font-mono text-3xl font-bold tracking-tight">AED {money(total)}</p>
+                      <p className="mt-1 text-xs text-white/75">Net {money(net)} + VAT {money(vat)}</p>
+                    </div>
+                    <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <Label htmlFor="cancel_amount">Fee (AED, before VAT) *</Label>
@@ -2278,7 +2204,7 @@ export default function QuotationsPage() {
                         <p className="flex h-10 items-center rounded-md border bg-white px-3 text-sm">5% — tax invoice</p>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm text-emerald-950 dark:text-emerald-100">
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-xl bg-white/80 px-3 py-2 text-sm text-emerald-950 ring-1 ring-emerald-100">
                       <span>Net</span>
                       <span className="text-right">AED {money(net)}</span>
                       <span>VAT {cancelVat}%</span>
@@ -2395,10 +2321,12 @@ export default function QuotationsPage() {
                     </div>
                     </>
                     )}
-                  </div>
+                    </div>
+                  </aside>
                 )}
+                </div>
 
-                <AlertDialogFooter>
+                <AlertDialogFooter className="shrink-0 border-t bg-white px-6 py-4">
                   <AlertDialogCancel disabled={Boolean(cancellingId)}>Keep shipment</AlertDialogCancel>
                   <Button
                     variant={cancelCharge ? 'default' : 'destructive'}
@@ -2415,7 +2343,7 @@ export default function QuotationsPage() {
                         : 'Cancel without charging'}
                   </Button>
                 </AlertDialogFooter>
-              </>
+              </div>
             );
           })()}
         </AlertDialogContent>
