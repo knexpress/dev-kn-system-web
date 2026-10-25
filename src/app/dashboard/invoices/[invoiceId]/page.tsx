@@ -1421,7 +1421,7 @@ export default function InvoicePage() {
             phone: senderPhone,
             deliveryOption: senderDeliveryOption || undefined
         },
-        billTo: invoice.bill_to === 'RECEIVER' ? 'RECEIVER' : 'SENDER',
+        billTo: (invoice.bill_to === 'RECEIVER' ? 'RECEIVER' : 'SENDER') as 'SENDER' | 'RECEIVER',
         shipmentDetails: {
             numberOfBoxes: numberOfBoxes,
             weight: displayWeight,
@@ -1675,9 +1675,11 @@ export default function InvoicePage() {
             ? parseDecimal(totalAmountTaxInvoice, 2)
             : parseDecimal(deliveryCharge + deliveryOnlyTaxAmount, 2))
         : total;
+    const billTo: 'SENDER' | 'RECEIVER' = invoice.bill_to === 'RECEIVER' ? 'RECEIVER' : 'SENDER';
     const taxInvoiceData = isCancellationInvoice
         ? {
             ...invoiceData,
+            billTo,
             isPhToUae: false,
             isUaeToPh: true,
             domesticDeliveryFee: true,
@@ -1697,6 +1699,7 @@ export default function InvoicePage() {
         : shouldShowDeliveryOnlyInTaxInvoice
         ? {
             ...invoiceData,
+            billTo,
             isPhToUae: true, // Flag for PH TO UAE invoices
             serviceCode: serviceCodeRaw, // Pass service code for identification
             charges: {
@@ -1712,6 +1715,7 @@ export default function InvoicePage() {
         }
         : {
             ...invoiceData,
+            billTo,
             isPhToUae: isPhToUae, // Pass isPhToUae flag for all invoices
             serviceCode: serviceCodeRaw // Pass service code for identification
         };
