@@ -9,6 +9,7 @@ import {
   activityKeyForHref,
   getRailLinks,
   isNavLinkActive,
+  navLinkExtra,
 } from '@/lib/navigation';
 import { cn } from '@/lib/utils';
 
@@ -160,6 +161,7 @@ export default function AppSidebar({ hasNew, markSeen, onOpenChange }: ActivityB
                     <div className="rail-mag">
                       <Link
                         href={link.href}
+                        {...navLinkExtra(link)}
                         aria-label={link.label}
                         aria-current={isActive ? 'page' : undefined}
                         onClick={() => {

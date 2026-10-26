@@ -15,8 +15,15 @@ import {
   BookOpen,
   Receipt,
   SlidersHorizontal,
+  Contact,
+  PackageSearch,
+  Fingerprint,
 } from 'lucide-react';
 import type { Department, DepartmentData } from './types';
+
+export const CRM_URL = 'https://crm.productionknexpress.com/';
+export const CUSTOMER_TRACKING_URL = 'https://knex-ae.vercel.app/';
+export const TRUEID_BOOKING_URL = 'https://trueid-seven.vercel.app/';
 
 export interface NavLink {
   href: string;
@@ -24,6 +31,18 @@ export interface NavLink {
   icon: LucideIcon;
   departments: Department[];
   hiddenFromRail?: boolean;
+  external?: boolean;
+}
+
+export function isExternalHref(href: string) {
+  return /^https?:\/\//i.test(href);
+}
+
+export function navLinkExtra(link: Pick<NavLink, 'href' | 'external'>) {
+  if (link.external || isExternalHref(link.href)) {
+    return { target: '_blank' as const, rel: 'noopener noreferrer' };
+  }
+  return {};
 }
 
 const allLinks: NavLink[] = [
@@ -38,6 +57,27 @@ const allLinks: NavLink[] = [
     label: 'Clients',
     icon: Users,
     departments: ['Sales', 'Management', 'IT'],
+  },
+  {
+    href: CRM_URL,
+    label: 'CRM',
+    icon: Contact,
+    departments: ['Sales'],
+    external: true,
+  },
+  {
+    href: CUSTOMER_TRACKING_URL,
+    label: 'Customer Tracking',
+    icon: PackageSearch,
+    departments: ['Sales'],
+    external: true,
+  },
+  {
+    href: TRUEID_BOOKING_URL,
+    label: 'TrueID Booking',
+    icon: Fingerprint,
+    departments: ['Sales'],
+    external: true,
   },
   {
     href: '/dashboard/invoice-requests',
@@ -67,7 +107,7 @@ const allLinks: NavLink[] = [
     href: '/dashboard/quotations',
     label: 'Quotations',
     icon: Receipt,
-    departments: ['Sales', 'Operations', 'Finance', 'Management', 'IT'],
+    departments: ['Operations', 'Finance', 'Management', 'IT'],
   },
   {
     href: '/dashboard/accounting',
@@ -147,6 +187,7 @@ const ACTIVITY_KEYS: Record<string, string> = {
 export const activityKeyForHref = (href: string): string | undefined => ACTIVITY_KEYS[href];
 
 export const isNavLinkActive = (pathname: string, href: string) => {
+  if (isExternalHref(href)) return false;
   if (href === '/dashboard') return pathname === '/dashboard';
   return pathname === href || pathname.startsWith(`${href}/`);
 };
@@ -160,7 +201,12 @@ export const getNavigationLinks = (department: DepartmentData | null) => {
     return allLinks.filter((link) => link.href !== '/dashboard/requests' && link.departments.includes(departmentName));
   }
    if (departmentName === 'Sales') {
-    return allLinks.filter((link) => link.href !== '/dashboard/requests' && link.departments.includes(departmentName));
+    return allLinks.filter(
+      (link) =>
+        link.href !== '/dashboard/requests' &&
+        link.href !== '/dashboard/quotations' &&
+        link.departments.includes(departmentName)
+    );
   }
   return allLinks.filter((link) => link.departments.includes(departmentName));
 };

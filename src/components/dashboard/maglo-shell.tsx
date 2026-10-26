@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { ArrowLeft, CalendarDays, Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isExternalHref } from '@/lib/navigation';
 import {
   ErpBreadcrumb,
   ErpEmptyState,
@@ -215,6 +216,7 @@ export function MagloModuleTile({
     <>
       <Link
         href={href}
+        {...(isExternalHref(href) ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
         onContextMenu={onContextMenu}
         className={cn(
           magloCardClass,

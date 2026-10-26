@@ -24,10 +24,41 @@ type KnexAiChatProps = {
   department?: string;
 };
 
+const DESK_WELCOME: Record<string, string> = {
+  Sales: 'CRM, customer tracking, TrueID booking, booking forms, invoice requests, clients, and rejected requests',
+  Operations: 'booking forms, cargo status, invoice requests, quotations, and rejected requests',
+  Finance: 'invoice requests, quotations, shipment invoices, payments, credit notes, journals, VAT201, and finance setup',
+  HR: 'your HR home dashboard and how to get help from the right desk',
+  Management: 'company overview, clients, quotations, accounting reports, delivery assignments, employees, booking requests, and logs',
+  IT: 'every Maglo module, including users, employees, logs, finance setup, and Empost retries',
+  Auditor: 'cargo status, all requests, accounting reports, and the audit report',
+};
+
+const DESK_HINT: Record<string, string> = {
+  Sales: 'Ask about CRM, tracking, TrueID booking, and Sales shipments.',
+  Operations: 'Ask about cargo, booking forms, quotations, and invoice requests.',
+  Finance: 'Ask about invoices, journals, VAT, and the rest of Finance.',
+  HR: 'Ask about your HR workspace.',
+  Management: 'Ask about company overview, reports, and management screens.',
+  IT: 'Ask about any Maglo module, users, or Empost.',
+  Auditor: 'Ask about cargo status, requests, and the audit report.',
+};
+
+const DESK_PLACEHOLDER: Record<string, string> = {
+  Sales: 'Ask how to book a shipment, open CRM, or track a customer…',
+  Operations: 'Ask how to review cargo, build a quote, or check a booking…',
+  Finance: 'Ask how to record a payment, post a journal…',
+  HR: 'Ask what you can open on the HR desk…',
+  Management: 'Ask about reports, employees, or company overview…',
+  IT: 'Ask about users, finance setup, or Empost…',
+  Auditor: 'Ask how to search the audit report…',
+};
+
 function welcome(firstName?: string, department?: string) {
   const name = firstName || 'there';
-  const desk = department ? ` your ${department} desk` : ' KNEX Finance';
-  return `Hi ${name} — ask me anything about${desk}. I can walk you through invoice requests, quotations, payments, credit notes, journals, VAT201, and the rest of the Maglo workspace.`;
+  const desk = department ? ` your ${department} desk` : ' your KNEX desk';
+  const topics = (department && DESK_WELCOME[department]) || 'the screens on your desk';
+  return `Hi ${name} — ask me anything about${desk}. I can walk you through ${topics}.`;
 }
 
 export function KnexAiChat({ open, onOpenChange, firstName, department }: KnexAiChatProps) {
@@ -38,13 +69,16 @@ export function KnexAiChat({ open, onOpenChange, firstName, department }: KnexAi
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!open) return;
-    setMessages((prev) =>
-      prev.length
-        ? prev
-        : [{ id: 'welcome', role: 'assistant', content: welcome(firstName, department) }]
-    );
-  }, [open, firstName, department]);
+    const nextWelcome: ChatMessage = {
+      id: 'welcome',
+      role: 'assistant',
+      content: welcome(firstName, department),
+    };
+    setMessages((prev) => {
+      if (!prev.length) return [nextWelcome];
+      return prev.map((message) => (message.id === 'welcome' ? nextWelcome : message));
+    });
+  }, [firstName, department]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -95,7 +129,7 @@ export function KnexAiChat({ open, onOpenChange, firstName, department }: KnexAi
                 KNEX Assistant
               </SheetTitle>
               <SheetDescription className="text-xs text-slate-400">
-                Ask about invoices, journals, VAT, and the rest of Finance.
+                {DESK_HINT[department || ''] || 'Ask about the screens on your desk.'}
               </SheetDescription>
             </div>
           </div>
@@ -147,7 +181,7 @@ export function KnexAiChat({ open, onOpenChange, firstName, department }: KnexAi
                 }
               }}
               rows={1}
-              placeholder="Ask how to record a payment, post a journal…"
+              placeholder={DESK_PLACEHOLDER[department || ''] || 'Ask about a screen on your desk…'}
               className="max-h-28 min-h-[40px] flex-1 resize-none bg-transparent px-3 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400"
             />
             <button

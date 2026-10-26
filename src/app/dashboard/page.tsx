@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Contact, Fingerprint, PackageSearch, Plus } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import PerformanceMetrics from '@/components/performance-metrics';
 import DashboardWeather from '@/components/dashboard-weather';
@@ -14,6 +14,7 @@ import FinanceOpsOverview from '@/components/dashboard/finance-ops-overview';
 import { KnexSkullLottie } from '@/components/dashboard/knex-skull-lottie';
 import { KnexAiChat } from '@/components/dashboard/knex-ai-chat';
 import { useStarredShortcuts } from '@/hooks/use-starred-shortcuts';
+import { CRM_URL, CUSTOMER_TRACKING_URL, TRUEID_BOOKING_URL } from '@/lib/navigation';
 import { cn } from '@/lib/utils';
 
 function greetingForHour(hour: number) {
@@ -116,7 +117,30 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <FinanceOpsOverview />
+      {department.name === 'Sales' ? (
+        <div className="mx-auto grid w-full max-w-4xl grid-cols-1 justify-items-stretch gap-4 sm:grid-cols-3">
+          <MagloModuleTile
+            href={CRM_URL}
+            title="CRM"
+            description="Open KN Express CRM in a new tab"
+            icon={Contact}
+          />
+          <MagloModuleTile
+            href={CUSTOMER_TRACKING_URL}
+            title="Customer Tracking"
+            description="Open the public tracking page in a new tab"
+            icon={PackageSearch}
+          />
+          <MagloModuleTile
+            href={TRUEID_BOOKING_URL}
+            title="TrueID Booking"
+            description="UAE PASS booking form in a new tab"
+            icon={Fingerprint}
+          />
+        </div>
+      ) : (
+        <FinanceOpsOverview />
+      )}
 
       {isSuperAdmin && <EmpostPendingWidget />}
 

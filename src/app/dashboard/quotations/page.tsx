@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -455,7 +456,15 @@ export default function QuotationsPage() {
   const [receiverQuery, setReceiverQuery] = useState('');
   const [routeQuery, setRouteQuery] = useState<'ALL' | RouteCode>('ALL');
   const { userProfile } = useAuth();
+  const router = useRouter();
+  const isSales = userProfile?.department?.name === 'Sales';
   const canQuote = canGenerateQuotation(userProfile);
+
+  useEffect(() => {
+    if (isSales) router.replace('/dashboard');
+  }, [isSales, router]);
+
+  if (isSales) return null;
   const [quoteRequests, setQuoteRequests] = useState<any[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(true);
   const [linkedRequest, setLinkedRequest] = useState<any | null>(null);

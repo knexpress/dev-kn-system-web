@@ -14,10 +14,11 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Download, Loader2, CheckCircle, Trash2 } from 'lucide-react';
+import { PlusCircle, Download, Loader2, CheckCircle, Trash2, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { resolveReviewerEmployeeId } from '@/lib/booking-auto-review-preference';
 import { secureLog } from '@/lib/secure-logger';
+import { cn } from '@/lib/utils';
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,44 @@ interface SalesBookingFormProps {
 
 type BookingType = 'uae_to_pinas' | 'pinas_to_uae';
 
+const BOOKING_STEPS = [
+  { id: 0, title: 'Sender', hint: 'Who is shipping' },
+  { id: 1, title: 'Receiver', hint: 'Who is receiving' },
+  { id: 2, title: 'Shipment', hint: 'Type and box items' },
+  { id: 3, title: 'Documents', hint: 'IDs and extras' },
+  { id: 4, title: 'Review', hint: 'Check and create' },
+] as const;
+
+function requiredPhone(value: string, label: string) {
+  const text = value.trim();
+  if (!text) return `${label} is required.`;
+  const digits = text.replace(/\D/g, '');
+  if (digits.length < 6) return `Enter a valid ${label.toLowerCase()}.`;
+  return null;
+}
+
+function FieldHint({ error, hint }: { error?: string | null; hint?: string }) {
+  if (error) return <p className="mt-1 text-xs text-rose-600">{error}</p>;
+  if (hint) return <p className="mt-1 text-xs text-muted-foreground">{hint}</p>;
+  return null;
+}
+
+function FilePreview({ src, name, alt }: { src: string | null; name?: string | null; alt: string }) {
+  if (!src && !name) return null;
+  return (
+    <div className="mt-2">
+      {src ? (
+        <img
+          src={src}
+          alt={alt}
+          className="h-48 w-full max-w-xs object-contain rounded-md border bg-gray-50"
+        />
+      ) : null}
+      {name ? <p className="mt-1 text-xs text-muted-foreground">Selected: {name}</p> : null}
+    </div>
+  );
+}
+
 export default function SalesBookingForm({
   onBookingCreated,
   currentUser,
@@ -54,6 +93,10 @@ export default function SalesBookingForm({
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [createdBooking, setCreatedBooking] = useState<any>(null);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [step, setStep] = useState(0);
+  const [reached, setReached] = useState(0);
+  const [tried, setTried] = useState<Record<number, boolean>>({});
+  const contentRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   // Debug: Log dialog state changes (dev only)
@@ -151,6 +194,28 @@ export default function SalesBookingForm({
       setPinasIdBackPreview(null);
     }
   }, [pinasIdBack]);
+
+  useEffect(() => {
+    if (confirmationForm && confirmationForm.type.startsWith('image/')) {
+      const url = URL.createObjectURL(confirmationForm);
+      setConfirmationFormPreview(url);
+      return () => URL.revokeObjectURL(url);
+    }
+    setConfirmationFormPreview(null);
+  }, [confirmationForm]);
+
+  useEffect(() => {
+    if (tradeLicense && tradeLicense.type.startsWith('image/')) {
+      const url = URL.createObjectURL(tradeLicense);
+      setTradeLicensePreview(url);
+      return () => URL.revokeObjectURL(url);
+    }
+    setTradeLicensePreview(null);
+  }, [tradeLicense]);
+
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [step]);
 
   // Handle shipment type changes
   useEffect(() => {
@@ -263,8 +328,108 @@ export default function SalesBookingForm({
     return awb;
   };
 
+  const fieldErrors = (index: number): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    if (index === 0) {
+      if (!senderFirstName.trim()) errors.senderFirstName = 'Sender first name is required.';
+      if (!senderLastName.trim()) errors.senderLastName = 'Sender last name is required.';
+      if (!senderAddress.trim()) errors.senderAddress = 'Sender address is required.';
+      const phone = requiredPhone(senderPhone, 'Sender phone');
+      if (phone) errors.senderPhone = phone;
+      if (senderEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(senderEmail.trim())) {
+        errors.senderEmail = 'Enter a valid sender email.';
+      }
+      if (bookingType === 'uae_to_pinas' && !agentName.trim()) {
+        errors.agentName = 'Agent name is required for UAE to Philippines bookings.';
+      }
+    }
+    if (index === 1) {
+      if (!receiverFirstName.trim()) errors.receiverFirstName = 'Receiver first name is required.';
+      if (!receiverLastName.trim()) errors.receiverLastName = 'Receiver last name is required.';
+      if (!receiverAddress.trim()) errors.receiverAddress = 'Receiver address is required.';
+      const phone = requiredPhone(receiverPhone, 'Receiver phone');
+      if (phone) errors.receiverPhone = phone;
+      if (receiverEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(receiverEmail.trim())) {
+        errors.receiverEmail = 'Enter a valid receiver email.';
+      }
+    }
+    if (index === 2) {
+      if (shipmentType === 'non_document' && (!declaredValue.trim() || Number.parseFloat(declaredValue) <= 0)) {
+        errors.declaredValue = 'Declared value is required for Non Document shipments.';
+      }
+      if (!items.some((item) => item.name.trim() && item.quantity > 0)) {
+        errors.items = 'At least one item with name and quantity is required.';
+      }
+      items.forEach((item, itemIndex) => {
+        if (!item.name.trim()) errors[`itemName-${item.id}`] = `Item ${itemIndex + 1} name is required.`;
+        if (!item.quantity || item.quantity < 1) {
+          errors[`itemQty-${item.id}`] = `Item ${itemIndex + 1} quantity must be at least 1.`;
+        }
+      });
+    }
+    if (index === 3) {
+      if (bookingType === 'uae_to_pinas') {
+        if (!uaeIdFront) errors.uaeIdFront = 'UAE ID front image is required.';
+        if (!uaeIdBack) errors.uaeIdBack = 'UAE ID back image is required.';
+      }
+      if (!pinasIdFront) errors.pinasIdFront = 'Philippines ID front image is required.';
+      if (!pinasIdBack) errors.pinasIdBack = 'Philippines ID back image is required.';
+    }
+    return errors;
+  };
+
+  const stepError = (index: number): string | null => Object.values(fieldErrors(index))[0] || null;
+  const currentErrors = fieldErrors(step);
+  const showErrors = Boolean(tried[step]);
+  const markTried = (index = step) => setTried((current) => ({ ...current, [index]: true }));
+
+  const goTo = (index: number) => {
+    if (index > step) {
+      for (let page = step; page < index; page += 1) {
+        const error = stepError(page);
+        if (error) {
+          markTried(page);
+          setStep(page);
+          toast({ variant: 'destructive', title: `Complete page ${page + 1}`, description: error });
+          return;
+        }
+      }
+    }
+    setStep(index);
+  };
+
+  const goNext = () => {
+    const error = stepError(step);
+    if (error) {
+      markTried();
+      toast({ variant: 'destructive', title: `Complete page ${step + 1}`, description: error });
+      return;
+    }
+    const next = Math.min(step + 1, BOOKING_STEPS.length - 1);
+    setReached((current) => Math.max(current, next));
+    setStep(next);
+  };
+
+  const goBack = () => setStep((current) => Math.max(current - 1, 0));
+
+  const invalidClass = (key: string) =>
+    showErrors && currentErrors[key] ? 'border-rose-400 focus-visible:ring-rose-400' : undefined;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (step < BOOKING_STEPS.length - 1) {
+      goNext();
+      return;
+    }
+    for (let index = 0; index < BOOKING_STEPS.length - 1; index += 1) {
+      const error = stepError(index);
+      if (error) {
+        markTried(index);
+        setStep(index);
+        toast({ variant: 'destructive', title: BOOKING_STEPS[index].title, description: error });
+        return;
+      }
+    }
     setIsSubmitting(true);
 
     // Validation
@@ -730,10 +895,16 @@ export default function SalesBookingForm({
 
   const openForm = (type: BookingType) => {
     setBookingType(type);
+    setStep(0);
+    setReached(0);
+    setTried({});
     setIsFormOpen(true);
   };
 
   const resetForm = () => {
+    setStep(0);
+    setReached(0);
+    setTried({});
     setSenderFirstName('');
     setSenderLastName('');
     setSenderAddress('');
@@ -1038,45 +1209,92 @@ export default function SalesBookingForm({
           <PlusCircle className="mr-2 h-4 w-4" />
           New Booking (UAE TO PINAS)
         </Button>
-        <Button onClick={() => openForm('pinas_to_uae')} variant="outline">
+        <Button
+          variant="outline"
+          disabled
+          title="PINAS TO UAE bookings are no longer available"
+          aria-disabled="true"
+        >
           <PlusCircle className="mr-2 h-4 w-4" />
           New Booking (PINAS TO UAE)
         </Button>
       </div>
 
       {isFormOpen && (
-        <div className="fixed inset-0 z-50 bg-white dark:bg-slate-950 overflow-y-auto">
-          <div className="mx-auto max-w-6xl px-6 py-10 space-y-8">
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold">
-                  Create New Booking ({bookingType === 'uae_to_pinas' ? 'UAE TO PINAS' : 'PINAS TO UAE'})
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  Enter booking details for {bookingType === 'uae_to_pinas' ? 'UAE to Philippines' : 'Philippines to UAE'} shipment. All fields marked with * are required.
-                </p>
-              </div>
-              <Button variant="ghost" onClick={handleClose}>
-                Close
-              </Button>
+        <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-slate-950">
+          <div className="flex items-start justify-between gap-4 border-b px-6 py-4">
+            <div>
+              <h2 className="text-2xl font-semibold">
+                Create New Booking ({bookingType === 'uae_to_pinas' ? 'UAE TO PINAS' : 'PINAS TO UAE'})
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Page {step + 1} of {BOOKING_STEPS.length} · {BOOKING_STEPS[step].title}. Complete required fields before moving on.
+              </p>
             </div>
+            <Button type="button" variant="ghost" onClick={handleClose}>
+              Close
+            </Button>
+          </div>
 
-            <form onSubmit={handleSubmit} className="space-y-8">
-              {/* Sender Information */}
-              <div className="space-y-4 bg-card rounded-xl border p-6 shadow-sm">
+          <form onSubmit={handleSubmit} noValidate className="flex min-h-0 flex-1 flex-col md:flex-row">
+            <ol className="grid shrink-0 grid-cols-2 gap-1 border-b bg-slate-50/80 p-3 md:w-56 md:grid-cols-1 md:overflow-y-auto md:border-b-0 md:border-r">
+              {BOOKING_STEPS.map((item) => {
+                const complete = reached > item.id && !stepError(item.id);
+                const current = step === item.id;
+                return (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => goTo(item.id)}
+                      disabled={item.id > reached}
+                      className={cn(
+                        'flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors',
+                        current && 'bg-white shadow-sm ring-1 ring-brand-100',
+                        item.id > reached && 'cursor-not-allowed opacity-50',
+                        !current && item.id <= reached && 'hover:bg-white/80'
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold',
+                          complete && 'border-emerald-500 bg-emerald-500 text-white',
+                          current && !complete && 'border-brand-500 bg-brand-500 text-white',
+                          !current && !complete && 'border-slate-300 text-slate-500'
+                        )}
+                      >
+                        {complete ? <Check className="h-3 w-3" /> : item.id + 1}
+                      </span>
+                      <span>
+                        <span className={cn('block font-medium', current ? 'text-slate-900' : 'text-slate-600')}>
+                          Page {item.id + 1} · {item.title}
+                        </span>
+                        <span className="hidden text-[11px] text-slate-400 md:block">{item.hint}</span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div ref={contentRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+              {step === 0 && (
+              <div className="space-y-4 rounded-xl border bg-card p-6 shadow-sm">
                 <h3 className="text-lg font-semibold">
                   Sender Information ({bookingType === 'uae_to_pinas' ? 'UAE' : 'Philippines'})
                 </h3>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div>
                     <Label htmlFor="sender_first_name">First Name *</Label>
                     <Input
                       id="sender_first_name"
                       value={senderFirstName}
                       onChange={(e) => setSenderFirstName(e.target.value)}
-                      required
+                      className={invalidClass('senderFirstName')}
+                      aria-invalid={showErrors && !!currentErrors.senderFirstName}
                     />
+                    <FieldHint error={showErrors ? currentErrors.senderFirstName : null} />
                   </div>
                   
                   <div>
@@ -1085,8 +1303,10 @@ export default function SalesBookingForm({
                       id="sender_last_name"
                       value={senderLastName}
                       onChange={(e) => setSenderLastName(e.target.value)}
-                      required
+                      className={invalidClass('senderLastName')}
+                      aria-invalid={showErrors && !!currentErrors.senderLastName}
                     />
+                    <FieldHint error={showErrors ? currentErrors.senderLastName : null} />
                   </div>
 
                   <div className="md:col-span-2">
@@ -1095,7 +1315,7 @@ export default function SalesBookingForm({
                       id="sender_country"
                       value={bookingType === 'uae_to_pinas' ? 'United Arab Emirates' : 'Philippines'}
                       disabled
-                      className="bg-muted cursor-not-allowed"
+                      className="cursor-not-allowed bg-muted"
                     />
                   </div>
 
@@ -1105,8 +1325,10 @@ export default function SalesBookingForm({
                       id="sender_address"
                       value={senderAddress}
                       onChange={(e) => setSenderAddress(e.target.value)}
-                      required
+                      className={invalidClass('senderAddress')}
+                      aria-invalid={showErrors && !!currentErrors.senderAddress}
                     />
+                    <FieldHint error={showErrors ? currentErrors.senderAddress : null} />
                   </div>
 
                   <div>
@@ -1114,7 +1336,6 @@ export default function SalesBookingForm({
                     <Select
                       value={senderDeliveryOption}
                       onValueChange={(value: 'pickup' | 'warehouse') => setSenderDeliveryOption(value)}
-                      required
                     >
                       <SelectTrigger id="sender_delivery_option">
                         <SelectValue />
@@ -1134,8 +1355,10 @@ export default function SalesBookingForm({
                       placeholder={bookingType === 'uae_to_pinas' ? '+971501234567' : '+639123456789'}
                       value={senderPhone}
                       onChange={(e) => setSenderPhone(e.target.value)}
-                      required
+                      className={invalidClass('senderPhone')}
+                      aria-invalid={showErrors && !!currentErrors.senderPhone}
                     />
+                    <FieldHint error={showErrors ? currentErrors.senderPhone : null} />
                   </div>
 
                   <div>
@@ -1146,7 +1369,10 @@ export default function SalesBookingForm({
                       placeholder="sender@example.com"
                       value={senderEmail}
                       onChange={(e) => setSenderEmail(e.target.value)}
+                      className={invalidClass('senderEmail')}
+                      aria-invalid={showErrors && !!currentErrors.senderEmail}
                     />
+                    <FieldHint error={showErrors ? currentErrors.senderEmail : null} />
                   </div>
 
                   <div>
@@ -1155,28 +1381,35 @@ export default function SalesBookingForm({
                       id="agent_name"
                       value={agentName}
                       onChange={(e) => setAgentName(e.target.value)}
-                      required={bookingType === 'uae_to_pinas'}
+                      className={invalidClass('agentName')}
+                      aria-invalid={showErrors && !!currentErrors.agentName}
+                    />
+                    <FieldHint
+                      error={showErrors ? currentErrors.agentName : null}
+                      hint={bookingType === 'pinas_to_uae' ? 'Optional for Philippines to UAE' : undefined}
                     />
                   </div>
-
                 </div>
               </div>
+              )}
 
-              {/* Receiver Information */}
-              <div className="space-y-4 bg-card rounded-xl border p-6 shadow-sm">
+              {step === 1 && (
+              <div className="space-y-4 rounded-xl border bg-card p-6 shadow-sm">
                 <h3 className="text-lg font-semibold">
                   Receiver Information ({bookingType === 'uae_to_pinas' ? 'Philippines' : 'UAE'})
                 </h3>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div>
                     <Label htmlFor="receiver_first_name">First Name *</Label>
                     <Input
                       id="receiver_first_name"
                       value={receiverFirstName}
                       onChange={(e) => setReceiverFirstName(e.target.value)}
-                      required
+                      className={invalidClass('receiverFirstName')}
+                      aria-invalid={showErrors && !!currentErrors.receiverFirstName}
                     />
+                    <FieldHint error={showErrors ? currentErrors.receiverFirstName : null} />
                   </div>
                   
                   <div>
@@ -1185,8 +1418,10 @@ export default function SalesBookingForm({
                       id="receiver_last_name"
                       value={receiverLastName}
                       onChange={(e) => setReceiverLastName(e.target.value)}
-                      required
+                      className={invalidClass('receiverLastName')}
+                      aria-invalid={showErrors && !!currentErrors.receiverLastName}
                     />
+                    <FieldHint error={showErrors ? currentErrors.receiverLastName : null} />
                   </div>
 
                   <div className="md:col-span-2">
@@ -1195,7 +1430,7 @@ export default function SalesBookingForm({
                       id="receiver_country"
                       value={bookingType === 'uae_to_pinas' ? 'Philippines' : 'United Arab Emirates'}
                       disabled
-                      className="bg-muted cursor-not-allowed"
+                      className="cursor-not-allowed bg-muted"
                     />
                   </div>
 
@@ -1205,8 +1440,10 @@ export default function SalesBookingForm({
                       id="receiver_address"
                       value={receiverAddress}
                       onChange={(e) => setReceiverAddress(e.target.value)}
-                      required
+                      className={invalidClass('receiverAddress')}
+                      aria-invalid={showErrors && !!currentErrors.receiverAddress}
                     />
+                    <FieldHint error={showErrors ? currentErrors.receiverAddress : null} />
                   </div>
 
                   <div>
@@ -1214,7 +1451,6 @@ export default function SalesBookingForm({
                     <Select
                       value={receiverDeliveryOption}
                       onValueChange={(value: 'pickup' | 'delivery') => setReceiverDeliveryOption(value)}
-                      required
                     >
                       <SelectTrigger id="receiver_delivery_option">
                         <SelectValue />
@@ -1234,8 +1470,10 @@ export default function SalesBookingForm({
                       placeholder={bookingType === 'uae_to_pinas' ? '+639123456789' : '+971501234567'}
                       value={receiverPhone}
                       onChange={(e) => setReceiverPhone(e.target.value)}
-                      required
+                      className={invalidClass('receiverPhone')}
+                      aria-invalid={showErrors && !!currentErrors.receiverPhone}
                     />
+                    <FieldHint error={showErrors ? currentErrors.receiverPhone : null} />
                   </div>
 
                   <div className="md:col-span-2">
@@ -1246,20 +1484,24 @@ export default function SalesBookingForm({
                       placeholder="receiver@example.com"
                       value={receiverEmail}
                       onChange={(e) => setReceiverEmail(e.target.value)}
+                      className={invalidClass('receiverEmail')}
+                      aria-invalid={showErrors && !!currentErrors.receiverEmail}
                     />
+                    <FieldHint error={showErrors ? currentErrors.receiverEmail : null} />
                   </div>
                 </div>
               </div>
+              )}
 
-              {/* Shipment Type */}
-              <div className="space-y-4 bg-card rounded-xl border p-6 shadow-sm">
+              {step === 2 && (
+              <>
+              <div className="space-y-4 rounded-xl border bg-card p-6 shadow-sm">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="shipment_type">Shipment Type *</Label>
                     <Select
                       value={shipmentType}
                       onValueChange={(value: 'document' | 'non_document') => setShipmentType(value)}
-                      required
                     >
                       <SelectTrigger id="shipment_type">
                         <SelectValue />
@@ -1293,25 +1535,22 @@ export default function SalesBookingForm({
                         }
                       }}
                       disabled={shipmentType === 'document'}
-                      required={shipmentType === 'non_document'}
-                      className={shipmentType === 'document' ? 'bg-muted' : ''}
+                      className={cn(shipmentType === 'document' ? 'bg-muted' : '', invalidClass('declaredValue'))}
+                      aria-invalid={showErrors && !!currentErrors.declaredValue}
                     />
-                    {shipmentType === 'document' && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Automatically set to 0 for Document shipments
-                      </p>
-                    )}
-                    {shipmentType === 'non_document' && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Required for Non Document shipments
-                      </p>
-                    )}
+                    <FieldHint
+                      error={showErrors ? currentErrors.declaredValue : null}
+                      hint={
+                        shipmentType === 'document'
+                          ? 'Automatically set to 0 for Document shipments'
+                          : 'Required for Non Document shipments'
+                      }
+                    />
                   </div>
                 </div>
               </div>
 
-              {/* Items List */}
-              <div className="space-y-4 bg-card rounded-xl border p-6 shadow-sm">
+              <div className="mt-5 space-y-4 rounded-xl border bg-card p-6 shadow-sm">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold">Box Items List</h3>
                   <Button
@@ -1329,9 +1568,10 @@ export default function SalesBookingForm({
                   </Button>
                 </div>
                 
+                <FieldHint error={showErrors ? currentErrors.items : null} />
                 <div className="space-y-4">
                   {items.map((item, index) => (
-                    <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                    <div key={item.id} className="grid grid-cols-1 items-end gap-4 md:grid-cols-12">
                       <div className="md:col-span-5">
                         <Label htmlFor={`item_name_${item.id}`}>
                           Item {index + 1} *
@@ -1346,8 +1586,10 @@ export default function SalesBookingForm({
                             setItems(updatedItems);
                           }}
                           placeholder="Enter item name"
-                          required
+                          className={invalidClass(`itemName-${item.id}`)}
+                          aria-invalid={showErrors && !!currentErrors[`itemName-${item.id}`]}
                         />
+                        <FieldHint error={showErrors ? currentErrors[`itemName-${item.id}`] : null} />
                       </div>
                       <div className="md:col-span-3">
                         <Label htmlFor={`item_quantity_${item.id}`}>
@@ -1364,8 +1606,10 @@ export default function SalesBookingForm({
                             );
                             setItems(updatedItems);
                           }}
-                          required
+                          className={invalidClass(`itemQty-${item.id}`)}
+                          aria-invalid={showErrors && !!currentErrors[`itemQty-${item.id}`]}
                         />
+                        <FieldHint error={showErrors ? currentErrors[`itemQty-${item.id}`] : null} />
                       </div>
                       <div className="md:col-span-3 flex gap-2">
                         {items.length > 1 && (
@@ -1387,9 +1631,12 @@ export default function SalesBookingForm({
                   ))}
                 </div>
               </div>
+              </>
+              )}
 
-              {/* Identity Documents */}
-              <div className="space-y-4 bg-card rounded-xl border p-6 shadow-sm">
+              {step === 3 && (
+              <>
+              <div className="space-y-4 rounded-xl border bg-card p-6 shadow-sm">
                 <h3 className="text-lg font-semibold">Identity Documents</h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1410,18 +1657,14 @@ export default function SalesBookingForm({
                             const file = e.target.files?.[0];
                             if (file) setUaeIdFront(file);
                           }}
-                          required={bookingType === 'uae_to_pinas'}
+                          className={invalidClass('uaeIdFront')}
+                          aria-invalid={showErrors && !!currentErrors.uaeIdFront}
                         />
-                        {uaeIdFront && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Selected: {uaeIdFront.name}
-                          </p>
-                        )}
-                        {bookingType === 'pinas_to_uae' && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Optional (for PH TO UAE bookings)
-                          </p>
-                        )}
+                        <FieldHint
+                          error={showErrors ? currentErrors.uaeIdFront : null}
+                          hint={bookingType === 'pinas_to_uae' ? 'Optional for PH TO UAE bookings' : undefined}
+                        />
+                        <FilePreview src={uaeIdFrontPreview} name={uaeIdFront?.name} alt="UAE ID Front Preview" />
                       </div>
                     </div>
 
@@ -1438,25 +1681,14 @@ export default function SalesBookingForm({
                             const file = e.target.files?.[0];
                             if (file) setUaeIdBack(file);
                           }}
-                          required={bookingType === 'uae_to_pinas'}
+                          className={invalidClass('uaeIdBack')}
+                          aria-invalid={showErrors && !!currentErrors.uaeIdBack}
                         />
-                        {uaeIdBackPreview && (
-                          <div className="mt-2">
-                            <img
-                              src={uaeIdBackPreview}
-                              alt="UAE ID Back Preview"
-                              className="w-full max-w-xs h-48 object-contain border rounded-md bg-gray-50"
-                            />
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Selected: {uaeIdBack?.name || 'UAE ID Back'}
-                            </p>
-                          </div>
-                        )}
-                        {bookingType === 'pinas_to_uae' && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Optional (for PH TO UAE bookings)
-                          </p>
-                        )}
+                        <FieldHint
+                          error={showErrors ? currentErrors.uaeIdBack : null}
+                          hint={bookingType === 'pinas_to_uae' ? 'Optional for PH TO UAE bookings' : undefined}
+                        />
+                        <FilePreview src={uaeIdBackPreview} name={uaeIdBack?.name} alt="UAE ID Back Preview" />
                       </div>
                     </div>
                   </div>
@@ -1476,20 +1708,11 @@ export default function SalesBookingForm({
                             const file = e.target.files?.[0];
                             if (file) setPinasIdFront(file);
                           }}
-                          required
+                          className={invalidClass('pinasIdFront')}
+                          aria-invalid={showErrors && !!currentErrors.pinasIdFront}
                         />
-                        {pinasIdFrontPreview && (
-                          <div className="mt-2">
-                            <img
-                              src={pinasIdFrontPreview}
-                              alt="Philippines ID Front Preview"
-                              className="w-full max-w-xs h-48 object-contain border rounded-md bg-gray-50"
-                            />
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Selected: {pinasIdFront?.name || 'Philippines ID Front'}
-                            </p>
-                          </div>
-                        )}
+                        <FieldHint error={showErrors ? currentErrors.pinasIdFront : null} />
+                        <FilePreview src={pinasIdFrontPreview} name={pinasIdFront?.name} alt="Philippines ID Front Preview" />
                       </div>
                     </div>
 
@@ -1504,28 +1727,18 @@ export default function SalesBookingForm({
                             const file = e.target.files?.[0];
                             if (file) setPinasIdBack(file);
                           }}
-                          required
+                          className={invalidClass('pinasIdBack')}
+                          aria-invalid={showErrors && !!currentErrors.pinasIdBack}
                         />
-                        {pinasIdBackPreview && (
-                          <div className="mt-2">
-                            <img
-                              src={pinasIdBackPreview}
-                              alt="Philippines ID Back Preview"
-                              className="w-full max-w-xs h-48 object-contain border rounded-md bg-gray-50"
-                            />
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Selected: {pinasIdBack?.name || 'Philippines ID Back'}
-                            </p>
-                          </div>
-                        )}
+                        <FieldHint error={showErrors ? currentErrors.pinasIdBack : null} />
+                        <FilePreview src={pinasIdBackPreview} name={pinasIdBack?.name} alt="Philippines ID Back Preview" />
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Additional Documents Section (for UAE to Pinas and Pinas to UAE) */}
-              <div className="space-y-4">
+              <div className="mt-5 space-y-4 rounded-xl border bg-card p-6 shadow-sm">
                 <h3 className="text-lg font-semibold">Additional Documents</h3>
                 <div className="grid gap-6 md:grid-cols-2">
                   <div>
@@ -1540,20 +1753,7 @@ export default function SalesBookingForm({
                           if (file) setConfirmationForm(file);
                         }}
                       />
-                      {confirmationForm && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Selected: {confirmationForm.name}
-                        </p>
-                      )}
-                      {confirmationFormPreview && (
-                        <div className="mt-2">
-                          <img
-                            src={confirmationFormPreview}
-                            alt="Confirmation Form Preview"
-                            className="w-full max-w-xs h-48 object-contain border rounded-md bg-gray-50"
-                          />
-                        </div>
-                      )}
+                      <FilePreview src={confirmationFormPreview} name={confirmationForm?.name} alt="Confirmation Form Preview" />
                     </div>
                   </div>
 
@@ -1569,41 +1769,120 @@ export default function SalesBookingForm({
                           if (file) setTradeLicense(file);
                         }}
                       />
-                      {tradeLicense && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Selected: {tradeLicense.name}
-                        </p>
-                      )}
-                      {tradeLicensePreview && (
-                        <div className="mt-2">
-                          <img
-                            src={tradeLicensePreview}
-                            alt="Trade License Preview"
-                            className="w-full max-w-xs h-48 object-contain border rounded-md bg-gray-50"
-                          />
-                        </div>
-                      )}
+                      <FilePreview src={tradeLicensePreview} name={tradeLicense?.name} alt="Trade License Preview" />
                     </div>
                   </div>
                 </div>
               </div>
+              </>
+              )}
 
-              {/* Submit Button */}
-              <div className="flex justify-end gap-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleClose}
-                  disabled={isSubmitting}
-                >
-                  Cancel
+              {step === 4 && (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Review and create</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Check each page. Missing required fields are marked so you can jump back and fix them.
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {[
+                      {
+                        label: 'Sender',
+                        page: 0,
+                        value: `${senderFirstName} ${senderLastName}`.trim() || '—',
+                        detail: [
+                          bookingType === 'uae_to_pinas' ? 'United Arab Emirates' : 'Philippines',
+                          senderAddress || 'No address',
+                          senderPhone || 'No phone',
+                          senderDeliveryOption === 'pickup' ? 'Pickup from home' : 'Deliver to warehouse',
+                          agentName ? `Agent: ${agentName}` : bookingType === 'uae_to_pinas' ? 'Agent missing' : null,
+                        ].filter(Boolean).join('\n'),
+                      },
+                      {
+                        label: 'Receiver',
+                        page: 1,
+                        value: `${receiverFirstName} ${receiverLastName}`.trim() || '—',
+                        detail: [
+                          bookingType === 'uae_to_pinas' ? 'Philippines' : 'United Arab Emirates',
+                          receiverAddress || 'No address',
+                          receiverPhone || 'No phone',
+                          receiverDeliveryOption === 'pickup' ? 'Pickup from warehouse' : 'Deliver to address',
+                        ].join('\n'),
+                      },
+                      {
+                        label: 'Shipment',
+                        page: 2,
+                        value: shipmentType === 'document' ? 'Document' : 'Non Document',
+                        detail: [
+                          shipmentType === 'document' ? 'Declared value 0' : `Declared value AED ${declaredValue || '—'}`,
+                          items.filter((item) => item.name.trim()).length
+                            ? items.filter((item) => item.name.trim()).map((item) => `${item.name} × ${item.quantity}`).join('\n')
+                            : 'No items',
+                        ].join('\n'),
+                      },
+                      {
+                        label: 'Documents',
+                        page: 3,
+                        value: bookingType === 'uae_to_pinas' ? 'UAE ID + Philippines ID' : 'Philippines ID',
+                        detail: [
+                          uaeIdFront ? `UAE ID front: ${uaeIdFront.name}` : bookingType === 'uae_to_pinas' ? 'UAE ID front missing' : 'UAE ID front optional',
+                          uaeIdBack ? `UAE ID back: ${uaeIdBack.name}` : bookingType === 'uae_to_pinas' ? 'UAE ID back missing' : 'UAE ID back optional',
+                          pinasIdFront ? `PH ID front: ${pinasIdFront.name}` : 'PH ID front missing',
+                          pinasIdBack ? `PH ID back: ${pinasIdBack.name}` : 'PH ID back missing',
+                          confirmationForm ? `Confirmation form: ${confirmationForm.name}` : 'Confirmation form optional',
+                          tradeLicense ? `Trade license: ${tradeLicense.name}` : 'Trade license optional',
+                        ].join('\n'),
+                      },
+                    ].map((card) => {
+                      const missing = stepError(card.page);
+                      return (
+                        <button
+                          key={card.label}
+                          type="button"
+                          onClick={() => goTo(card.page)}
+                          className="rounded-xl border bg-slate-50/70 p-3 text-left transition-colors hover:border-brand-200 hover:bg-white"
+                        >
+                          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            {missing ? (
+                              <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                            ) : (
+                              <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
+                            )}
+                            Page {card.page + 1} · {card.label}
+                          </p>
+                          <p className="mt-1 text-sm font-medium text-slate-800">{card.value}</p>
+                          <p className="mt-1 whitespace-pre-wrap text-xs text-slate-500">{card.detail}</p>
+                          {missing ? <p className="mt-2 text-xs text-rose-600">{missing}</p> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t px-6 py-4">
+              <Button type="button" variant="outline" onClick={handleClose} disabled={isSubmitting}>
+                Cancel
+              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={goBack} disabled={step === 0 || isSubmitting}>
+                  <ChevronLeft className="mr-1 h-4 w-4" />
+                  Back
                 </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? 'Creating...' : 'Create Booking'}
-                </Button>
+                {step < BOOKING_STEPS.length - 1 ? (
+                  <Button type="submit">
+                    Next
+                    <ChevronRight className="ml-1 h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? 'Creating...' : 'Create Booking'}
+                  </Button>
+                )}
               </div>
+            </div>
+            </div>
             </form>
-          </div>
         </div>
       )}
 

@@ -89,6 +89,14 @@ function renderSegment(segment: string, onUserBubble?: boolean): ReactNode[] {
   return nodes;
 }
 
+function isBulletLine(line: string) {
+  return /^\s*[-*•]\s+\S/.test(line);
+}
+
+function stripBullet(line: string) {
+  return line.replace(/^\s*[-*•]\s+/, '');
+}
+
 export function ChatRichText({
   text,
   onUserBubble,
@@ -96,14 +104,37 @@ export function ChatRichText({
   text: string;
   onUserBubble?: boolean;
 }) {
-  return (
-    <>
-      {text.split('\n').map((line, i) => (
-        <span key={i}>
-          {i > 0 && <br />}
-          {renderSegment(line, onUserBubble)}
-        </span>
-      ))}
-    </>
-  );
+  const lines = text.split('\n');
+  const blocks: ReactNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    if (isBulletLine(lines[i])) {
+      const items: string[] = [];
+      while (i < lines.length && isBulletLine(lines[i])) {
+        items.push(stripBullet(lines[i]));
+        i += 1;
+      }
+      blocks.push(
+        <ul key={`ul-${i}`} className="my-1.5 list-disc space-y-1 pl-5">
+          {items.map((item, index) => (
+            <li key={index}>{renderSegment(item, onUserBubble)}</li>
+          ))}
+        </ul>
+      );
+      continue;
+    }
+
+    const line = lines[i];
+    const prevWasText = i > 0 && !isBulletLine(lines[i - 1]);
+    blocks.push(
+      <span key={`p-${i}`}>
+        {prevWasText && <br />}
+        {renderSegment(line, onUserBubble)}
+      </span>
+    );
+    i += 1;
+  }
+
+  return <>{blocks}</>;
 }

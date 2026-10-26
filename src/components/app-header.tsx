@@ -12,6 +12,7 @@ import {
   getNavigationLinks,
   getRailLinks,
   isNavLinkActive,
+  navLinkExtra,
   type NavLink,
 } from '@/lib/navigation';
 import {
@@ -28,11 +29,12 @@ import { BrandMark, type ActivityBadgeProps } from '@/components/app-sidebar';
 import { UserNav } from './user-nav';
 import { cn } from '@/lib/utils';
 
-function HeaderTab({ link, active }: { link: Pick<NavLink, 'href' | 'label' | 'icon'>; active: boolean }) {
+function HeaderTab({ link, active }: { link: Pick<NavLink, 'href' | 'label' | 'icon' | 'external'>; active: boolean }) {
   const Icon = link.icon;
   return (
     <Link
       href={link.href}
+      {...navLinkExtra(link)}
       className={cn(
         'relative flex items-center gap-2 px-1 py-2 text-sm transition-colors',
         active ? 'font-semibold text-slate-900' : 'font-medium text-slate-400 hover:text-slate-700'
@@ -259,6 +261,7 @@ export default function AppHeader({ hasNew, markSeen }: ActivityBadgeProps) {
                   <li key={link.href}>
                     <Link
                       href={link.href}
+                      {...navLinkExtra(link)}
                       onClick={() => key && markSeen(key)}
                       className={cn(
                         'flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors',

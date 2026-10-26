@@ -6,7 +6,7 @@ import { CornerDownLeft, Search } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { ACCOUNTING_MODULES } from '@/components/accounting/erp-shell';
 import { ACCOUNTING_ROUTES } from '@/components/accounting/erp-format';
-import type { NavLink } from '@/lib/navigation';
+import { isExternalHref, type NavLink } from '@/lib/navigation';
 import { cn } from '@/lib/utils';
 
 export const OPEN_SEARCH_EVENT = 'knex:open-search';
@@ -66,6 +66,10 @@ export function CommandPalette({ open, onOpenChange, links }: CommandPaletteProp
   const go = (item?: PaletteItem) => {
     if (!item) return;
     onOpenChange(false);
+    if (isExternalHref(item.href)) {
+      window.open(item.href, '_blank', 'noopener,noreferrer');
+      return;
+    }
     router.push(item.href);
   };
 
